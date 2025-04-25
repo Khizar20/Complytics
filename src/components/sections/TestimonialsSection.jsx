@@ -1,72 +1,137 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { FiStar } from 'react-icons/fi';
+import React, { useEffect, useState } from 'react';
+import { FaQuoteLeft, FaChevronLeft, FaChevronRight, FaStar } from 'react-icons/fa';
 
 const testimonials = [
   {
-    name: "Sarah Johnson",
-    role: "Compliance Manager, FinTech Corp",
-    content: "Complytics reduced our audit preparation time from weeks to just days. The platform is incredibly intuitive.",
+    quote: "Complytics has transformed how we manage our security compliance. What used to take weeks now takes days, and our team can focus on strategic priorities.",
+    author: "Sarah Johnson",
+    title: "CISO, HealthTech Systems",
     rating: 5
   },
   {
-    name: "Michael Chen",
-    role: "Director of Risk, BankSecure",
-    content: "We've seen a 40% reduction in compliance-related incidents since implementing Complytics.",
+    quote: "The Azure AD compliance automation has been a game-changer for our organization. We've reduced our security vulnerabilities by 75% in just three months.",
+    author: "Michael Chen",
+    title: "Security Director, FinanceCore",
     rating: 5
   },
   {
-    name: "Emily Rodriguez",
-    role: "COO, HealthGuard",
-    content: "The automated reporting features have been a game-changer for our compliance team.",
+    quote: "The compliance chatbot has become our team's go-to resource. It's like having a compliance expert available 24/7 to answer our questions.",
+    author: "Emily Rodriguez",
+    title: "Compliance Manager, RetailGlobal",
     rating: 4
+  },
+  {
+    quote: "We passed our SOC 2 audit with flying colors thanks to Complytics. The centralized knowledge base made document collection effortless.",
+    author: "David Wilson",
+    title: "CTO, SaaSPlatform Inc.",
+    rating: 5
   }
 ];
 
 const TestimonialsSection = () => {
-  return (
-    <section id="testimonials" className="py-16 px-6 md:px-12 lg:px-24 bg-gray-50">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Trusted by <span className="bg-hero-gradient bg-clip-text text-transparent">Industry Leaders</span>
-          </h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Join thousands of companies who have transformed their compliance processes.
-          </p>
-        </motion.div>
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {testimonials.map((testimonial, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              viewport={{ once: true }}
-              className="bg-white p-8 rounded-xl shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex mb-4">
-                {[...Array(5)].map((_, i) => (
-                  <FiStar 
-                    key={i} 
-                    className={`w-5 h-5 ${i < testimonial.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`}
-                  />
+  const handlePrev = () => {
+    if (isAnimating) return;
+    
+    setIsAnimating(true);
+    setActiveIndex((prev) => (prev === 0 ? testimonials.length - 1 : prev - 1));
+    
+    setTimeout(() => {
+      setIsAnimating(false);
+    }, 500);
+  };
+
+  const handleNext = () => {
+    if (isAnimating) return;
+    
+    setIsAnimating(true);
+    setActiveIndex((prev) => (prev === testimonials.length - 1 ? 0 : prev + 1));
+    
+    setTimeout(() => {
+      setIsAnimating(false);
+    }, 500);
+  };
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('active');
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { 
+        threshold: 0.1,
+        rootMargin: '50px'
+      }
+    );
+
+    const revealElements = document.querySelectorAll('.reveal');
+    revealElements.forEach(el => {
+      // Set initial styles
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+      el.style.transition = 'all 800ms ease';
+      observer.observe(el);
+    });
+
+    return () => {
+      revealElements.forEach(el => observer.unobserve(el));
+    };
+  }, []);
+
+  return (
+    <section id="testimonials" className="section relative overflow-hidden py-24">
+      <div className="gradient-blur top-1/4 right-1/4 opacity-30"></div>
+      
+      <div className="text-center mb-16">
+        <h2 className="section-title">What Our Clients Say</h2>
+        <p className="section-subtitle mx-auto">
+          Trusted by leading organizations worldwide to streamline their security compliance
+        </p>
+      </div>
+
+      <div className="relative max-w-4xl mx-auto">
+        <div className={`glass-card rounded-xl p-8 md:p-10 relative overflow-hidden ${isAnimating ? 'opacity-0' : 'opacity-100'} transition-opacity duration-500`}>
+          <div className="absolute top-4 left-4 text-primary/20">
+            <FaQuoteLeft size={40} />
+          </div>
+          
+          <div className="relative">
+            <p className="text-lg md:text-xl mb-8">{testimonials[activeIndex].quote}</p>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-semibold">{testimonials[activeIndex].author}</h4>
+                <p className="text-sm text-muted-foreground">{testimonials[activeIndex].title}</p>
+              </div>
+              
+              <div className="flex gap-1">
+                {[...Array(testimonials[activeIndex].rating)].map((_, i) => (
+                  <FaStar key={i} className="text-yellow-400" />
                 ))}
               </div>
-              <p className="text-gray-700 mb-6 italic">"{testimonial.content}"</p>
-              <div>
-                <p className="font-semibold text-gray-900">{testimonial.name}</p>
-                <p className="text-sm text-gray-500">{testimonial.role}</p>
-              </div>
-            </motion.div>
-          ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-center gap-4 mt-8">
+          <button
+            onClick={handlePrev}
+            className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-shadow"
+          >
+            <FaChevronLeft className="text-primary" />
+          </button>
+          <button
+            onClick={handleNext}
+            className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-shadow"
+          >
+            <FaChevronRight className="text-primary" />
+          </button>
         </div>
       </div>
     </section>

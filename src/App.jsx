@@ -6,15 +6,19 @@ import FeaturesSection from './components/sections/FeaturesSection'
 import TestimonialsSection from './components/sections/TestimonialsSection'
 import CTASection from './components/sections/CTASection'
 import Footer from './components/layout/Footer'
+import CustomCursor from './components/ui/CustomCursor'
 
 function App() {
   return (
-    <div className="font-sans">
+    <div className="min-h-screen bg-background">
+      <CustomCursor />
       <Navbar />
-      <HeroSection />
-      <FeaturesSection />
-      <TestimonialsSection />
-      <CTASection />
+      <main className="relative">
+        <HeroSection />
+        <FeaturesSection />
+        <TestimonialsSection />
+        <CTASection />
+      </main>
       <Footer />
     </div>
   )

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Shield, CheckCircle, Lock, ArrowRight } from 'lucide-react';
-import { Button } from "@/components/ui/button";
+import { FaShieldAlt, FaCheckCircle, FaLock, FaArrowRight } from 'react-icons/fa';
+import { Button } from "../ui/button.jsx";
 
 const HeroSection = () => {
   const heroRef = useRef(null);
@@ -10,16 +10,26 @@ const HeroSection = () => {
       (entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
-            entry.target.classList.add('animate-fade-in');
+            entry.target.classList.add('active');
+            observer.unobserve(entry.target);
           }
         });
       },
-      { threshold: 0.1 }
+      { 
+        threshold: 0.1,
+        rootMargin: '50px'
+      }
     );
 
     if (heroRef.current) {
       const revealElements = heroRef.current.querySelectorAll('.reveal');
-      revealElements.forEach(el => observer.observe(el));
+      revealElements.forEach(el => {
+        // Set initial styles
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+        el.style.transition = 'all 800ms ease';
+        observer.observe(el);
+      });
     }
 
     return () => {
@@ -43,51 +53,51 @@ const HeroSection = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-3xl mx-auto">
           {/* Badge */}
-          <span className="inline-flex items-center mb-4 px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary reveal">
-            <Shield size={16} className="mr-1 animate-bounce-subtle" />
+          <span className="inline-flex items-center mb-4 px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary">
+            <FaShieldAlt size={16} className="mr-1 animate-bounce-subtle" />
             Security Compliance Made Simple
           </span>
           
           {/* Main heading */}
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6 reveal">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
             Automate Your <span className="moving-gradient">Security Compliance</span> Today
           </h1>
           
           {/* Description */}
-          <p className="text-lg md:text-xl text-muted-foreground mb-8 reveal">
+          <p className="text-lg md:text-xl text-muted-foreground mb-8">
             Streamline your security compliance with our advanced automation tools. Save time, reduce errors, and stay secure with Complytics.
           </p>
           
           {/* Buttons */}
-          <div className="flex flex-col sm:flex-row justify-center gap-4 mb-10 reveal">
+          <div className="flex flex-col sm:flex-row justify-center gap-4 mb-10">
             <Button size="lg" className="gradient-button group">
-              Start Free Trial
-              <ArrowRight size={16} className="ml-2 transition-transform duration-300 group-hover:translate-x-1" />
+              Request Access
+              <FaArrowRight size={16} className="ml-2 transition-transform duration-300 group-hover:translate-x-1" />
             </Button>
             <Button variant="outline" size="lg" className="animated-border">
-              Schedule Demo
+              Watch Demo
             </Button>
           </div>
           
           {/* Features list */}
-          <div className="flex flex-col sm:flex-row justify-center gap-x-6 gap-y-3 text-sm text-muted-foreground reveal">
+          <div className="flex flex-col sm:flex-row justify-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
             <div className="flex items-center">
-              <CheckCircle size={16} className="text-primary mr-2 animate-pulse-slow" />
-              <span>No credit card required</span>
+              <FaCheckCircle size={16} className="text-primary mr-2 animate-pulse-slow" />
+              <span>No lengthy onboarding required</span>
             </div>
             <div className="flex items-center">
-              <CheckCircle size={16} className="text-primary mr-2 animate-pulse-slow" style={{ animationDelay: '1s' }} />
-              <span>14-day free trial</span>
+              <FaCheckCircle size={16} className="text-primary mr-2 animate-pulse-slow" style={{ animationDelay: '1s' }} />
+              <span>Watch how Complytics works</span>
             </div>
             <div className="flex items-center">
-              <Lock size={16} className="text-primary mr-2 animate-pulse-slow" style={{ animationDelay: '2s' }} />
-              <span>SOC 2 Compliant</span>
+              <FaLock size={16} className="text-primary mr-2 animate-pulse-slow" style={{ animationDelay: '2s' }} />
+              <span>Submit your request to get started</span>
             </div>
           </div>
         </div>
         
         {/* Dashboard preview */}
-        <div className="mt-16 max-w-4xl mx-auto relative reveal">
+        <div className="mt-16 max-w-4xl mx-auto relative">
           <div className="animated-border rounded-xl overflow-hidden shadow-2xl hover-card">
             <div className="relative bg-gray-800 h-8 flex items-center px-4">
               <div className="flex space-x-2 absolute left-4">
@@ -100,7 +110,7 @@ const HeroSection = () => {
             <div className="bg-gray-900 h-72 md:h-96 flex items-center justify-center overflow-hidden">
               <div className="text-center text-white">
                 <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Shield className="h-10 w-10 text-primary animate-float" />
+                  <FaShieldAlt className="h-10 w-10 text-primary animate-float" />
                 </div>
                 <p className="text-lg font-medium">Complytics Dashboard Preview</p>
                 <p className="text-sm text-gray-400 mt-2">Powerful compliance automation at your fingertips</p>
