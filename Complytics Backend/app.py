@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db import database
 from routes import auth_router, superadmin_router, admin_router
+from routes.team import router as team_router
 from config import settings
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.security import HTTPBearer
@@ -49,6 +50,7 @@ app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(superadmin_router, prefix="/superadmin", tags=["Superadmin"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 app.include_router(registration_router, prefix="/registration", tags=["Registration"])
+app.include_router(team_router, prefix="/team", tags=["Team"])
 
 
 @app.on_event("startup")

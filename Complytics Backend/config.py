@@ -23,4 +23,5 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
 
+# Create settings instance
 settings = Settings()

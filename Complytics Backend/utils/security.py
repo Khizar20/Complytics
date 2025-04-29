@@ -13,6 +13,7 @@ from typing import Optional
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import ssl
 
 security = HTTPBearer(auto_error=False)
 
@@ -121,130 +122,91 @@ def generate_random_password(length: int = 12) -> str:
     chars = string.ascii_letters + string.digits + "!@#$%^&*"
     return ''.join(random.choice(chars) for _ in range(length))
 
-async def send_credentials_email(email: str, username: str, password: str, organization_name: str):
-    """Send email with login credentials using Gmail SMTP"""
-    subject = f"Your Complytics Admin Account Credentials"
+async def send_credentials_email(
+    email: str,
+    username: str,
+    password: str,
+    organization_name: str,
+    first_name: str,
+    last_name: str,
+    role: str
+):
+    subject = "Your User Account has been created"
+    
+    # Format the role for display
+    role_display = role.replace('_', ' ').title()
     
     body = f"""
-        <html>
-        <head>
-            <style type="text/css">
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    line-height: 1.6;
-                    color: #333333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                .header {{
-                    text-align: center;
-                    padding: 20px 0;
-                    border-bottom: 1px solid #eaeaea;
-                    margin-bottom: 30px;
-                }}
-                .logo {{
-                    max-width: 150px;
-                    height: auto;
-                }}
-                .content-card {{
-                    background-color: #ffffff;
-                    border-radius: 8px;
-                    padding: 25px;
-                    margin: 20px 0;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-                }}
-                .credentials {{
-                    background-color: #f8f9fa;
-                    border-left: 4px solid #3b82f6;
-                    padding: 15px;
-                    margin: 20px 0;
-                    border-radius: 4px;
-                }}
-                .button {{
-                    display: inline-block;
-                    padding: 12px 24px;
-                    background-color: #3b82f6;
-                    color: white !important;
-                    text-decoration: none;
-                    border-radius: 4px;
-                    font-weight: 500;
-                    margin: 15px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    padding-top: 20px;
-                    border-top: 1px solid #eaeaea;
-                    font-size: 12px;
-                    color: #6b7280;
-                    text-align: center;
-                }}
-                .important-note {{
-                    background-color: #fef2f2;
-                    color: #b91c1c;
-                    padding: 12px;
-                    border-radius: 4px;
-                    margin: 20px 0;
-                }}
-            </style>
-        </head>
+    <html>
         <body>
-            <div class="header">
-                <!-- Replace with your actual logo URL -->
-                <img src="https://raw.githubusercontent.com/Khizar20/Complytics-Frontend/refs/heads/main/complytics.png" alt="Complytics Logo" class="logo">
-            </div>
-            
-            <div class="content-card">
-                <h2 style="color: #1e40af; margin-top: 0;">Welcome to Complytics!</h2>
-                <p>Your administrator account has been successfully created. Below are your login credentials:</p>
-                
-                <div class="credentials">
-                    <p style="margin: 5px 0;"><strong>Email/Username:</strong> {username}</p>
-                    <p style="margin: 5px 0;"><strong>Temporary Password:</strong> {password}</p>
-                </div>
-                
-                <div style="text-align: center; margin: 25px 0;">
-                    <a href="https://app.complytics.com/login" class="button">Login to Your Account</a>
-                </div>
-                
-                <div class="important-note">
-                    <p style="margin: 0;"><strong>⚠️ Security Notice:</strong> For your account security, please change this temporary password immediately after logging in.</p>
-                </div>
-                
-                <p>If you didn't request this account, please contact our support team immediately.</p>
-            </div>
-            
-            <div class="footer">
-                <p>© {datetime.now().year} Complytics. All rights reserved.</p>
-                <p>
-                    <a href="https://complytics.com" style="color: #6b7280; text-decoration: none;">Website</a> | 
-                    <a href="https://complytics.com/privacy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> | 
-                    <a href="https://complytics.com/contact" style="color: #6b7280; text-decoration: none;">Contact Us</a>
-                </p>
-                <p>This email was sent to {email}. Please do not reply to this message.</p>
-            </div>
+            <h2>Welcome to {organization_name}!</h2>
+            <p>Dear {first_name} {last_name},</p>
+            <p>Your user account has been created with the following details:</p>
+            <ul>
+                <li><strong>Email:</strong> {email}</li>
+                <li><strong>Password:</strong> {password}</li>
+                <li><strong>Role:</strong> {role_display}</li>
+            </ul>
+            <p>Please use these credentials to log in to your account. We recommend changing your password after your first login.</p>
+            <p>Best regards,<br>{organization_name} Team</p>
         </body>
-        </html>
-        """
+    </html>
+    """
     
-    # Create message container
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = "khizarahmed3@gmail.com"
-    msg['To'] = email
+    message = MIMEMultipart()
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message["Subject"] = subject
     
-    # Attach HTML version
-    msg.attach(MIMEText(body, 'html'))
+    # Attach the HTML body
+    message.attach(MIMEText(body, "html"))
     
-    try:
-        # Connect to Gmail SMTP server
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login("khizarahmed3@gmail.com", settings.SMTP_PASSWORD)
-            server.send_message(msg)
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send credentials email"
-        )
+    # Create SMTP session
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        server.send_message(message)
+
+async def send_role_change_email(
+    email: str,
+    first_name: str,
+    last_name: str,
+    old_role: str,
+    new_role: str,
+    organization_name: str
+):
+    subject = "Your Role Has Been Updated"
+    
+    # Format roles for display
+    old_role_display = old_role.replace('_', ' ').title()
+    new_role_display = new_role.replace('_', ' ').title()
+    
+    body = f"""
+    <html>
+        <body>
+            <h2>Role Update Notification</h2>
+            <p>Dear {first_name} {last_name},</p>
+            <p>Your role in {organization_name} has been updated:</p>
+            <ul>
+                <li><strong>Previous Role:</strong> {old_role_display}</li>
+                <li><strong>New Role:</strong> {new_role_display}</li>
+            </ul>
+            <p>This change may affect your access and permissions within the system. If you have any questions about your new role, please contact your organization administrator.</p>
+            <p>Best regards,<br>{organization_name} Team</p>
+        </body>
+    </html>
+    """
+    
+    message = MIMEMultipart()
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message["Subject"] = subject
+    
+    # Attach the HTML body
+    message.attach(MIMEText(body, "html"))
+    
+    # Create SMTP session
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        server.send_message(message)

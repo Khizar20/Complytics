@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from "../ui/button.jsx";
 import { FaBars, FaTimes } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -65,13 +67,13 @@ const Navbar = () => {
               Contact
             </a>
             <a href="/superadmin/login" className="text-sm text-foreground hover:text-primary transition-colors opacity-0 w-0 h-0 overflow-hidden">
-            Superadmin
-          </a>
+              Superadmin
+            </a>
           </nav>
 
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center space-x-4">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => navigate('/login')}>
               Log In
             </Button>
             <Button size="sm" className="gradient-button" onClick={scrollToCTA}>
@@ -126,7 +128,7 @@ const Navbar = () => {
               Contact
             </a>
             <div className="pt-4 space-y-2">
-              <Button variant="outline" size="sm" className="w-full">
+              <Button variant="outline" size="sm" className="w-full" onClick={() => navigate('/login')}>
                 Log In
               </Button>
               <Button size="sm" className="gradient-button w-full" onClick={scrollToCTA}>

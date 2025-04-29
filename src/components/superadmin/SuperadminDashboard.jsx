@@ -9,11 +9,13 @@ import {
   FaEnvelope,
   FaUserTie,
   FaUsers,
-  FaGlobe
+  FaGlobe,
+  FaSignOutAlt
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // Animation variants
 const containerVariants = {
@@ -85,7 +87,9 @@ const UserSkeleton = () => (
   </motion.div>
 );
 
-export default function SuperadminDashboard() {
+const SuperadminDashboard = () => {
+  const { authToken, logout } = useAuth();
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [activeUsers, setActiveUsers] = useState([]);
@@ -96,7 +100,12 @@ export default function SuperadminDashboard() {
   const [success, setSuccess] = useState('');
   const [activeTab, setActiveTab] = useState('registrations');
   const [approvingId, setApprovingId] = useState(null);
-  const { authToken } = useAuth();
+
+  useEffect(() => {
+    if (!authToken) {
+      navigate('/superadmin/login');
+    }
+  }, [authToken, navigate]);
 
   // Fetch pending registrations
   useEffect(() => {
@@ -244,14 +253,28 @@ export default function SuperadminDashboard() {
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="mb-12 text-center"
+          className="flex justify-between items-center mb-8"
         >
-          <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-600">
-            Superadmin Dashboard
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            Manage platform organizations, users, and registrations
-          </p>
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-600">
+              Superadmin Dashboard
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              Manage organizations and user registrations
+            </p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              logout();
+              navigate('/superadmin/login');
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:from-red-600 hover:to-red-700"
+          >
+            <FaSignOutAlt className="h-4 w-4" />
+            <span>Logout</span>
+          </motion.button>
         </motion.div>
 
         {/* Stats cards */}
@@ -599,4 +622,6 @@ export default function SuperadminDashboard() {
       </div>
     </motion.div>
   );
-}
+};
+
+export default SuperadminDashboard;

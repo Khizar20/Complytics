@@ -208,7 +208,10 @@ async def approve_registration(
                 email=created_user["email"],
                 username=created_user["email"],
                 password=temp_password,
-                organization_name=org_data["name"]
+                organization_name=org_data["name"],
+                first_name=created_user["first_name"],
+                last_name=created_user["last_name"],
+                role=created_user["role"]
             )
         except Exception as email_error:
             # Log the email error but don't fail the whole operation

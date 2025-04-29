@@ -1,0 +1,15 @@
+setup.py
+complytics.egg-info/PKG-INFO
+complytics.egg-info/SOURCES.txt
+complytics.egg-info/dependency_links.txt
+complytics.egg-info/requires.txt
+complytics.egg-info/top_level.txt
+routes/__init__.py
+routes/admin.py
+routes/auth.py
+routes/registration.py
+routes/superadmin.py
+routes/team.py
+schemas/__init__.py
+schemas/user.py
+schemas/users.py
