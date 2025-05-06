@@ -70,7 +70,16 @@ const HeroSection = () => {
           
           {/* Buttons */}
           <div className="flex flex-col sm:flex-row justify-center gap-4 mb-10">
-            <Button size="lg" className="gradient-button group">
+            <Button 
+              size="lg" 
+              className="gradient-button group"
+              onClick={() => {
+                const contactSection = document.getElementById('contact');
+                if (contactSection) {
+                  contactSection.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
               Request Access
               <FaArrowRight size={16} className="ml-2 transition-transform duration-300 group-hover:translate-x-1" />
             </Button>
