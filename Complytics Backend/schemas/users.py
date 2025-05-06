@@ -84,3 +84,14 @@ class PendingRegistration(BaseModel):
         if "user_data" in result and isinstance(result["user_data"], dict):
             result["user_data"] = UserCreate(**result["user_data"])
         return cls(**result)
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+    confirm_password: str = Field(..., min_length=8)
+
+    @field_validator('confirm_password')
+    def passwords_match(cls, v, values):
+        if 'new_password' in values.data and v != values.data['new_password']:
+            raise ValueError('Passwords do not match')
+        return v

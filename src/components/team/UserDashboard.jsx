@@ -11,8 +11,10 @@ import {
   FaFileAlt,
   FaSignOutAlt,
   FaBars,
-  FaTimes
+  FaTimes,
+  FaUser
 } from 'react-icons/fa';
+import Profile from '../auth/Profile';
 
 const UserDashboard = () => {
   const { user } = useAuth();
@@ -46,6 +48,7 @@ const UserDashboard = () => {
 
   const sidebarItems = [
     { id: 'dashboard', icon: <FaChartLine />, label: 'Dashboard' },
+    { id: 'profile', icon: <FaUser />, label: 'Profile' },
     { id: 'azure', icon: <FaCloud />, label: 'Connect to Azure' },
     { id: 'chatbot', icon: <FaRobot />, label: 'Compliance Chatbot' },
     { id: 'testing', icon: <FaDesktop />, label: 'UI Testing' },
@@ -84,31 +87,32 @@ const UserDashboard = () => {
                userData.role === 'COMPLIANCE_TEAM' ? 'Compliance Team Dashboard' :
                'Management Team Dashboard'}
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-2">System Status</h3>
-                <p className="text-muted-foreground">Monitor system health and performance</p>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-2">Recent Activities</h3>
-                <p className="text-muted-foreground">View recent system activities</p>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-2">Notifications</h3>
-                <p className="text-muted-foreground">Check your notifications</p>
-              </motion.div>
-            </div>
+            
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
+            >
+              <h3 className="text-lg font-semibold mb-2">System Status</h3>
+              <p className="text-muted-foreground">Monitor system health and performance</p>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
+            >
+              <h3 className="text-lg font-semibold mb-2">Recent Activities</h3>
+              <p className="text-muted-foreground">View recent system activities</p>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
+            >
+              <h3 className="text-lg font-semibold mb-2">Notifications</h3>
+              <p className="text-muted-foreground">Check your notifications</p>
+            </motion.div>
           </motion.div>
         );
+      case 'profile':
+        return <Profile />;
       case 'azure':
         return (
           <motion.div

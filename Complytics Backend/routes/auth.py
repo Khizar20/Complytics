@@ -4,10 +4,13 @@ from datetime import timedelta
 from utils.security import (
     authenticate_user,
     create_access_token,
-    get_current_user
+    get_current_user,
+    get_password_hash,
+    verify_password
 )
-from schemas.users import UserInDB
+from schemas.users import UserInDB, PasswordChange
 from config import settings
+from db import database
 
 router = APIRouter()
 
@@ -31,3 +34,45 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @router.get("/me", response_model=UserInDB)
 async def read_users_me(current_user: UserInDB = Depends(get_current_user)):
     return current_user
+
+@router.put("/profile", response_model=UserInDB)
+async def update_profile(
+    password_change: PasswordChange,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    print(f"Received profile update request for user: {current_user.email}")
+    
+    # Get user from database by email
+    user = await database.db.users.find_one({"email": current_user.email})
+    print(f"Found user in database: {user is not None}")
+    
+    if not user:
+        print(f"User not found in database for email: {current_user.email}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Verify current password
+    if not verify_password(password_change.current_password, user["password_hash"]):
+        print("Current password verification failed")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+
+    print("Current password verified successfully")
+
+    # Update password
+    hashed_password = get_password_hash(password_change.new_password)
+    update_result = await database.db.users.update_one(
+        {"email": current_user.email},
+        {"$set": {"password_hash": hashed_password}}
+    )
+    print(f"Password update result: {update_result.modified_count} documents modified")
+
+    # Get updated user
+    updated_user = await database.db.users.find_one({"email": current_user.email})
+    print(f"Retrieved updated user: {updated_user is not None}")
+    
+    return UserInDB.from_mongo(updated_user)
