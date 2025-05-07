@@ -210,3 +210,52 @@ async def send_role_change_email(
     with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.send_message(message)
+
+async def send_forgot_password_email(
+    email: str,
+    password: str,
+    first_name: str,
+    last_name: str,
+    role: str
+):
+    """Send forgot password email with new credentials"""
+    subject = "Your Complytics Account - Password Reset"
+    
+    # Format the role for display
+    role_display = role.replace('_', ' ').title()
+    
+    body = f"""
+    <html>
+        <body>
+            <h2>Password Reset Confirmation</h2>
+            <p>Dear {first_name} {last_name},</p>
+            <p>We received a request to reset your password for your Complytics account. Your account has been updated with new credentials.</p>
+            <p>Your new login details are:</p>
+            <ul>
+                <li><strong>Email:</strong> {email}</li>
+                <li><strong>Password:</strong> {password}</li>
+                <li><strong>Role:</strong> {role_display}</li>
+            </ul>
+            <p><strong>Important Security Notice:</strong></p>
+            <ul>
+                <li>Please change your password immediately after logging in</li>
+                <li>If you did not request this password reset, please contact your administrator immediately</li>
+            </ul>
+            <p>Best regards,<br>Complytics Team</p>
+        </body>
+    </html>
+    """
+    
+    message = MIMEMultipart()
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = email
+    message["Subject"] = subject
+    
+    # Attach the HTML body
+    message.attach(MIMEText(body, "html"))
+    
+    # Create SMTP session
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        server.send_message(message)

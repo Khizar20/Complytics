@@ -1,18 +1,62 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
+from pydantic import BaseModel
 from utils.security import (
     authenticate_user,
     create_access_token,
     get_current_user,
     get_password_hash,
-    verify_password
+    verify_password,
+    generate_random_password,
+    send_forgot_password_email
 )
 from schemas.users import UserInDB, PasswordChange
 from config import settings
 from db import database
 
 router = APIRouter()
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    # Find user by email
+    user = await database.db.users.find_one({"email": request.email})
+    
+    if not user:
+        # Return success even if user not found for security
+        return {"message": "If an account exists with this email, you will receive your credentials shortly."}
+    
+    # Generate a new random password
+    new_password = generate_random_password()
+    
+    # Hash the new password
+    hashed_password = get_password_hash(new_password)
+    
+    # Update user's password in database
+    await database.db.users.update_one(
+        {"email": request.email},
+        {"$set": {"password_hash": hashed_password}}
+    )
+    
+    try:
+        # Send email with new credentials using the forgot password template
+        await send_forgot_password_email(
+            email=request.email,
+            password=new_password,
+            first_name=user.get("first_name", ""),
+            last_name=user.get("last_name", ""),
+            role=user.get("role", "user")
+        )
+        return {"message": "If an account exists with this email, you will receive your credentials shortly."}
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send email"
+        )
 
 @router.post("/login", response_model=dict)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):

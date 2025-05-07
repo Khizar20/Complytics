@@ -9,6 +9,7 @@ import AdminDashboard from './components/auth/AdminDashboard';
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
 import UserDashboard from './components/team/UserDashboard';
 import TeamMemberProtectedRoute from './components/team/TeamMemberProtectedRoute';
+import ForgotPassword from './components/auth/ForgotPassword';
 
 // Create a wrapper component that includes AuthProvider
 const withAuth = (Component) => {
@@ -27,6 +28,10 @@ const router = createBrowserRouter([
   {
     path: '/login',
     element: withAuth(<LoginForm />),
+  },
+  {
+    path: '/forgot-password',
+    element: withAuth(<ForgotPassword />),
   },
   {
     path: '/dashboard',

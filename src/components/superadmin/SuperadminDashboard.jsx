@@ -230,7 +230,6 @@ const SuperadminDashboard = () => {
     { id: 'registrations', icon: <FaUserPlus />, label: 'Registrations', onClick: () => setActiveTab('registrations') },
     { id: 'organizations', icon: <FaBuilding />, label: 'Organizations', onClick: () => setActiveTab('organizations') },
     { id: 'users', icon: <FaUsers />, label: 'Users', onClick: () => setActiveTab('users') },
-    { id: 'settings', icon: <FaCog />, label: 'Settings', onClick: () => setActiveTab('settings') },
   ];
 
   return (
@@ -566,12 +565,6 @@ const SuperadminDashboard = () => {
                         </span>
                       </div>
                     </div>
-
-                    <div className="flex justify-end items-center space-x-2">
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
-                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -600,7 +593,7 @@ const SuperadminDashboard = () => {
                   whileHover={cardHoverVariants.hover}
                   className="glass-card p-6 rounded-lg border border-border/50"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="flex items-start space-x-4">
                       <div className="flex-shrink-0">
                         <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
@@ -646,12 +639,6 @@ const SuperadminDashboard = () => {
                           {new Date(user.created_at).toLocaleDateString()}
                         </span>
                       </div>
-                    </div>
-
-                    <div className="flex justify-end items-center space-x-2">
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
                     </div>
                   </div>
                 </motion.div>
