@@ -1,5 +1,6 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const AuthContext = createContext();
 
@@ -7,6 +8,8 @@ export function AuthProvider({ children }) {
   const [authToken, setAuthToken] = useState(null);
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -18,9 +21,8 @@ export function AuthProvider({ children }) {
     setIsLoading(false);
   }, []);
 
-  const login = async (token) => {
+  const fetchUserData = async (token) => {
     try {
-      // Fetch user data after successful login
       const response = await fetch('http://localhost:8000/auth/me', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -32,16 +34,30 @@ export function AuthProvider({ children }) {
       }
 
       const userData = await response.json();
-      console.log('Received user data:', userData); // Debug log
-      
-      // Store both token and user data
-      localStorage.setItem('authToken', token);
       localStorage.setItem('userData', JSON.stringify(userData));
-      
-      setAuthToken(token);
       setUser(userData);
+      return userData;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      throw error;
+    }
+  };
+
+  const login = async (token) => {
+    try {
+      // Store token first
+      localStorage.setItem('authToken', token);
+      setAuthToken(token);
+
+      // Then fetch user data
+      await fetchUserData(token);
     } catch (error) {
       console.error('Error during login:', error);
+      // Clear everything on error
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+      setAuthToken(null);
+      setUser(null);
       throw error;
     }
   };
@@ -53,6 +69,34 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const fetchWithRetry = async (url, options = {}) => {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.status === 401) {
+        // If unauthorized, clear everything and redirect to login
+        logout();
+        if (navigate) {
+          navigate('/login');
+        } else {
+          window.location.href = '/login';
+        }
+        throw new Error('Session expired. Please login again.');
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Error in fetchWithRetry:', error);
+      throw error;
+    }
+  };
+
   const isAuthenticated = !!authToken;
 
   return (
@@ -62,7 +106,8 @@ export function AuthProvider({ children }) {
       isLoading, 
       isAuthenticated,
       login, 
-      logout 
+      logout,
+      fetchWithRetry
     }}>
       {children}
     </AuthContext.Provider>

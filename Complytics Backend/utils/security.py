@@ -139,7 +139,7 @@ async def send_credentials_email(
     body = f"""
     <html>
         <body>
-            <h2>Welcome to {organization_name}!</h2>
+            <h2>Welcome to Complytics !</h2>
             <p>Dear {first_name} {last_name},</p>
             <p>Your user account has been created with the following details:</p>
             <ul>
@@ -148,7 +148,7 @@ async def send_credentials_email(
                 <li><strong>Role:</strong> {role_display}</li>
             </ul>
             <p>Please use these credentials to log in to your account. We recommend changing your password after your first login.</p>
-            <p>Best regards,<br>{organization_name} Team</p>
+            <p>Best regards,<br>Complytics Team</p>
         </body>
     </html>
     """
@@ -186,13 +186,13 @@ async def send_role_change_email(
         <body>
             <h2>Role Update Notification</h2>
             <p>Dear {first_name} {last_name},</p>
-            <p>Your role in {organization_name} has been updated:</p>
+            <p>Your role in Complytics has been updated:</p>
             <ul>
                 <li><strong>Previous Role:</strong> {old_role_display}</li>
                 <li><strong>New Role:</strong> {new_role_display}</li>
             </ul>
             <p>This change may affect your access and permissions within the system. If you have any questions about your new role, please contact your organization administrator.</p>
-            <p>Best regards,<br>{organization_name} Team</p>
+            <p>Best regards,<br>Complytics Team</p>
         </body>
     </html>
     """

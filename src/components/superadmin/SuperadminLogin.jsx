@@ -29,78 +29,109 @@ export default function SuperadminLogin() {
       });
 
       if (!response.ok) {
-        throw new Error('Login failed - Invalid credentials');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Login failed - Invalid credentials');
       }
 
       const data = await response.json();
-      login(data.access_token);
-      navigate('/superadmin/dashboard');
+      
+      // Store the token immediately
+      localStorage.setItem('authToken', data.access_token);
+      
+      // Now try to login with the token
+      await login(data.access_token);
+      
+      // Check if the user is a superadmin
+      const userData = JSON.parse(localStorage.getItem('userData'));
+      if (userData && userData.role === 'superadmin') {
+        navigate('/superadmin/dashboard');
+      } else {
+        throw new Error('Unauthorized access - Superadmin access required');
+      }
     } catch (err) {
       setError(err.message);
       console.error('Login error:', err);
+      // Clear any stored tokens on error
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="glass-card rounded-xl p-8 md:p-10 w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="max-w-md w-full mx-auto p-8 bg-card rounded-xl shadow-lg">
         <div className="text-center mb-8">
-          <div className="mx-auto flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
+          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <FaUserShield className="h-8 w-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">Superadmin Portal</h1>
+          <h2 className="text-2xl font-bold text-foreground">Superadmin Login</h2>
           <p className="text-muted-foreground mt-2">
-            Enter your credentials to access the admin dashboard
+            Access the superadmin dashboard
           </p>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        {error && (
+          <div className="mb-6 p-4 bg-destructive/10 text-destructive rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium mb-1">
-              Email
+            <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
+              Email Address
             </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-border rounded-md focus:ring-2 focus:ring-primary/50 focus:outline-none"
-              placeholder="superadmin@complytics.com"
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaUserShield className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full pl-10 pr-3 py-3 border border-border rounded-lg bg-background focus:ring-primary focus:border-primary"
+                placeholder="superadmin@complytics.com"
+              />
+            </div>
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium mb-1">
+            <label htmlFor="password" className="block text-sm font-medium text-foreground mb-1">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-border rounded-md focus:ring-2 focus:ring-primary/50 focus:outline-none"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaLock className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full pl-10 pr-3 py-3 border border-border rounded-lg bg-background focus:ring-primary focus:border-primary"
+                placeholder="••••••••"
+              />
+            </div>
           </div>
 
-          {error && (
-            <div className="text-sm text-red-500 py-2 text-center">
-              {error}
-            </div>
-          )}
-
-          <Button
-            type="submit"
-            className="w-full mt-6"
-            disabled={isLoading}
-          >
-            <FaLock className="mr-2" />
-            {isLoading ? 'Signing in...' : 'Sign In'}
-          </Button>
+          <div>
+            <Button
+              type="submit"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Signing in...' : 'Sign in'}
+            </Button>
+          </div>
         </form>
       </div>
     </div>

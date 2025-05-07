@@ -16,7 +16,8 @@ import {
   FaUserSlash,
   FaSignOutAlt,
   FaChartLine,
-  FaUser
+  FaUser,
+  FaHome
 } from 'react-icons/fa';
 import Profile from './Profile';
 
@@ -45,7 +46,7 @@ const cardHoverVariants = {
 };
 
 const AdminDashboard = () => {
-  const { authToken, logout } = useAuth();
+  const { authToken, logout, fetchWithRetry } = useAuth();
   const navigate = useNavigate();
   const [teamMembers, setTeamMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,6 +63,7 @@ const AdminDashboard = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     if (!authToken) {
@@ -224,10 +226,18 @@ const AdminDashboard = () => {
     );
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const handleHome = () => {
+    navigate('/');
+  };
+
   const sidebarItems = [
-    { id: 'dashboard', icon: <FaChartLine />, label: 'Dashboard' },
-    { id: 'profile', icon: <FaUser />, label: 'Profile' },
-    // ... other sidebar items ...
+    { id: 'dashboard', icon: <FaHome />, label: 'Dashboard', onClick: () => setActiveTab('dashboard') },
+    { id: 'profile', icon: <FaUser />, label: 'Profile', onClick: () => setActiveTab('profile') }
   ];
 
   const renderContent = () => {
@@ -256,18 +266,13 @@ const AdminDashboard = () => {
                     Manage your team and organization settings
                   </p>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                    logout();
-                    navigate('/login');
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:from-red-600 hover:to-red-700"
+                <Button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  variant="outline"
+                  className="lg:hidden"
                 >
-                  <FaSignOutAlt className="h-4 w-4" />
-                  <span>Logout</span>
-                </motion.button>
+                  {isSidebarOpen ? 'Close Sidebar' : 'Open Sidebar'}
+                </Button>
               </motion.div>
 
               {/* Stats cards */}
@@ -632,7 +637,8 @@ const AdminDashboard = () => {
         );
       case 'profile':
         return <Profile />;
-      // ... other cases ...
+      default:
+        return null;
     }
   };
 
@@ -643,31 +649,58 @@ const AdminDashboard = () => {
         initial={{ x: -100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="w-64 bg-white dark:bg-gray-800 shadow-lg"
+        className={`fixed top-0 left-0 h-screen bg-card shadow-xl z-[100] transition-all duration-300 ${
+          isSidebarOpen ? 'w-64' : 'w-20'
+        }`}
       >
-        <div className="p-4">
-          <h2 className="text-xl font-bold text-primary mb-6">Admin Panel</h2>
-          <nav className="space-y-2">
+        <div className="flex flex-col h-full bg-card">
+          {/* Logo */}
+          <div className="p-4 border-b border-border bg-card">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+                <span className="text-white font-bold text-lg">C</span>
+              </div>
+              {isSidebarOpen && <span className="font-bold text-lg">Complytics</span>}
+            </div>
+          </div>
+
+          {/* Navigation Items */}
+          <nav className="flex-1 p-4 space-y-2 bg-card">
             {sidebarItems.map((item) => (
-              <button
+              <motion.button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={item.onClick}
+                className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
                   activeTab === item.id
-                    ? 'bg-primary text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-secondary'
                 }`}
               >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
+                <span className="text-lg">{item.icon}</span>
+                {isSidebarOpen && <span>{item.label}</span>}
+              </motion.button>
             ))}
           </nav>
+
+          {/* Logout Button */}
+          <div className="p-4 border-t border-border">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleLogout}
+              className="w-full flex items-center space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10"
+            >
+              <FaSignOutAlt />
+              {isSidebarOpen && <span>Logout</span>}
+            </motion.button>
+          </div>
         </div>
       </motion.div>
 
       {/* Main Content */}
-      <div className="flex-1">
+      <div className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
         {renderContent()}
       </div>
     </div>

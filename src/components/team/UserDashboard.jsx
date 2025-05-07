@@ -52,7 +52,7 @@ const UserDashboard = () => {
     { id: 'azure', icon: <FaCloud />, label: 'Connect to Azure' },
     { id: 'chatbot', icon: <FaRobot />, label: 'Compliance Chatbot' },
     { id: 'testing', icon: <FaDesktop />, label: 'UI Testing' },
-    { id: 'scan', icon: <FaCalendarAlt />, label: 'Schedule Compliance Scan' },
+    { id: 'scan', icon: <FaCalendarAlt />, label: 'Schedule Scan' },
   ];
 
   const handleLogout = () => {

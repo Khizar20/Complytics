@@ -10,7 +10,10 @@ import {
   FaUserTie,
   FaUsers,
   FaGlobe,
-  FaSignOutAlt
+  FaSignOutAlt,
+  FaHome,
+  FaChartLine,
+  FaCog
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -88,7 +91,7 @@ const UserSkeleton = () => (
 );
 
 const SuperadminDashboard = () => {
-  const { authToken, logout } = useAuth();
+  const { authToken, logout, fetchWithRetry } = useAuth();
   const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -100,6 +103,7 @@ const SuperadminDashboard = () => {
   const [success, setSuccess] = useState('');
   const [activeTab, setActiveTab] = useState('registrations');
   const [approvingId, setApprovingId] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     if (!authToken) {
@@ -111,11 +115,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchRequests = async () => {
       try {
-        const response = await fetch('http://localhost:8000/registration/pending-registrations', {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        });
+        const response = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -134,17 +134,13 @@ const SuperadminDashboard = () => {
     if (authToken) {
       fetchRequests();
     }
-  }, [authToken]);
+  }, [authToken, fetchWithRetry]);
 
   // Fetch active organizations
   useEffect(() => {
     const fetchOrganizations = async () => {
       try {
-        const response = await fetch('http://localhost:8000/superadmin/organizations/active', {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        });
+        const response = await fetchWithRetry('http://localhost:8000/superadmin/organizations/active');
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -163,17 +159,13 @@ const SuperadminDashboard = () => {
     if (authToken) {
       fetchOrganizations();
     }
-  }, [authToken]);
+  }, [authToken, fetchWithRetry]);
 
   // Fetch active users
   useEffect(() => {
     const fetchActiveUsers = async () => {
       try {
-        const response = await fetch('http://localhost:8000/superadmin/active-users', {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          }
-        });
+        const response = await fetchWithRetry('http://localhost:8000/superadmin/active-users');
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -192,45 +184,29 @@ const SuperadminDashboard = () => {
     if (authToken) {
       fetchActiveUsers();
     }
-  }, [authToken]);
+  }, [authToken, fetchWithRetry]);
 
   const handleApprove = async (requestId) => {
     try {
       setApprovingId(requestId);
       setError('');
-      const response = await fetch(`http://localhost:8000/registration/approve-registration/${requestId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        }
+      setSuccess('');
+
+      const response = await fetchWithRetry(`http://localhost:8000/registration/approve-registration/${requestId}`, {
+        method: 'POST'
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Approval failed');
-      }
-      
-      setRequests(prev => prev.filter(req => req._id !== requestId));
-      setSuccess('Registration approved successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      
-      // Refresh both organizations and users lists after approval
-      const orgsResponse = await fetch('http://localhost:8000/superadmin/organizations/active', {
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        }
-      });
-      if (orgsResponse.ok) {
-        setOrganizations(await orgsResponse.json());
+        throw new Error(errorData.detail || 'Failed to approve request');
       }
 
-      const usersResponse = await fetch('http://localhost:8000/superadmin/active-users', {
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        }
-      });
-      if (usersResponse.ok) {
-        setActiveUsers(await usersResponse.json());
+      setSuccess('Request approved successfully');
+      // Refresh the requests list
+      const updatedResponse = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
+      if (updatedResponse.ok) {
+        const updatedData = await updatedResponse.json();
+        setRequests(updatedData);
       }
     } catch (err) {
       console.error('Error approving request:', err);
@@ -240,14 +216,83 @@ const SuperadminDashboard = () => {
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/superadmin/login');
+  };
+
+  const handleHome = () => {
+    navigate('/');
+  };
+
+  const sidebarItems = [
+    { id: 'home', icon: <FaHome />, label: 'Home', onClick: handleHome },
+    { id: 'registrations', icon: <FaUserPlus />, label: 'Registrations', onClick: () => setActiveTab('registrations') },
+    { id: 'organizations', icon: <FaBuilding />, label: 'Organizations', onClick: () => setActiveTab('organizations') },
+    { id: 'users', icon: <FaUsers />, label: 'Users', onClick: () => setActiveTab('users') },
+    { id: 'settings', icon: <FaCog />, label: 'Settings', onClick: () => setActiveTab('settings') },
+  ];
+
   return (
+    <div className="flex min-h-screen bg-background">
+      {/* Sidebar */}
     <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+        initial={{ x: -100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen bg-background"
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        className={`fixed top-0 left-0 h-full bg-card shadow-lg z-50 transition-all duration-300 ${
+          isSidebarOpen ? 'w-64' : 'w-20'
+        }`}
+      >
+        <div className="flex flex-col h-full">
+          {/* Logo */}
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+                <span className="text-white font-bold text-lg">C</span>
+              </div>
+              {isSidebarOpen && <span className="font-bold text-lg">Complytics</span>}
+            </div>
+          </div>
+
+          {/* Navigation Items */}
+          <nav className="flex-1 p-4 space-y-2">
+            {sidebarItems.map((item) => (
+              <motion.button
+                key={item.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={item.onClick}
+                className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
+                  activeTab === item.id
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-secondary'
+                }`}
+              >
+                <span className="text-lg">{item.icon}</span>
+                {isSidebarOpen && <span>{item.label}</span>}
+              </motion.button>
+            ))}
+          </nav>
+
+          {/* Logout Button */}
+          <div className="p-4 border-t border-border">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleLogout}
+              className="w-full flex items-center space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10"
+            >
+              <FaSignOutAlt />
+              {isSidebarOpen && <span>Logout</span>}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Main Content */}
+      <div className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
+        <div className="p-8">
         {/* Header */}
         <motion.div 
           initial={{ y: -20, opacity: 0 }}
@@ -263,18 +308,13 @@ const SuperadminDashboard = () => {
               Manage organizations and user registrations
             </p>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              logout();
-              navigate('/superadmin/login');
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:from-red-600 hover:to-red-700"
-          >
-            <FaSignOutAlt className="h-4 w-4" />
-            <span>Logout</span>
-          </motion.button>
+            <Button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              variant="outline"
+              className="lg:hidden"
+            >
+              {isSidebarOpen ? 'Close Sidebar' : 'Open Sidebar'}
+            </Button>
         </motion.div>
 
         {/* Stats cards */}
@@ -620,7 +660,8 @@ const SuperadminDashboard = () => {
           )
         )}
       </div>
-    </motion.div>
+      </div>
+    </div>
   );
 };
 

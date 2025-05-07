@@ -10,18 +10,27 @@ import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
 import UserDashboard from './components/team/UserDashboard';
 import TeamMemberProtectedRoute from './components/team/TeamMemberProtectedRoute';
 
+// Create a wrapper component that includes AuthProvider
+const withAuth = (Component) => {
+  return (
+    <AuthProvider>
+      {Component}
+    </AuthProvider>
+  );
+};
+
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <App />,
+    element: withAuth(<App />),
   },
   {
     path: '/login',
-    element: <LoginForm />,
+    element: withAuth(<LoginForm />),
   },
   {
     path: '/dashboard',
-    element: (
+    element: withAuth(
       <AdminProtectedRoute>
         <AdminDashboard />
       </AdminProtectedRoute>
@@ -29,7 +38,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/team-dashboard',
-    element: (
+    element: withAuth(
       <TeamMemberProtectedRoute>
         <UserDashboard />
       </TeamMemberProtectedRoute>
@@ -37,11 +46,11 @@ const router = createBrowserRouter([
   },
   {
     path: '/superadmin/login',
-    element: <SuperadminLogin />,
+    element: withAuth(<SuperadminLogin />),
   },
   {
     path: '/superadmin/dashboard',
-    element: (
+    element: withAuth(
       <SuperadminProtectedRoute>
         <SuperadminDashboard />
       </SuperadminProtectedRoute>
@@ -50,9 +59,5 @@ const router = createBrowserRouter([
 ]);
 
 export function AppRouter() {
-  return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
-  );
+  return <RouterProvider router={router} />;
 }

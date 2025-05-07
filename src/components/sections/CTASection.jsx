@@ -10,6 +10,11 @@ const CTASection = () => {
     company: '',
     domain: ''
   });
+  const [errors, setErrors] = useState({
+    firstName: '',
+    lastName: '',
+    domain: ''
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(null);
   const [error, setError] = useState(null);
@@ -44,18 +49,71 @@ const CTASection = () => {
     };
   }, []);
 
+  // Validation functions
+  const validateName = (name) => {
+    const nameRegex = /^[A-Za-z]+$/;
+    return nameRegex.test(name);
+  };
+
+  const validateDomain = (domain) => {
+    const domainRegex = /^[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9](\.[A-Za-z]{2,})+$/;
+    return domainRegex.test(domain);
+  };
+
+  const validateField = (field, value) => {
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        if (!validateName(value)) {
+          return 'Name should only contain letters (A-Z, a-z)';
+        }
+        return '';
+      case 'domain':
+        if (!validateDomain(value)) {
+          return 'Please enter a valid domain (e.g., example.com, company.co.uk)';
+        }
+        return '';
+      default:
+        return '';
+    }
+  };
+
   const handleInputChange = (e) => {
     const { id, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [id]: value
     }));
+    
+    // Validate field on change
+    if (['firstName', 'lastName', 'domain'].includes(id)) {
+      setErrors(prev => ({
+        ...prev,
+        [id]: validateField(id, value)
+      }));
+    }
+    
     // Clear error when user starts typing
     if (error) setError(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate all fields before submission
+    const newErrors = {
+      firstName: validateField('firstName', formData.firstName),
+      lastName: validateField('lastName', formData.lastName),
+      domain: validateField('domain', formData.domain)
+    };
+    
+    setErrors(newErrors);
+    
+    // Check if there are any errors
+    if (Object.values(newErrors).some(error => error !== '')) {
+      return;
+    }
+    
     setIsSubmitting(true);
     setError(null);
     setSubmitStatus(null);
@@ -93,6 +151,12 @@ const CTASection = () => {
         lastName: '',
         email: '',
         company: '',
+        domain: ''
+      });
+      // Clear errors
+      setErrors({
+        firstName: '',
+        lastName: '',
         domain: ''
       });
     } catch (err) {
@@ -168,9 +232,12 @@ const CTASection = () => {
                     required
                     value={formData.firstName}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className={`w-full px-4 py-2 border ${errors.firstName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
                     placeholder="John"
                   />
+                  {errors.firstName && (
+                    <p className="text-sm text-red-500">{errors.firstName}</p>
+                  )}
                 </div>
                 
                 <div className="space-y-2">
@@ -183,9 +250,12 @@ const CTASection = () => {
                     required
                     value={formData.lastName}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className={`w-full px-4 py-2 border ${errors.lastName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
                     placeholder="Smith"
                   />
+                  {errors.lastName && (
+                    <p className="text-sm text-red-500">{errors.lastName}</p>
+                  )}
                 </div>
               </div>
               
@@ -229,9 +299,12 @@ const CTASection = () => {
                   required
                   value={formData.domain}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className={`w-full px-4 py-2 border ${errors.domain ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
                   placeholder="acme.com"
                 />
+                {errors.domain && (
+                  <p className="text-sm text-red-500">{errors.domain}</p>
+                )}
               </div>
               
               <Button 

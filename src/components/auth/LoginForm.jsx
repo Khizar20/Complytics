@@ -56,7 +56,6 @@ const LoginForm = () => {
 
       // Get the stored user data
       const userData = JSON.parse(localStorage.getItem('userData'));
-      console.log('User data from localStorage:', userData); // Debug log
       
       if (!userData) {
         throw new Error('No user data found in localStorage');
@@ -68,17 +67,15 @@ const LoginForm = () => {
       }
 
       // Redirect based on user role
-      if (userData.role === 'admin') {
-        console.log('Redirecting to admin dashboard');
+      if (userData.role === 'superadmin') {
+        // If superadmin tries to login here, redirect to superadmin login
+        navigate('/superadmin/login');
+        throw new Error('Superadmin users must login through the superadmin portal');
+      } else if (userData.role === 'admin') {
         navigate('/dashboard');
       } else if (['it_team', 'compliance_team', 'management_team'].includes(userData.role)) {
-        console.log('Redirecting to team dashboard');
         navigate('/team-dashboard');
-      } else if (userData.role === 'superadmin') {
-        console.log('Redirecting to superadmin dashboard');
-        navigate('/superadmin/dashboard');
       } else {
-        console.error('Invalid role:', userData.role);
         throw new Error('Unauthorized access - Invalid role');
       }
     } catch (err) {
