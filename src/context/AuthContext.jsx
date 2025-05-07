@@ -12,14 +12,48 @@ export function AuthProvider({ children }) {
   const location = useLocation();
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    const userData = localStorage.getItem('userData');
-    if (token && userData) {
-      setAuthToken(token);
-      setUser(JSON.parse(userData));
-    }
-    setIsLoading(false);
-  }, []);
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      
+      if (token && userData) {
+        try {
+          // Verify token is still valid
+          const response = await fetch('http://localhost:8000/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (response.ok) {
+            setAuthToken(token);
+            setUser(JSON.parse(userData));
+          } else {
+            // Token is invalid, clear everything
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            setAuthToken(null);
+            setUser(null);
+            if (location.pathname !== '/login') {
+              navigate('/login');
+            }
+          }
+        } catch (error) {
+          console.error('Error verifying token:', error);
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userData');
+          setAuthToken(null);
+          setUser(null);
+          if (location.pathname !== '/login') {
+            navigate('/login');
+          }
+        }
+      }
+      setIsLoading(false);
+    };
+
+    initializeAuth();
+  }, [navigate, location]);
 
   const fetchUserData = async (token) => {
     try {
@@ -67,6 +101,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('userData');
     setAuthToken(null);
     setUser(null);
+    navigate('/login');
   };
 
   const fetchWithRetry = async (url, options = {}) => {
@@ -82,11 +117,6 @@ export function AuthProvider({ children }) {
       if (response.status === 401) {
         // If unauthorized, clear everything and redirect to login
         logout();
-        if (navigate) {
-          navigate('/login');
-        } else {
-          window.location.href = '/login';
-        }
         throw new Error('Session expired. Please login again.');
       }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/button';
@@ -7,9 +7,21 @@ import { FaChartLine, FaUser, FaSignOutAlt } from 'react-icons/fa';
 import Profile from './Profile';
 
 const UserDashboard = () => {
-  const { authToken, logout, user } = useAuth();
+  const { authToken, logout, user, isLoading } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  useEffect(() => {
+    // Only redirect if we're sure we're not loading and there's no token
+    if (!isLoading && !authToken) {
+      navigate('/login');
+    }
+  }, [authToken, isLoading, navigate]);
+
+  // Don't render anything while loading
+  if (isLoading) {
+    return null;
+  }
 
   const sidebarItems = [
     { id: 'dashboard', icon: <FaChartLine />, label: 'Dashboard' },
@@ -44,19 +56,29 @@ const UserDashboard = () => {
         initial={{ x: -100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="w-64 bg-white dark:bg-gray-800 shadow-lg"
+        className="fixed top-0 left-0 w-64 h-screen bg-card shadow-xl z-[100] transition-all duration-300"
       >
-        <div className="p-4">
-          <h2 className="text-xl font-bold text-primary mb-6">User Panel</h2>
-          <nav className="space-y-2">
+        <div className="flex flex-col h-full bg-card">
+          {/* Logo */}
+          <div className="p-4 border-b border-border bg-card">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+                <span className="text-white font-bold text-lg">C</span>
+              </div>
+              <span className="font-bold text-lg text-foreground">Complytics</span>
+            </div>
+          </div>
+
+          {/* Navigation Items */}
+          <nav className="flex-1 p-4 space-y-2 bg-card">
             {sidebarItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                   activeTab === item.id
-                    ? 'bg-primary text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-foreground hover:bg-secondary'
                 }`}
               >
                 {item.icon}
@@ -64,13 +86,12 @@ const UserDashboard = () => {
               </button>
             ))}
           </nav>
-          <div className="mt-8">
+
+          {/* Logout Button */}
+          <div className="p-4 border-t border-border">
             <button
-              onClick={() => {
-                logout();
-                navigate('/login');
-              }}
-              className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              onClick={logout}
+              className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
             >
               <FaSignOutAlt />
               <span>Logout</span>
@@ -84,7 +105,7 @@ const UserDashboard = () => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="flex-1 overflow-auto"
+        className="flex-1 overflow-auto ml-64"
       >
         {renderContent()}
       </motion.div>

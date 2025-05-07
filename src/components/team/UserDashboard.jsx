@@ -194,9 +194,14 @@ const UserDashboard = () => {
         className="fixed top-0 left-0 h-full w-64 bg-card shadow-lg z-40 lg:translate-x-0"
       >
         <div className="h-full flex flex-col">
-          <div className="p-6 border-b border-border">
-            <h1 className="text-xl font-bold text-foreground">Complytics</h1>
-            <p className="text-sm text-muted-foreground">{userData.email}</p>
+          {/* Logo Section */}
+          <div className="p-4 border-b border-border bg-card">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+                <span className="text-white font-bold text-lg">C</span>
+              </div>
+              <span className="font-bold text-lg">Complytics</span>
+            </div>
           </div>
 
           <nav className="flex-1 p-4 space-y-2">
