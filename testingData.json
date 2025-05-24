@@ -1,0 +1,74 @@
+[
+    {
+        "query": "What are the key security control requirements in ISO 27001 for access management?",
+        "answer": "ISO 27001 requires organizations to implement access control policies based on business and security requirements. Key controls include user registration and de-registration processes, privileged access rights management, regular access rights review, and secure password management practices. Organizations must document and regularly review these controls as part of their Information Security Management System (ISMS)."
+    },
+    {
+        "query": "How does GDPR handle data subject access requests and what are the time limits for response?",
+        "answer": "Under GDPR, organizations must respond to data subject access requests within one month of receipt. This includes providing a copy of personal data, processing purposes, categories of data, recipients, retention periods, and information about data subject rights. The response period can be extended by two months for complex requests, but the data subject must be informed within the first month."
+    },
+    {
+        "query": "What are the audit logging requirements under PCI-DSS v4.0.1?",
+        "answer": "PCI-DSS v4.0.1 requires system components to generate audit logs that track user activities, exceptions, and security events. Logs must include user ID, type of event, date/time, success/failure, origination of event, and affected data/components. These logs must be secured against tampering, regularly reviewed, and retained for at least one year, with three months immediately available for analysis."
+    },
+    {
+        "query": "What are the incident response requirements specified in ISO IEC 27035-1-2016?",
+        "answer": "ISO IEC 27035-1-2016 outlines a structured approach to incident response including planning and preparation, detection and reporting, assessment and decision making, responses, and lessons learned. Organizations must establish an incident response team, define incident categories, set response procedures, and maintain documentation of all incidents and their handling."
+    },
+    {
+        "query": "What controls does NIST recommend for cloud security according to their latest framework?",
+        "answer": "NIST's framework recommends implementing strong access controls, encryption for data in transit and at rest, regular security assessments, continuous monitoring, and incident response planning for cloud environments. Organizations should also maintain an inventory of cloud resources, implement secure configuration management, and ensure proper data backup and recovery procedures."
+    },
+    {
+        "query": "What are the key requirements for SOC2 compliance regarding system availability?",
+        "answer": "SOC2 availability requirements include implementing business continuity and disaster recovery plans, monitoring system performance, maintaining redundant systems, conducting regular backup testing, and establishing incident response procedures. Organizations must also demonstrate adequate capacity planning and environmental safeguards to ensure system availability."
+    },
+    {
+        "query": "How does HIPAA regulate the sharing of electronic protected health information (ePHI)?",
+        "answer": "HIPAA requires implementation of technical safeguards for ePHI sharing, including encryption, access controls, and audit trails. Organizations must obtain patient authorization, use secure transmission methods, maintain minimum necessary access, and document all disclosures. Business Associate Agreements must be in place when sharing ePHI with third parties."
+    },
+    {
+        "query": "What are the risk assessment requirements under ISO IEC 27005-2018?",
+        "answer": "ISO IEC 27005-2018 requires organizations to establish risk assessment criteria, identify assets and threats, analyze vulnerabilities, evaluate potential impacts, and determine risk levels. The process must be documented, regularly reviewed, and updated when significant changes occur. Risk treatment options must be selected and implemented based on assessment results."
+    },
+    {
+        "query": "What are the financial reporting control requirements under Sarbanes-Oxley Act?",
+        "answer": "The Sarbanes-Oxley Act requires companies to establish and maintain effective internal controls over financial reporting. This includes documenting control procedures, testing their effectiveness, reporting on control adequacy, and having independent auditors verify these assessments. Management must provide annual assessments of these controls' effectiveness."
+    },
+    {
+        "query": "What security measures does CIS Controls Guide v8.1.2 recommend for endpoint protection?",
+        "answer": "CIS Controls Guide v8.1.2 recommends implementing automated endpoint detection and response tools, maintaining an inventory of endpoints, ensuring secure configurations, implementing multi-factor authentication, and conducting regular vulnerability assessments. It also emphasizes the importance of automated software updates and patch management."
+    },
+    {
+        "query": "How does ISO IEC 27017-2015 address shared security responsibilities in cloud computing?",
+        "answer": "ISO IEC 27017-2015 provides guidelines for information security controls specific to cloud services, defining clear responsibilities between cloud service providers and customers. It covers areas such as asset management, access control, encryption, and incident management, with specific guidance on shared security responsibilities and cloud-specific threats."
+    },
+    {
+        "query": "What are the key quality management principles outlined in ISO-9001-2015?",
+        "answer": "ISO-9001-2015 emphasizes seven key quality management principles: customer focus, leadership, engagement of people, process approach, improvement, evidence-based decision making, and relationship management. Organizations must demonstrate how these principles are integrated into their quality management system and business processes."
+    },
+    {
+        "query": "What governance practices does COBIT 2019 recommend for IT risk management?",
+        "answer": "COBIT 2019 recommends establishing a risk governance framework that aligns with business objectives, defining risk appetite and tolerance levels, implementing risk assessment processes, and maintaining ongoing risk monitoring and reporting. It emphasizes the integration of risk management into organizational decision-making processes."
+    },
+    {
+        "query": "How should organizations handle security incidents according to ISO 27001 and NIST frameworks?",
+        "answer": "Both ISO 27001 and NIST frameworks require organizations to establish incident response plans, define incident classification criteria, maintain incident logs, conduct post-incident analysis, and implement improvements based on lessons learned. They emphasize the importance of regular testing and updating of incident response procedures."
+    },
+    {
+        "query": "What are the data protection requirements when implementing cloud services under both GDPR and ISO 27017?",
+        "answer": "GDPR and ISO 27017 require organizations to implement strong data encryption, maintain data location transparency, ensure data portability, conduct regular security assessments, and maintain clear documentation of data processing activities. Both frameworks emphasize the importance of data protection agreements and regular compliance monitoring."
+    },
+    {
+        "query": "What are the vulnerability management requirements in PCI-DSS v4.0.1?",
+        "answer": "PCI-DSS v4.0.1 requires organizations to regularly identify and classify vulnerabilities, perform quarterly internal/external vulnerability scans, maintain an up-to-date vulnerability management program, and ensure timely patching of critical vulnerabilities. High-risk vulnerabilities must be addressed within specified timeframes and all scanning must be performed by qualified personnel or approved scanning vendors."
+    },
+    {
+        "query": "How does ISO 27001 integrate with other ISO security standards like 27017 and 27035?",
+        "answer": "ISO 27001 serves as the foundation for implementing an Information Security Management System (ISMS), while ISO 27017 and 27035 provide specific guidance for cloud security and incident management respectively. Organizations can integrate these standards by using ISO 27001's framework while incorporating the detailed controls and processes from the other standards to create a comprehensive security program."
+    },
+    {
+        "query": "What are the key differences between NIST Cybersecurity Framework and CIS Controls?",
+        "answer": "While both frameworks aim to improve cybersecurity posture, NIST provides a more flexible, risk-based approach with five core functions (Identify, Protect, Detect, Respond, Recover), while CIS Controls offer more prescriptive, prioritized sets of actions. NIST is more strategic and adaptable to various organizations, while CIS Controls provide specific, actionable security controls with implementation guidance."
+    }
+]

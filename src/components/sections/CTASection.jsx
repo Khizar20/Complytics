@@ -1,0 +1,398 @@
+import React, { useEffect, useState } from 'react';
+import { Button } from "../ui/button.jsx";
+import { FaArrowRight, FaEnvelope, FaShieldAlt, FaClock } from 'react-icons/fa';
+import Modal from '../ui/Modal';
+
+const CTASection = () => {
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    company: '',
+    domain: ''
+  });
+  const [errors, setErrors] = useState({
+    firstName: '',
+    lastName: '',
+    domain: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState(null);
+  const [error, setError] = useState(null);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('active');
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { 
+        threshold: 0.1,
+        rootMargin: '50px'
+      }
+    );
+
+    const revealElements = document.querySelectorAll('.reveal');
+    revealElements.forEach(el => {
+      // Set initial styles
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+      el.style.transition = 'all 800ms ease';
+      observer.observe(el);
+    });
+
+    return () => {
+      revealElements.forEach(el => observer.unobserve(el));
+    };
+  }, []);
+
+  // Validation functions
+  const validateName = (name) => {
+    const nameRegex = /^[A-Za-z]+$/;
+    return nameRegex.test(name);
+  };
+
+  const validateDomain = (domain) => {
+    const domainRegex = /^[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9](\.[A-Za-z]{2,})+$/;
+    return domainRegex.test(domain);
+  };
+
+  const validateField = (field, value) => {
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        if (!validateName(value)) {
+          return 'Name should only contain letters (A-Z, a-z)';
+        }
+        return '';
+      case 'domain':
+        if (!validateDomain(value)) {
+          return 'Please enter a valid domain (e.g., example.com, company.co.uk)';
+        }
+        return '';
+      default:
+        return '';
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { id, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [id]: value
+    }));
+    
+    // Validate field on change
+    if (['firstName', 'lastName', 'domain'].includes(id)) {
+      setErrors(prev => ({
+        ...prev,
+        [id]: validateField(id, value)
+      }));
+    }
+    
+    // Clear error when user starts typing
+    if (error) setError(null);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate all fields before submission
+    const newErrors = {
+      firstName: validateField('firstName', formData.firstName),
+      lastName: validateField('lastName', formData.lastName),
+      domain: validateField('domain', formData.domain)
+    };
+    
+    setErrors(newErrors);
+    
+    // Check if there are any errors
+    if (Object.values(newErrors).some(error => error !== '')) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setError(null);
+    setSubmitStatus(null);
+
+    try {
+      // Transform the form data to match the UserCreate schema
+      const userData = {
+        email: formData.email,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        organization_name: formData.company,
+        organization_domain: formData.domain,
+        password: Math.random().toString(36).slice(-8) // Generate a random password
+      };
+
+      const response = await fetch('http://localhost:8000/registration/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to submit registration');
+      }
+
+      setSubmitStatus('success');
+      // Clear form
+      setFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        company: '',
+        domain: ''
+      });
+      // Clear errors
+      setErrors({
+        firstName: '',
+        lastName: '',
+        domain: ''
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to submit registration. Please try again.');
+      console.error('Registration error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <section id="contact" className="section py-24 relative overflow-hidden">
+      <div className="gradient-blur bottom-0 left-1/4 opacity-40"></div>
+      
+      <div className="grid md:grid-cols-2 gap-12 items-center">
+        <div>
+          <h2 className="section-title">Ready to Simplify Your Compliance Journey?</h2>
+          <p className="section-subtitle mb-8">
+            Join hundreds of organizations that have transformed their security compliance with Complytics.
+          </p>
+          
+          <div className="space-y-6 mb-8">
+            <div className="flex items-start">
+              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
+                <FaShieldAlt size={20} className="text-primary" />
+              </div>
+              <div>
+                <h3 className="font-medium">Enhance Your Security Posture</h3>
+                <p className="text-muted-foreground">Maintain continuous compliance with automated security checks and remediation.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start">
+              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
+                <FaClock size={20} className="text-primary" />
+              </div>
+              <div>
+                <h3 className="font-medium">Save Valuable Time</h3>
+                <p className="text-muted-foreground">Reduce manual compliance efforts by up to 80% with our automation platform.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start">
+              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
+                <FaEnvelope size={20} className="text-primary" />
+              </div>
+              <div>
+                <h3 className="font-medium">Expert Support</h3>
+                <p className="text-muted-foreground">Our compliance experts are ready to guide you through your security journey.</p>
+              </div>
+            </div>
+          </div>
+          
+          <Button className="group" size="lg">
+            <span>Schedule a Demo</span>
+            <FaArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </Button>
+        </div>
+        
+        <div>
+          <div className="glass-card rounded-xl p-8 md:p-10">
+            <h3 className="text-xl font-semibold mb-6">Get in Touch</h3>
+            
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="firstName" className="text-sm font-medium">
+                    First Name
+                  </label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    required
+                    value={formData.firstName}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-2 border ${errors.firstName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                    placeholder="John"
+                  />
+                  {errors.firstName && (
+                    <p className="text-sm text-red-500">{errors.firstName}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="lastName" className="text-sm font-medium">
+                    Last Name
+                  </label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    required
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    className={`w-full px-4 py-2 border ${errors.lastName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                    placeholder="Smith"
+                  />
+                  {errors.lastName && (
+                    <p className="text-sm text-red-500">{errors.lastName}</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-sm font-medium">
+                  Work Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="john@company.com"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label htmlFor="company" className="text-sm font-medium">
+                  Company
+                </label>
+                <input
+                  id="company"
+                  type="text"
+                  required
+                  value={formData.company}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Acme Inc."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="domain" className="text-sm font-medium">
+                  Company Domain
+                </label>
+                <input
+                  id="domain"
+                  type="text"
+                  required
+                  value={formData.domain}
+                  onChange={handleInputChange}
+                  className={`w-full px-4 py-2 border ${errors.domain ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                  placeholder="acme.com"
+                />
+                {errors.domain && (
+                  <p className="text-sm text-red-500">{errors.domain}</p>
+                )}
+              </div>
+              
+              <Button 
+                className="w-full" 
+                size="lg" 
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit Registration'}
+              </Button>
+
+              {error && (
+                <p className="text-sm text-red-500 text-center mt-2">
+                  {error}
+                </p>
+              )}
+
+              {submitStatus === 'success' && (
+                <p className="text-sm text-green-500 text-center mt-2">
+                  Thank you for your registration! We'll review your application and get back to you soon.
+                </p>
+              )}
+            </form>
+            
+            <p className="text-xs text-center text-muted-foreground mt-6">
+              By submitting this form, you agree to our {" "}
+              <button 
+                onClick={() => setIsPrivacyOpen(true)}
+                className="text-primary hover:underline"
+              >
+                Privacy Policy
+              </button>
+              .
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Privacy Policy Modal */}
+      <Modal
+        isOpen={isPrivacyOpen}
+        onClose={() => setIsPrivacyOpen(false)}
+        title="Privacy Policy"
+      >
+        <div className="space-y-4 text-gray-600 dark:text-gray-300">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">1. Information We Collect</h3>
+          <p>
+            We collect information that you provide directly to us, including but not limited to:
+          </p>
+          <ul className="list-disc pl-6 space-y-2">
+            <li>Name and contact information</li>
+            <li>Organization details</li>
+            <li>Account credentials</li>
+            <li>Usage data and analytics</li>
+          </ul>
+
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-6">2. How We Use Your Information</h3>
+          <p>
+            We use the collected information to:
+          </p>
+          <ul className="list-disc pl-6 space-y-2">
+            <li>Provide and maintain our services</li>
+            <li>Improve and personalize user experience</li>
+            <li>Communicate with you about our services</li>
+            <li>Ensure security and prevent fraud</li>
+          </ul>
+
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-6">3. Data Security</h3>
+          <p>
+            We implement appropriate security measures to protect your personal information from unauthorized access, alteration, disclosure, or destruction.
+          </p>
+
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-6">4. Your Rights</h3>
+          <p>
+            You have the right to:
+          </p>
+          <ul className="list-disc pl-6 space-y-2">
+            <li>Access your personal information</li>
+            <li>Correct inaccurate data</li>
+            <li>Request deletion of your data</li>
+            <li>Opt-out of marketing communications</li>
+          </ul>
+        </div>
+      </Modal>
+    </section>
+  );
+};
+
+export default CTASection;

@@ -1,0 +1,161 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Python cache files
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+cover/
+*.mo
+*.pot
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.env
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+.cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Logs
+logs
+*.log
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment files
+.env
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Project specific
+Complytics Backend.zip
+
+# Large files and directories
+# Compliance frameworks
+compliance_frameworks/
+Complytics Backend/compliance_frameworks/
+Complytics Backend/compliance_frameworks/**/*.pdf
+Complytics Backend/compliance_frameworks/**/*.docx
+Complytics Backend/compliance_frameworks/**/*.json
+Complytics Backend/compliance_frameworks/**/*.csv
+
+# FAISS indexes
+faiss_indexes/
+Complytics Backend/faiss_indexes/
+Complytics Backend/faiss_indexes/**/*.faiss
+Complytics Backend/faiss_indexes/**/*.index
+
+# Embeddings
+embeddings/
+Complytics Backend/embeddings/
+Complytics Backend/embeddings/**/*.npy
+Complytics Backend/embeddings/**/*.json
+Complytics Backend/embeddings/**/*.pkl
+
+# Uploads
+uploads/
+Complytics Backend/uploads/
+Complytics Backend/uploads/**/*.pdf
+Complytics Backend/uploads/**/*.docx
+
+# Cache and embeddings
+.cache/
+*.cache
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
