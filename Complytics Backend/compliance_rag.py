@@ -6,14 +6,8 @@ import faiss
 import google.generativeai as genai
 import pdfplumber
 import numpy as np
-import pickle
-import xml.etree.ElementTree as ET
-import csv
 import re
-from bert_score import score as bert_score_fn
-from transformers import pipeline, AutoTokenizer
 from typing import List, Dict, Any, Tuple, Optional, AsyncIterator
-import pandas as pd
 from sentence_transformers import SentenceTransformer
 from ratelimit import limits, sleep_and_retry
 import concurrent.futures
@@ -42,12 +36,27 @@ genai.configure(api_key=GOOGLE_API_KEY)
 logger.info("Initializing embedding model...")
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
+# Performance configuration options
+RESPONSE_MODE = "balanced"  # Changed from "comprehensive" to "balanced" for better speed/quality balance
+
+def get_token_limit_for_mode(mode: str, base_limit: int = 2048) -> int:
+    """Get appropriate token limit based on response mode."""
+    token_limits = {
+        "fast": min(base_limit, 1536),
+        "balanced": min(base_limit, 2048),
+        "comprehensive": min(base_limit, 3072)
+    }
+    return token_limits.get(mode, base_limit)
+
+def should_validate_response(mode: str) -> bool:
+    """Determine if response validation should be performed based on mode."""
+    return mode in ["balanced", "comprehensive"]
+
 # Directory structure for embeddings and indexes
 EMBEDDING_DIR = "embeddings"
 INDEX_DIR = "faiss_indexes"
 CACHE_DIR = "compliance_cache"
 PDF_FOLDER = "compliance_frameworks"
-TEST_DATA_FILE = "testingData.json"
 
 EMBEDDING_CACHE_FILE = os.path.join(EMBEDDING_DIR, "document_embeddings.npy")
 DOCUMENT_MAP_FILE = os.path.join(EMBEDDING_DIR, "document_map.json")
@@ -83,7 +92,7 @@ generation_config = {
     "temperature": 0.1,
     "top_p": 1,
     "top_k": 1,
-    "max_output_tokens": 2048,
+    "max_output_tokens": 4096,  # Increased for comprehensive responses
 }
 
 safety_settings = [
@@ -99,9 +108,9 @@ model = genai.GenerativeModel(
     safety_settings=safety_settings
 )
 
-# Rate limiting configuration
-CALLS_PER_MINUTE = 20  # Reduced from 30 to be safer
-DELAY_BETWEEN_CALLS = 3  # Seconds between API calls
+# Optimized rate limiting configuration
+CALLS_PER_MINUTE = 40  # Increased from 20
+DELAY_BETWEEN_CALLS = 1.5  # Reduced from 3 seconds
 last_call_time = 0
 
 # Define timing decorator first
@@ -115,8 +124,8 @@ def timing_decorator(func):
         return result
     return wrapper
 
-def wait_for_rate_limit():
-    """Ensure we don't exceed API rate limits."""
+def wait_for_rate_limit_optimized():
+    """Optimized rate limiting with shorter delays."""
     global last_call_time
     current_time = time.time()
     time_since_last_call = current_time - last_call_time
@@ -128,48 +137,50 @@ def wait_for_rate_limit():
 @sleep_and_retry
 @limits(calls=CALLS_PER_MINUTE, period=60)
 @timing_decorator
-def rate_limited_generate_content(prompt: str, temperature: float = 0.1) -> str:
-    """Rate-limited version of Gemini's generate_content with caching and error handling."""
-    # Check cache first using hash of prompt
-    prompt_hash = hash_text(prompt)
-    cache_key = f"gemini:{prompt_hash}:{temperature}"
+def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.1, max_tokens: int = 2048) -> str:
+    """Optimized rate-limited content generation with adequate tokens for complete responses."""
+    # Check cache first using hash of prompt + temperature
+    prompt_hash = hash_text(f"{prompt}:{temperature}:{max_tokens}")
+    cache_key = f"gemini_opt:{prompt_hash}"
     
     if cache_key in QUERY_CACHE:
-        logger.info("Cache hit for Gemini API call")
+        logger.info("Cache hit for optimized Gemini API call")
         return QUERY_CACHE[cache_key]
     
-    wait_for_rate_limit()  # Ensure minimum delay between calls
+    wait_for_rate_limit_optimized()
     
-    # Implement exponential backoff
-    max_retries = 5
-    base_delay = 3
+    # Reduced retry attempts for speed
+    max_retries = 3
+    base_delay = 1.5
     
     for attempt in range(max_retries):
         try:
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": temperature}
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens  # Limit response length for speed
+                }
             )
             result = response.text.strip()
             
             # Cache the result
             QUERY_CACHE[cache_key] = result
             
-            # Periodically save the cache (every 5 new entries)
-            if len(QUERY_CACHE) % 5 == 0:
+            # Less frequent cache saves
+            if len(QUERY_CACHE) % 20 == 0:
                 save_query_cache()
                 
             return result
         except Exception as e:
             if "429" in str(e):
-                retry_delay = base_delay * (2 ** attempt)
-                logger.info(f"Rate limit exceeded, retrying in {retry_delay} seconds... (Attempt {attempt+1}/{max_retries})")
+                retry_delay = base_delay * (1.5 ** attempt)  # Reduced exponential backoff
+                logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
                 time.sleep(retry_delay)
                 if attempt == max_retries - 1:
-                    logger.info("Maximum retries reached. Returning empty string.")
-                    return ""
+                    return "Response temporarily unavailable. Please try again."
             else:
-                logger.error(f"Error generating content: {e}")
+                logger.error(f"API error: {e}")
                 return ""
 
 @timing_decorator
@@ -209,48 +220,45 @@ def load_embeddings() -> Tuple[Optional[np.ndarray], Optional[List[Dict[str, Any
     return None, None
 
 def build_and_save_faiss_index(embeddings: np.ndarray) -> Optional[faiss.Index]:
-    """Build and save FAISS index."""
+    """Build and save optimized FAISS index for fast retrieval."""
     try:
         dimension = embeddings.shape[1]
-        
-        # For small datasets (under 1M vectors), use a combination of IVF and flat index
-        # This provides a good balance between speed and accuracy
         n_vectors = embeddings.shape[0]
-        n_clusters = min(int(np.sqrt(n_vectors) * 4), n_vectors // 10)  # Rule of thumb
-        n_clusters = max(n_clusters, 8)  # Ensure minimum number of clusters
         
-        logger.info(f"Building IVF index with {n_clusters} clusters")
+        logger.info(f"Building optimized FAISS index for {n_vectors} vectors, dimension {dimension}")
         
-        # Create quantizer and index
-        quantizer = faiss.IndexFlatL2(dimension)
-        index = faiss.IndexIVFFlat(quantizer, dimension, n_clusters)
+        # For small datasets (< 10k), use flat index for speed
+        if n_vectors < 10000:
+            index = faiss.IndexFlatL2(dimension)
+            index.add(embeddings)
+            logger.info("Using IndexFlatL2 for optimal small dataset performance")
+        else:
+            # For larger datasets, use optimized IVF
+            n_clusters = min(int(np.sqrt(n_vectors) * 2), n_vectors // 20)
+            n_clusters = max(n_clusters, 4)
+            
+            # Create optimized quantizer
+            quantizer = faiss.IndexFlatL2(dimension)
+            index = faiss.IndexIVFFlat(quantizer, dimension, n_clusters)
+            
+            # Optimize search parameters for speed
+            index.nprobe = max(1, n_clusters // 8)  # Faster search with slight accuracy trade-off
+            
+            # Train and add vectors
+            logger.info(f"Training IVF index with {n_clusters} clusters, nprobe={index.nprobe}")
+            index.train(embeddings)
+            index.add(embeddings)
         
-        # Train the index
-        # Set to True to enable faster (but potentially less accurate) search
-        index.nprobe = min(n_clusters // 4, 4)  # Number of clusters to visit during search
-        
-        # Need to train the index before adding vectors
-        logger.info("Training IVF index...")
-        index.train(embeddings)
-        
-        # Add vectors to the index
-        index.add(embeddings)
+        # Enable multi-threading for search
+        faiss.omp_set_num_threads(4)
         
         faiss.write_index(index, FAISS_INDEX_FILE)
-        logger.info(f"Saved FAISS IVF index with {index.ntotal} vectors")
+        logger.info(f"Saved optimized FAISS index with {index.ntotal} vectors")
         return index
+        
     except Exception as e:
-        logger.error(f"Error building FAISS index: {e}")
-        # Fall back to simple flat index if IVF fails
-        try:
-            index = faiss.IndexFlatL2(embeddings.shape[1])
-            index.add(embeddings)
-            faiss.write_index(index, FAISS_INDEX_FILE)
-            logger.info(f"Saved FAISS flat index with {index.ntotal} vectors")
-            return index
-        except Exception as e2:
-            logger.error(f"Error building fallback index: {e2}")
-            return None
+        logger.error(f"Error building optimized FAISS index: {e}")
+        return None
 
 def load_faiss_index() -> Optional[faiss.Index]:
     """Load FAISS index from disk."""
@@ -480,64 +488,245 @@ def process_documents(new_document_path: Optional[str] = None) -> Tuple[List[str
 def expert_security_controls(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for security controls."""
     prompt = (
-        "As a security controls expert, analyze the following query:\n\n"
-        f"{conversation_context}"
-        f"Query: {query}\n"
-        f"Context: {context}\n"
-        "Focus on:\n"
-        "1. Relevant security controls and requirements\n"
-        "2. Implementation guidelines\n"
-        "3. Control objectives and success criteria\n"
-        "4. Monitoring and validation methods\n"
-        "Chain-of-Thought Analysis:"
+        "You are a cybersecurity and information security expert specializing in enterprise security controls and compliance frameworks.\n\n"
+        f"Previous conversation context:\n{conversation_context}\n\n"
+        f"Current Query: {query}\n"
+        f"Relevant Context from Documents: {context}\n\n"
+        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
+        "Provide a comprehensive analysis focusing on:\n"
+        "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS, etc.\n"
+        "2. **Implementation Guidelines**: Step-by-step technical implementation\n"
+        "3. **Risk Assessment**: Identify threats, vulnerabilities, and risk levels\n"
+        "4. **Monitoring & Validation**: Methods to verify control effectiveness\n"
+        "5. **Best Practices**: Industry-proven security measures\n"
+        "6. **Compliance Mapping**: How controls map to regulatory requirements\n\n"
+        "Structure your response with clear headings and actionable recommendations.\n"
+        "Use technical precision while remaining practical for implementation.\n"
+        "Ensure all sections are complete with detailed explanations.\n\n"
+        "Response:"
     )
-    return rate_limited_generate_content(prompt)
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
 
 @timing_decorator
 def expert_privacy_regulations(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for privacy regulations."""
     prompt = (
-        "As a privacy regulations expert, analyze the following query:\n\n"
-        f"{conversation_context}"
-        f"Query: {query}\n"
-        f"Context: {context}\n"
-        "Focus on:\n"
-        "1. Privacy requirements and regulations\n"
-        "2. Data protection measures\n"
-        "3. User rights and consent\n"
-        "4. Compliance documentation\n"
-        "Chain-of-Thought Analysis:"
+        "You are a data privacy and protection expert with deep knowledge of global privacy regulations and data governance.\n\n"
+        f"Previous conversation context:\n{conversation_context}\n\n"
+        f"Current Query: {query}\n"
+        f"Relevant Context from Documents: {context}\n\n"
+        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
+        "Provide a comprehensive analysis focusing on:\n"
+        "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA, etc.\n"
+        "2. **Data Subject Rights**: Individual rights and how to implement them\n"
+        "3. **Legal Basis & Consent**: Lawful processing and consent mechanisms\n"
+        "4. **Data Protection Measures**: Technical and organizational safeguards\n"
+        "5. **Cross-Border Transfers**: International data transfer requirements\n"
+        "6. **Breach Response**: Notification requirements and procedures\n"
+        "7. **Documentation**: Required policies, records, and assessments\n\n"
+        "Include specific regulatory citations and practical implementation guidance.\n"
+        "Address both legal compliance and operational requirements.\n"
+        "Ensure all sections are complete with detailed explanations.\n\n"
+        "Response:"
     )
-    return rate_limited_generate_content(prompt)
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
 
 @timing_decorator
 def expert_audit_compliance(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for audit compliance."""
     prompt = (
-        "As an audit compliance expert, analyze the following query:\n\n"
+        "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
+        f"Previous conversation context:\n{conversation_context}\n\n"
+        f"Current Query: {query}\n"
+        f"Relevant Context from Documents: {context}\n\n"
+        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
+        "Provide a comprehensive analysis focusing on:\n"
+        "1. **Audit Requirements**: Specific audit standards and procedures\n"
+        "2. **Evidence Collection**: Documentation and artifacts needed\n"
+        "3. **Compliance Verification**: Methods to assess and validate compliance\n"
+        "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks\n"
+        "5. **Control Testing**: Procedures to test control effectiveness\n"
+        "6. **Remediation Planning**: Steps to address findings and gaps\n"
+        "7. **Continuous Monitoring**: Ongoing compliance assurance processes\n\n"
+        "Reference relevant frameworks (ISO 27001, SOC 2, NIST, COBIT) and provide\n"
+        "specific audit procedures and compliance checklists where applicable.\n"
+        "Ensure all sections are complete with detailed explanations.\n\n"
+        "Response:"
+    )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+
+@timing_decorator
+def expert_financial_compliance(query: str, context: str, conversation_context: str = "") -> str:
+    """Expert analysis for financial compliance and regulations."""
+    prompt = (
+        "As a financial compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
-        f"Query: {query}\n" ##<query>what is gdpr? </query>
+        f"Query: {query}\n"
         f"Context: {context}\n"
         "Focus on:\n"
-        "1. Audit requirements and procedures\n"
-        "2. Evidence collection and documentation\n"
-        "3. Compliance verification methods\n"
-        "4. Risk assessment and mitigation\n"
+        "1. Financial regulations (PCI DSS, SOX, Basel III, etc.)\n"
+        "2. Anti-money laundering (AML) and Know Your Customer (KYC)\n"
+        "3. Payment card industry standards\n"
+        "4. Banking and financial services compliance\n"
+        "5. Financial reporting and disclosure requirements\n"
+        "6. Risk management frameworks (COSO, Basel)\n"
         "Chain-of-Thought Analysis:"
     )
-    return rate_limited_generate_content(prompt)
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+
+@timing_decorator
+def expert_healthcare_compliance(query: str, context: str, conversation_context: str = "") -> str:
+    """Expert analysis for healthcare compliance and HIPAA."""
+    prompt = (
+        "As a healthcare compliance expert, analyze the following query:\n\n"
+        f"{conversation_context}"
+        f"Query: {query}\n"
+        f"Context: {context}\n"
+        "Focus on:\n"
+        "1. HIPAA Privacy and Security Rules\n"
+        "2. Healthcare data protection and PHI handling\n"
+        "3. Medical device regulations (FDA, CE marking)\n"
+        "4. Clinical trial compliance (GCP, ICH guidelines)\n"
+        "5. Healthcare IT security requirements\n"
+        "6. Patient consent and data rights\n"
+        "Chain-of-Thought Analysis:"
+    )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+
+@timing_decorator
+def expert_international_compliance(query: str, context: str, conversation_context: str = "") -> str:
+    """Expert analysis for international and cross-border compliance."""
+    prompt = (
+        "As an international compliance expert, analyze the following query:\n\n"
+        f"{conversation_context}"
+        f"Query: {query}\n"
+        f"Context: {context}\n"
+        "Focus on:\n"
+        "1. Cross-border data transfer requirements\n"
+        "2. International privacy laws (GDPR, LGPD, PIPEDA, etc.)\n"
+        "3. Export control and trade compliance\n"
+        "4. Multi-jurisdictional regulatory requirements\n"
+        "5. Data localization and sovereignty issues\n"
+        "6. International standards harmonization\n"
+        "Chain-of-Thought Analysis:"
+    )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+
+@timing_decorator
+def expert_operational_compliance(query: str, context: str, conversation_context: str = "") -> str:
+    """Expert analysis for operational compliance and business processes."""
+    prompt = (
+        "As an operational compliance expert, analyze the following query:\n\n"
+        f"{conversation_context}"
+        f"Query: {query}\n"
+        f"Context: {context}\n"
+        "Focus on:\n"
+        "1. Business process compliance and controls\n"
+        "2. Vendor and third-party risk management\n"
+        "3. Operational risk assessment and mitigation\n"
+        "4. Business continuity and disaster recovery\n"
+        "5. Change management and configuration control\n"
+        "6. Incident response and breach notification\n"
+        "Chain-of-Thought Analysis:"
+    )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+
+@timing_decorator
+def expert_industry_specific(query: str, context: str, conversation_context: str = "") -> str:
+    """Expert analysis for industry-specific compliance requirements."""
+    prompt = (
+        "As an industry-specific compliance expert, analyze the following query:\n\n"
+        f"{conversation_context}"
+        f"Query: {query}\n"
+        f"Context: {context}\n"
+        "Focus on:\n"
+        "1. Industry-specific regulations (FERPA for education, GLBA for finance, etc.)\n"
+        "2. Sector-specific standards and frameworks\n"
+        "3. Professional licensing and certification requirements\n"
+        "4. Industry best practices and guidance\n"
+        "5. Regulatory body requirements and guidance\n"
+        "6. Industry-specific risk factors and controls\n"
+        "Chain-of-Thought Analysis:"
+    )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
 
 @timing_decorator
 def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> str:
-    """Aggregate and synthesize expert outputs."""
-    prompt = (
-        "Synthesize the following expert analyses into a comprehensive response:\n\n"
-        f"Query: {query}\n"
-        f"Context: {context}\n"
-        "Expert Analyses:\n" + "\n---\n".join(outputs) + "\n\n"
-        "Synthesized Response:"
-    )
-    return rate_limited_generate_content(prompt)
+    """Advanced aggregation and synthesis of expert outputs with cross-domain insights."""
+    if not outputs:
+        return "No expert analysis available."
+    
+    if len(outputs) == 1:
+        return outputs[0]
+    
+    # Create a comprehensive synthesis prompt
+    expert_analyses_text = ""
+    for i, output in enumerate(outputs, 1):
+        expert_analyses_text += f"\n--- Expert Analysis {i} ---\n{output}\n"
+    
+    prompt = f"""
+You are a senior compliance consultant tasked with synthesizing multiple expert analyses into a comprehensive, actionable response.
+
+Original Query: {query}
+Context: {context}
+
+Expert Analyses:{expert_analyses_text}
+
+IMPORTANT: Provide a COMPLETE response. Do not truncate or cut off mid-sentence. Ensure all sections are fully developed.
+
+Synthesize these expert analyses into a cohesive response that:
+
+1. **Executive Summary**: Provide a clear, concise overview of the key findings
+2. **Comprehensive Analysis**: Integrate insights from all experts, highlighting:
+   - Common themes and recommendations
+   - Complementary perspectives
+   - Any conflicting viewpoints and how to resolve them
+3. **Cross-Domain Considerations**: Identify how different compliance areas interact
+4. **Prioritized Recommendations**: List actionable steps in order of importance (provide at least 8-10 recommendations)
+5. **Implementation Timeline**: Suggest phases for implementation where applicable
+6. **Risk Assessment**: Highlight critical risks and mitigation strategies
+7. **Next Steps**: Specific actions the user should take
+
+Guidelines:
+- Eliminate redundancy while preserving important details
+- Use clear headings and bullet points for readability
+- Provide specific, actionable guidance
+- Include relevant regulatory citations and standards
+- Maintain technical accuracy while being accessible
+- Address both immediate needs and long-term compliance strategy
+- ENSURE COMPLETE SENTENCES AND FULL SECTIONS - do not end abruptly
+
+Synthesized Response:
+"""
+    
+    # Use higher token limit for comprehensive responses
+    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 3072))
+    
+    # Check if response appears truncated and attempt to complete it
+    if response and (response.endswith("*") or response.endswith("**") or 
+                    response.count('.') < 5 or len(response) < 500):
+        logger.warning("Response appears truncated, attempting completion...")
+        
+        completion_prompt = f"""
+The following response appears to be incomplete. Please provide a proper completion:
+
+{response}
+
+Complete this response with:
+- Proper sentence endings
+- Complete bullet points
+- A professional conclusion
+- Ensure all recommendations are fully detailed
+
+Completed Response:
+"""
+        
+        completed_response = rate_limited_generate_content_optimized(completion_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+        
+        if completed_response and len(completed_response) > len(response):
+            return completed_response
+    
+    return response
 
 # Add ConversationHistory class to maintain context across queries
 class ConversationHistory:
@@ -590,10 +779,8 @@ class ConversationHistory:
         return context
 
     def reset(self):
+        """Reset conversation history"""
         self.history = []
-        self.last_update_time = time.time()
-        self.context_embedding = None
-        self.last_compliance_status = True
 
 @timing_decorator
 def classify_compliance_query(query: str, conversation_context: str = "") -> bool:
@@ -618,7 +805,7 @@ def classify_compliance_query(query: str, conversation_context: str = "") -> boo
         f"Query: {query}\n"
         "Answer with ONLY 'yes' or 'no':"
     )
-    response = rate_limited_generate_content(prompt)
+    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
     return "yes" in response.lower()
 
 # Track recent non-compliance responses to ensure variety
@@ -706,7 +893,7 @@ Make it sound natural and varied - don't use the same phrases every time.
 Avoid being overly formal or robotic.
 """
 
-        response = rate_limited_generate_content(prompt, temperature=0.8)  # Higher temperature for more variety
+        response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))  # Increased max_tokens for more variety
         
         # Add compliance topic suggestions based on query context
         topic_suggestions = get_contextual_compliance_suggestions(query_lower, response_category)
@@ -800,63 +987,84 @@ def get_contextual_compliance_suggestions(query_lower: str, category: str) -> st
         logger.error(f"Error generating compliance suggestions: {e}")
         return "Feel free to ask about any compliance, security, or regulatory topics!"
 
-# Add function to dynamically select relevant experts based on query content
-@timing_decorator
-def select_relevant_experts(query: str) -> List[str]:
-    """Optimized expert selection with pre-filtering"""
-    # Pre-filter using keyword matching
-    keywords = {
-        'security': [
-            'security', 'protection', 'breach', 'risk', 'access', 'safeguard',
-            'azure', 'azure ad', 'azure active directory', 'entra', 'active directory',
-            'identity', 'authentication', 'authorization', 'access control',
-            'identity management', 'sso', 'single sign-on', 'mfa', 'multi-factor',
-            'conditional access', 'firewall', 'encryption', 'vulnerability',
-            'threat', 'cybersecurity', 'information security', 'network security',
-            'endpoint', 'certificate', 'ssl', 'tls', 'malware', 'antivirus'
-        ],
-        'privacy': [
-            'privacy', 'data', 'personal', 'gdpr', 'ccpa', 'information',
-            'data protection', 'data privacy', 'consent', 'data subject',
-            'personal information', 'pii', 'phi', 'data processing',
-            'data retention', 'data deletion', 'right to be forgotten'
-        ],
-        'audit': [
-            'audit', 'certification', 'compliance', 'framework', 'financial', 'standard',
-            'iso', 'soc', 'nist', 'pci', 'requirement', 'control', 'governance',
-            'risk management', 'assessment', 'monitoring', 'reporting',
-            'business continuity', 'vendor management', 'third party'
-        ]
+def search_documents(query: str, segments: List[str], index: Any, top_k: int = 3) -> List[str]:
+    """
+    Search documents using FAISS similarity search.
+    
+    Args:
+        query (str): Search query
+        segments (List[str]): List of document segments
+        index (Any): FAISS index
+        top_k (int): Number of top results to return
+        
+    Returns:
+        List[str]: List of relevant segments
+    """
+    try:
+        # Get query embedding
+        query_embedding = get_embedding(query)
+        if query_embedding is None:
+            return []
+        
+        # Search using FAISS index
+        query_embedding = np.expand_dims(query_embedding, axis=0)
+        distances, idxs = index.search(query_embedding, top_k)
+        
+        # Return relevant segments
+        relevant_segments = []
+        for idx in idxs[0]:
+            if idx < len(segments):
+                relevant_segments.append(segments[idx])
+        
+        return relevant_segments
+        
+    except Exception as e:
+        logger.error(f"Error searching documents: {e}")
+        return []
+
+# Precomputed expert selection for performance
+EXPERT_KEYWORD_SCORES = {
+    'security': {
+        'azure': 5, 'azure ad': 5, 'identity': 4, 'authentication': 4, 'access control': 4,
+        'security': 3, 'firewall': 3, 'encryption': 3, 'cybersecurity': 3
+    },
+    'privacy': {
+        'gdpr': 5, 'ccpa': 5, 'privacy': 4, 'data protection': 4, 'personal data': 4,
+        'consent': 3, 'data subject': 3, 'pii': 3
+    },
+    'audit': {
+        'compliance': 4, 'audit': 4, 'iso27001': 5, 'soc2': 5, 'nist': 4,
+        'framework': 3, 'control': 3, 'assessment': 3
+    },
+    'financial': {
+        'pci dss': 5, 'sox': 5, 'financial': 4, 'payment': 4, 'banking': 3
     }
-    
-    matched_experts = set()
+}
+
+@timing_decorator
+def select_relevant_experts_optimized(query: str) -> List[str]:
+    """Optimized expert selection using precomputed scores."""
     query_lower = query.lower()
+    expert_scores = {}
     
-    # First try keyword matching
-    for expert, expert_keywords in keywords.items():
-        if any(keyword in query_lower for keyword in expert_keywords):
-            matched_experts.add(expert)
+    # Fast scoring using precomputed weights
+    for expert, keywords in EXPERT_KEYWORD_SCORES.items():
+        score = 0
+        for keyword, weight in keywords.items():
+            if keyword in query_lower:
+                score += weight
+        if score > 0:
+            expert_scores[expert] = score
     
-    # If keyword matching found experts, use them
-    if matched_experts:
-        logger.info(f"Selected experts based on keywords: {', '.join(matched_experts)}")
-        return list(matched_experts)
+    # Return top 2 experts for speed (reduced from 3)
+    if expert_scores:
+        sorted_experts = sorted(expert_scores.items(), key=lambda x: x[1], reverse=True)
+        selected = [expert for expert, score in sorted_experts[:2]]
+        logger.info(f"Fast expert selection: {', '.join(selected)}")
+        return selected
     
-    # Fall back to AI selection only if needed
-    prompt = (
-        "Based on this compliance query, select needed experts from ['security', 'privacy', 'audit']. Return ONLY a comma-separated list.\n\n"
-        f"Query: {query}\n"
-        "Experts:"
-    )
-    response = rate_limited_generate_content(prompt)
-    selected = [expert.strip().lower() for expert in response.split(',') if expert.strip() in ['security', 'privacy', 'audit']]
-    
-    # Default to audit if no experts were selected
-    if not selected:
-        selected = ['audit']
-    
-    logger.info(f"Selected experts using AI: {', '.join(selected)}")
-    return selected
+    # Quick fallback
+    return ['audit', 'security']
 
 # Add support for DOCX files in upload_privacy_policy
 def upload_privacy_policy(file_path: str) -> str:
@@ -979,7 +1187,7 @@ def generate_privacy_policy(framework: str, format: str = "txt") -> str:
                 "Generate the section content:"
             )
             
-            section_content = rate_limited_generate_content(prompt)
+            section_content = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
             sections.append(f"\n{section_title}\n")
             sections.append(f"{section_content}\n")
         
@@ -1145,14 +1353,65 @@ def hash_text(text: str) -> str:
     """Create a hash of text for caching purposes"""
     return hashlib.md5(text.encode()).hexdigest()
 
-# Add cached version of expertise functions
+def validate_and_complete_response(response: str, query: str, expert_type: str = "") -> str:
+    """Validate response completeness and attempt to complete if truncated."""
+    if not response:
+        return "I apologize, but I'm unable to provide a response at this time. Please try rephrasing your question."
+    
+    # Skip validation in fast mode for performance
+    if not should_validate_response(RESPONSE_MODE):
+        return response
+    
+    # More selective truncation indicators - only check for obvious problems
+    critical_truncation_indicators = [
+        response.endswith("*"),
+        response.endswith("**"),
+        response.endswith("- "),
+        response.endswith(": "),
+        len(response) < 300,  # Only very short responses
+        # Check for incomplete sentences at the end (only obvious cases)
+        response.strip().endswith(('and', 'or', 'but', 'because', 'however', 'therefore')),
+        # Check for incomplete markdown
+        response.count('**') % 2 != 0,
+        # Check if ends with numbered list item without content
+        response.strip().endswith(tuple(str(i) + '.' for i in range(1, 11)))
+    ]
+    
+    # Only validate if there are CRITICAL truncation signs
+    if any(critical_truncation_indicators):
+        logger.warning(f"Critical truncation detected for {expert_type} - attempting completion")
+        
+        completion_prompt = f"""
+The following {expert_type} response appears critically incomplete:
+
+{response}
+
+Please complete this response with proper conclusions and formatting.
+Keep it concise but complete.
+
+Completed Response:
+"""
+        
+        try:
+            token_limit = get_token_limit_for_mode(RESPONSE_MODE, 1536)  # Reduced for speed
+            completed_response = rate_limited_generate_content_optimized(completion_prompt, max_tokens=token_limit)
+            
+            if completed_response and len(completed_response) > len(response) * 0.8:
+                logger.info(f"Successfully completed {expert_type} response")
+                return completed_response
+        except Exception as e:
+            logger.error(f"Error completing response: {e}")
+    
+    return response
+
 def cached_expert_response(expert_type: str, query: str, context: str, conversation_context: str = "") -> str:
     """Get expert response from cache if available, otherwise generate and cache it"""
     cache_key = f"{expert_type}:{hash_text(query)}:{hash_text(context)}:{hash_text(conversation_context)}"
     
     if cache_key in QUERY_CACHE:
         logger.info(f"Cache hit for {expert_type} expert")
-        return QUERY_CACHE[cache_key]
+        cached_response = QUERY_CACHE[cache_key]
+        return validate_and_complete_response(cached_response, query, expert_type)
     
     # Call appropriate expert function based on type
     if expert_type == "security":
@@ -1161,17 +1420,30 @@ def cached_expert_response(expert_type: str, query: str, context: str, conversat
         response = expert_privacy_regulations(query, context, conversation_context)
     elif expert_type == "audit":
         response = expert_audit_compliance(query, context, conversation_context)
+    elif expert_type == "financial":
+        response = expert_financial_compliance(query, context, conversation_context)
+    elif expert_type == "healthcare":
+        response = expert_healthcare_compliance(query, context, conversation_context)
+    elif expert_type == "international":
+        response = expert_international_compliance(query, context, conversation_context)
+    elif expert_type == "operational":
+        response = expert_operational_compliance(query, context, conversation_context)
+    elif expert_type == "industry_specific":
+        response = expert_industry_specific(query, context, conversation_context)
     else:
         return ""
     
-    # Cache the response
-    QUERY_CACHE[cache_key] = response
+    # Validate and complete the response
+    validated_response = validate_and_complete_response(response, query, expert_type)
+    
+    # Cache the validated response
+    QUERY_CACHE[cache_key] = validated_response
     
     # Periodically save the cache (every 10 new entries)
     if len(QUERY_CACHE) % 10 == 0:
         save_query_cache()
         
-    return response
+    return validated_response
 
 @timing_decorator
 def process_expert_analyses(query: str, context: str, conversation_context: str, experts: List[str]) -> List[str]:
@@ -1196,291 +1468,79 @@ def process_expert_analyses(query: str, context: str, conversation_context: str,
     return results
 
 @timing_decorator
-def is_compliance_related(query: str, conversation_context: str = "") -> Tuple[bool, str]:
+def is_compliance_related_optimized(query: str, conversation_context: str = "") -> Tuple[bool, str]:
     """
-    Intelligent compliance query classification using multiple analysis layers.
-    
-    Args:
-        query (str): The user's query
-        conversation_context (str): The conversation context to help determine relevance
-        
-    Returns:
-        Tuple[bool, str]: (is_compliance_related, reason)
+    Optimized compliance query classification with fast-path processing.
     """
     
-    # Layer 1: Quick keyword screening for obviously non-compliant topics
+    # Fast Path 1: Check cache first
+    cache_key = f"classification:{hash_text(query)}"
+    if cache_key in QUERY_CACHE:
+        cached_result = QUERY_CACHE[cache_key]
+        if isinstance(cached_result, dict) and 'is_compliance' in cached_result:
+            return cached_result['is_compliance'], cached_result.get('reason', 'Cached result')
+    
+    # Fast Path 2: Simple keyword screening for obviously non-compliant topics
     sensitive_topics = [
         "sex", "sexual", "porn", "pornography", "nude", "nudity",
         "drug", "drugs", "weapon", "weapons", "violence", "violent",
-        "suicide", "self-harm", "personal health", "medical advice",
-        "cooking", "recipe", "sports", "football", "cricket", "entertainment",
-        "movie", "film", "music", "celebrity", "gossip", "dating", "relationship"
+        "suicide", "self-harm", "cooking", "recipe", "sports", "football", 
+        "cricket", "entertainment", "movie", "film", "music", "celebrity", "gossip"
     ]
     
     query_lower = query.lower()
     for topic in sensitive_topics:
         if topic in query_lower:
-            # Check if it's used in a professional/compliance context
             professional_context = [
                 "compliance", "policy", "regulation", "standard", "framework",
                 "business", "organization", "company", "workplace", "professional"
             ]
             if not any(context in query_lower for context in professional_context):
-                return False, f"Query appears to be about non-compliance topic: {topic}"
+                result = (False, f"Query about non-compliance topic: {topic}")
+                QUERY_CACHE[cache_key] = {'is_compliance': False, 'reason': result[1]}
+                return result
     
-    # Layer 2: Semantic similarity analysis using embeddings
-    compliance_relevance_score = 0.0
-    document_relevance_score = 0.0
-    context_score = 0.0
+    # Fast Path 3: Strong compliance indicators
+    strong_compliance_keywords = [
+        "gdpr", "ccpa", "hipaa", "sox", "iso27001", "soc2", "nist", "pci dss",
+        "data protection", "privacy policy", "compliance", "audit", "security framework",
+        "regulatory", "governance", "risk management", "azure ad", "identity management"
+    ]
     
-    try:
-        compliance_relevance_score = analyze_semantic_compliance_relevance(query, conversation_context)
-        if compliance_relevance_score > 0.7:
-            return True, f"High semantic similarity to compliance topics (score: {compliance_relevance_score:.2f})"
-        elif compliance_relevance_score > 0.4:
-            # Continue to next layers for borderline cases
-            pass
-        else:
-            # Low similarity, but still check other layers
-            pass
-    except Exception as e:
-        logger.warning(f"Semantic analysis failed: {e}")
+    for keyword in strong_compliance_keywords:
+        if keyword in query_lower:
+            result = (True, f"Strong compliance keyword detected: {keyword}")
+            QUERY_CACHE[cache_key] = {'is_compliance': True, 'reason': result[1]}
+            return result
     
-    # Layer 3: Document relevance analysis
-    try:
-        document_relevance_score = analyze_document_relevance(query)
-        if document_relevance_score > 0.6:
-            return True, f"Query highly relevant to uploaded compliance documents (score: {document_relevance_score:.2f})"
-    except Exception as e:
-        logger.warning(f"Document relevance analysis failed: {e}")
-    
-    # Layer 4: Context-aware analysis
-    context_score = analyze_conversation_context(query, conversation_context)
-    if context_score > 0.6:
-        return True, f"Query relevant in current conversation context (score: {context_score:.2f})"
-    
-    # Layer 4.5: Historical learning analysis
-    try:
-        historical_score, historical_reason = get_historical_classification_patterns(query)
-        if historical_score > 0.7:
-            return True, f"Historical patterns indicate compliance relevance: {historical_reason}"
-    except Exception as e:
-        logger.warning(f"Historical analysis failed: {e}")
-    
-    # Layer 5: AI-powered intent analysis with domain knowledge
-    try:
-        ai_classification, confidence = analyze_query_intent_with_ai(query, conversation_context)
-        if ai_classification and confidence > 0.7:
-            return True, f"AI analysis indicates compliance relevance (confidence: {confidence:.2f})"
-        elif ai_classification and confidence > 0.4:
-            # Borderline case - use combined score
-            combined_score = (
-                compliance_relevance_score * 0.3 + 
-                document_relevance_score * 0.3 + 
-                context_score * 0.2 + 
-                confidence * 0.2
-            )
-            if combined_score > 0.5:
-                return True, f"Combined analysis indicates compliance relevance (score: {combined_score:.2f})"
-    except Exception as e:
-        logger.warning(f"AI intent analysis failed: {e}")
-    
-    # Layer 6: Fallback keyword analysis (refined)
+    # Fast Path 4: Business/technical context
     business_technical_keywords = [
-        "azure", "aws", "cloud", "security", "identity", "authentication",
+        "azure", "cloud", "security", "identity", "authentication", "access control",
         "database", "network", "infrastructure", "application", "system",
-        "governance", "risk", "management", "process", "procedure",
         "organization", "business", "company", "enterprise", "corporate"
     ]
     
     if any(keyword in query_lower for keyword in business_technical_keywords):
-        return True, f"Query contains business/technical terms relevant to compliance"
+        result = (True, f"Business/technical context detected")
+        QUERY_CACHE[cache_key] = {'is_compliance': True, 'reason': result[1]}
+        return result
     
-    return False, "Query does not appear to be compliance-related based on comprehensive analysis"
-
-def analyze_semantic_compliance_relevance(query: str, conversation_context: str = "") -> float:
-    """Analyze semantic similarity to known compliance topics using embeddings."""
+    # Only use expensive AI analysis for borderline cases
     try:
-        # Define compliance topic templates
-        compliance_topics = [
-            "data protection and privacy regulations",
-            "security controls and risk management",
-            "audit compliance and certification",
-            "business process compliance",
-            "regulatory requirements and standards",
-            "information security management",
-            "identity and access management",
-            "cloud security and compliance",
-            "vendor and third-party risk management",
-            "incident response and business continuity"
-        ]
-        
-        # Get query embedding
-        query_embedding = get_embedding(query)
-        if query_embedding is None:
-            return 0.0
-        
-        # Get embeddings for compliance topics
-        topic_embeddings = []
-        for topic in compliance_topics:
-            topic_embedding = get_embedding(topic)
-            if topic_embedding is not None:
-                topic_embeddings.append(topic_embedding)
-        
-        if not topic_embeddings:
-            return 0.0
-        
-        # Calculate maximum similarity
-        topic_embeddings = np.array(topic_embeddings)
-        similarities = cosine_similarity([query_embedding], topic_embeddings)[0]
-        max_similarity = np.max(similarities)
-        
-        # Consider conversation context
-        if conversation_context:
-            context_embedding = get_embedding(conversation_context)
-            if context_embedding is not None:
-                context_similarities = cosine_similarity([context_embedding], topic_embeddings)[0]
-                context_boost = np.max(context_similarities) * 0.3
-                max_similarity = min(1.0, max_similarity + context_boost)
-        
-        return float(max_similarity)
-        
+        ai_classification, confidence = analyze_query_intent_with_ai(query, conversation_context)
+        result = (ai_classification and confidence > 0.5, f"AI analysis: {confidence:.2f} confidence")
+        QUERY_CACHE[cache_key] = {'is_compliance': result[0], 'reason': result[1]}
+        return result
     except Exception as e:
-        logger.error(f"Error in semantic analysis: {e}")
-        return 0.0
-
-def analyze_document_relevance(query: str) -> float:
-    """Analyze how relevant the query is to uploaded compliance documents."""
-    try:
-        # Load existing embeddings and segments
-        cached_embeddings, cached_doc_map = load_embeddings()
-        if cached_embeddings is None or cached_doc_map is None:
-            return 0.0
-        
-        # Get query embedding
-        query_embedding = get_embedding(query)
-        if query_embedding is None:
-            return 0.0
-        
-        # Load FAISS index
-        index = load_faiss_index()
-        if index is None:
-            return 0.0
-        
-        # Search for similar content in documents
-        query_embedding = np.expand_dims(query_embedding, axis=0)
-        distances, idxs = index.search(query_embedding, k=5)
-        
-        # Calculate relevance score based on similarity to document content
-        # Convert distances to similarities (FAISS L2 distance)
-        similarities = 1 / (1 + distances[0])  # Convert distance to similarity
-        avg_similarity = np.mean(similarities)
-        
-        # Boost score if multiple relevant segments found
-        consistency_boost = min(0.2, len([s for s in similarities if s > 0.3]) * 0.05)
-        
-        return min(1.0, avg_similarity + consistency_boost)
-        
-    except Exception as e:
-        logger.error(f"Error in document relevance analysis: {e}")
-        return 0.0
-
-def analyze_conversation_context(query: str, conversation_context: str) -> float:
-    """Analyze query relevance based on conversation context."""
-    try:
-        if not conversation_context:
-            return 0.0
-        
-        # Check for document upload context
-        upload_indicators = ["document", "upload", "file", "pdf", "docx"]
-        if any(indicator in conversation_context.lower() for indicator in upload_indicators):
-            document_query_indicators = [
-                "what", "show", "tell", "explain", "describe", "summarize",
-                "content", "contains", "about", "regarding", "concerning"
-            ]
-            if any(indicator in query.lower() for indicator in document_query_indicators):
-                return 0.8
-        
-        # Check for compliance topic continuation
-        compliance_context_indicators = [
-            "compliance", "regulation", "framework", "standard", "policy",
-            "security", "privacy", "audit", "risk", "governance"
-        ]
-        
-        context_compliance_score = sum(1 for indicator in compliance_context_indicators 
-                                     if indicator in conversation_context.lower()) / len(compliance_context_indicators)
-        
-        if context_compliance_score > 0.1:
-            # Query likely continuing a compliance discussion
-            return min(0.7, context_compliance_score * 2)
-        
-        return 0.0
-        
-    except Exception as e:
-        logger.error(f"Error in context analysis: {e}")
-        return 0.0
-
-def analyze_query_intent_with_ai(query: str, conversation_context: str = "") -> Tuple[bool, float]:
-    """Use AI to analyze query intent with domain knowledge."""
-    try:
-        prompt = f"""
-Analyze if this query is related to business compliance, security, governance, or regulatory requirements.
-
-Consider these aspects:
-1. Is it about technology used in business/compliance contexts (like Azure AD, cloud services)?
-2. Is it about business processes, policies, or procedures?
-3. Is it about security, privacy, or risk management?
-4. Is it about regulatory frameworks or standards?
-5. Is it about organizational governance or management?
-6. Could it be relevant to compliance professionals?
-
-Query: "{query}"
-Context: "{conversation_context}"
-
-Think step by step:
-1. What is the user asking about?
-2. Is this topic relevant to business compliance or security?
-3. Would a compliance professional need to know about this?
-
-Respond with:
-- "COMPLIANT" if it's compliance-related
-- "NON_COMPLIANT" if it's clearly not compliance-related
-- "BORDERLINE" if it could be either depending on context
-
-Also provide a confidence score from 0.0 to 1.0.
-
-Format: [CLASSIFICATION]|[CONFIDENCE_SCORE]|[BRIEF_REASON]
-"""
-        
-        response = rate_limited_generate_content(prompt, temperature=0.1)
-        
-        # Parse response
-        parts = response.split('|')
-        if len(parts) >= 2:
-            classification = parts[0].strip().upper()
-            try:
-                confidence = float(parts[1].strip())
-            except:
-                confidence = 0.5
-            
-            is_compliant = classification in ["COMPLIANT", "BORDERLINE"]
-            
-            # Adjust confidence for borderline cases
-            if classification == "BORDERLINE":
-                confidence *= 0.7  # Reduce confidence for uncertain cases
-            
-            return is_compliant, confidence
-        
-        return False, 0.0
-        
-    except Exception as e:
-        logger.error(f"Error in AI intent analysis: {e}")
-        return False, 0.0
+        logger.warning(f"AI classification failed, defaulting to compliant: {e}")
+        result = (True, "Defaulted to compliant due to analysis failure")
+        QUERY_CACHE[cache_key] = {'is_compliance': True, 'reason': result[1]}
+        return result
 
 @timing_decorator
 def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, List[str]]:
     """
-    Detect the type of compliance query and required experts.
+    Detect the type of compliance query and required experts using enhanced selection.
     
     Args:
         query (str): The user's query
@@ -1489,46 +1549,46 @@ def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, 
     Returns:
         Tuple[str, List[str]]: (query_type, required_experts)
     """
-    # Define query types and their associated keywords
-    query_types = {
-        'framework_selection': ['framework', 'standard', 'regulation', 'compliance', 'certification'],
-        'security': ['security', 'protection', 'breach', 'risk', 'access', 'safeguard'],
-        'privacy': ['privacy', 'data', 'personal', 'gdpr', 'ccpa', 'information'],
-        'audit': ['audit', 'certification', 'compliance', 'framework', 'financial', 'standard']
-    }
     
     # Check for framework selection queries first
-    if any(keyword in query.lower() for keyword in query_types['framework_selection']):
+    framework_keywords = ['which framework', 'what framework', 'recommend framework', 
+                         'choose framework', 'select framework', 'best framework',
+                         'framework recommendation', 'framework selection']
+    
+    if any(keyword in query.lower() for keyword in framework_keywords):
         return 'framework_selection', ['audit']
     
-    # Determine required experts based on query content
-    required_experts = []
-    for expert_type, keywords in query_types.items():
-        if any(keyword in query.lower() for keyword in keywords):
-            if expert_type == 'security':
-                required_experts.append('security')
-            elif expert_type == 'privacy':
-                required_experts.append('privacy')
-            elif expert_type == 'audit':
-                required_experts.append('audit')
+    # Use the enhanced expert selection system for all other queries
+    required_experts = select_relevant_experts_optimized(query)
     
-    # Check conversation context for additional context
-    if conversation_context:
-        context_lower = conversation_context.lower()
-        # If context contains privacy-related terms and query is about implementation
-        if any(term in context_lower for term in ['gdpr', 'privacy', 'data protection']):
-            implementation_terms = ['implement', 'implementation', 'apply', 'use', 'adopt', 'deploy']
-            if any(term in query.lower() for term in implementation_terms):
-                if 'privacy' not in required_experts:
-                    required_experts.append('privacy')
-                if 'audit' not in required_experts:
-                    required_experts.append('audit')
+    # Determine query type based on selected experts
+    if len(required_experts) == 1:
+        if required_experts[0] == 'security':
+            query_type = 'security'
+        elif required_experts[0] == 'privacy':
+            query_type = 'privacy'
+        elif required_experts[0] == 'financial':
+            query_type = 'financial'
+        elif required_experts[0] == 'healthcare':
+            query_type = 'healthcare'
+        elif required_experts[0] == 'international':
+            query_type = 'international'
+        elif required_experts[0] == 'operational':
+            query_type = 'operational'
+        elif required_experts[0] == 'industry_specific':
+            query_type = 'industry_specific'
+        else:
+            query_type = 'audit'
+    else:
+        # Multi-expert query
+        query_type = 'multi_domain'
     
     # Default to audit if no specific experts identified
     if not required_experts:
         required_experts = ['audit']
+        query_type = 'general'
     
-    return 'general', required_experts
+    return query_type, required_experts
 
 @timing_decorator
 def get_framework_recommendation(query: str) -> Tuple[str, float]:
@@ -1545,7 +1605,7 @@ def get_framework_recommendation(query: str) -> Tuple[str, float]:
         "Response:"
     )
     
-    response = rate_limited_generate_content(prompt)
+    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
     end_time = time.time()
     
     return response, end_time - start_time
@@ -1559,57 +1619,104 @@ async def get_progressive_response(query: str, experts: List[str], context: str,
         expert_responses.append(response)
         yield aggregate_expert_outputs(expert_responses, query, context)
 
-async def process_query(query: str, context: str, conversation_context: str) -> Tuple[str, float]:
-    """Process a query with optimized response generation"""
+@timing_decorator
+def process_query_optimized(query: str, context: str, conversation_context: str) -> Tuple[str, float]:
+    """Optimized query processing with fast response paths."""
     start_time = time.time()
     
-    # First check if this is a compliance-related query
-    is_compliance, reason = is_compliance_related(query, conversation_context)
+    # Fast Path: Check if this is a compliance-related query
+    is_compliance, reason = is_compliance_related_optimized(query, conversation_context)
     
     if not is_compliance:
-        # For non-compliance queries, return a simple, direct response
+        # Quick non-compliance response
         response = generate_non_compliance_response(query)
         end_time = time.time()
         return response, end_time - start_time
     
-    # Only proceed with compliance-related queries
-    query_type, required_experts = detect_query_type(query, conversation_context)
+    # Fast Path: Check for simple informational queries
+    if detect_informational_query(query):
+        logger.info("Detected informational query - using concise response")
+        response = generate_concise_informational_response(query)
+        end_time = time.time()
+        return response, end_time - start_time
     
-    # Check for cached similar response - only for compliance queries
-    cache_key = f"compliance:{hash_text(query)}"
+    # Check for exact cache match first
+    cache_key = f"exact_query:{hash_text(query)}"
     if cache_key in QUERY_CACHE:
-        cached_data = QUERY_CACHE[cache_key]
-        if isinstance(cached_data, dict) and 'response' in cached_data:
+        cached_response = QUERY_CACHE[cache_key]
+        if isinstance(cached_response, str):
             end_time = time.time()
-            return cached_data['response'], end_time - start_time
+            return cached_response, end_time - start_time
     
-    # For framework selection queries, use specialized handler
-    if query_type == 'framework_selection':
-        response, processing_time = get_framework_recommendation(query)
-        return response, processing_time
+    # Fast expert selection
+    required_experts = select_relevant_experts_optimized(query)
     
-    # For other queries, use progressive response generation
-    responses = []
-    async for partial_response in get_progressive_response(query, required_experts, context, conversation_context):
-        responses.append(partial_response)
+    # Check for partial cache matches (similar queries)
+    similar_response = find_similar_cached_response(query, required_experts)
+    if similar_response:
+        logger.info("Using similar cached response")
+        end_time = time.time()
+        return similar_response, end_time - start_time
     
-    # Get final aggregated response
-    final_response = responses[-1] if responses else ""
+    # Process with optimized expert system
+    expert_responses = []
+    for expert in required_experts:
+        response = cached_expert_response(expert, query, context, conversation_context)
+        if response:
+            expert_responses.append(response)
     
-    # Cache the response with query embedding - only for compliance queries
-    if final_response:
-        query_embedding = get_embedding(query)
-        QUERY_CACHE[cache_key] = {
-            'response': final_response,
-            'embedding': query_embedding,
-            'topic': query_type,
-            'timestamp': datetime.now().isoformat(),
-            'is_compliance': True
-        }
-        save_query_cache()
+    # Quick aggregation for speed
+    if len(expert_responses) == 1:
+        final_response = expert_responses[0]
+    else:
+        final_response = aggregate_expert_outputs(expert_responses, query, context)
+    
+    # Final validation only if response shows obvious issues
+    if (len(final_response) < 500 or 
+        final_response.endswith(('*', '**', ':', '- ')) or
+        final_response.count('.') < 3):
+        logger.info("Applying final validation due to potential issues")
+        final_response = validate_and_complete_response(final_response, query, "final_synthesis")
+    
+    # Cache the response
+    QUERY_CACHE[cache_key] = final_response
+    
+    # Async save to avoid blocking
+    if len(QUERY_CACHE) % 10 == 0:
+        try:
+            save_query_cache()
+        except:
+            pass  # Don't block on cache save errors
     
     end_time = time.time()
     return final_response, end_time - start_time
+
+def find_similar_cached_response(query: str, experts: List[str]) -> Optional[str]:
+    """Find similar cached responses for faster retrieval."""
+    try:
+        query_lower = query.lower()
+        
+        # Look for cached responses with similar expert combinations
+        for cache_key, cached_data in QUERY_CACHE.items():
+            if isinstance(cached_data, dict) and 'response' in cached_data:
+                # Check if it's a similar query type
+                if cached_data.get('experts') == experts:
+                    # Simple keyword similarity check
+                    cached_query = cached_data.get('original_query', '')
+                    if cached_query:
+                        # Count common words
+                        query_words = set(query_lower.split())
+                        cached_words = set(cached_query.lower().split())
+                        similarity = len(query_words & cached_words) / len(query_words | cached_words)
+                        
+                        if similarity > 0.7:  # High similarity threshold
+                            return cached_data['response']
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error finding similar cached response: {e}")
+        return None
 
 def clear_query_cache():
     """Clear all cache-related data"""
@@ -1687,7 +1794,7 @@ def interactive_compliance_query(segments: List[str], index: Any) -> None:
             logger.info("\nProcessing query...")
             
             # First check if this is a compliance-related query
-            is_compliance, reason = is_compliance_related(query, conversation.get_context())
+            is_compliance, reason = is_compliance_related_optimized(query, conversation.get_context())
             
             if not is_compliance:
                 logger.info("\n=== Response ===")
@@ -1714,7 +1821,7 @@ def interactive_compliance_query(segments: List[str], index: Any) -> None:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             final_response, processing_time = loop.run_until_complete(
-                process_query(query, retrieved_context, conversation.get_context())
+                process_query_optimized(query, retrieved_context, conversation.get_context())
             )
             loop.close()
             
@@ -2030,7 +2137,7 @@ def generate_terms_and_conditions(framework: str, format: str = "txt") -> str:
                 "Generate the section content:"
             )
             
-            section_content = rate_limited_generate_content(prompt)
+            section_content = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
             sections.append(f"\n{section_title}\n")
             sections.append(f"{section_content}\n")
         
@@ -2120,7 +2227,7 @@ def get_document_generation_questions(document_type: str, framework: str) -> Dic
     )
     
     try:
-        response = rate_limited_generate_content(prompt)
+        response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         guide = json.loads(response)
         return guide
     except Exception as e:
@@ -2175,7 +2282,7 @@ def generate_document_with_answers(document_type: str, framework: str, answers: 
             "- verification_steps: list of steps to verify compliance"
         )
         
-        structure_response = rate_limited_generate_content(structure_prompt)
+        structure_response = rate_limited_generate_content_optimized(structure_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         sections = json.loads(structure_response)
         
         # Create document
@@ -2197,7 +2304,7 @@ def generate_document_with_answers(document_type: str, framework: str, answers: 
             "3. Identify critical areas\n"
             "4. Provide an overview of the document structure"
         )
-        summary = rate_limited_generate_content(summary_prompt)
+        summary = rate_limited_generate_content_optimized(summary_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         doc.add_heading("Executive Summary", level=1)
         doc.add_paragraph(summary)
         
@@ -2386,7 +2493,7 @@ Respond in JSON format:
 }}
 """
 
-        response = rate_limited_generate_content(prompt, temperature=0.1)
+        response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         
         try:
             # Try to parse JSON response
@@ -2581,7 +2688,7 @@ Provide a detailed analysis including:
 Format the response with clear headings and bullet points for easy reading.
 """
 
-        analysis = rate_limited_generate_content(prompt, temperature=0.2)
+        analysis = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 3072))
         
         if not analysis or len(analysis.strip()) < 100:
             return f"I've analyzed your {document_type} document against {framework} requirements. The document appears to have some compliance gaps that need attention. Would you like me to generate a fully compliant version for you?"
@@ -2648,7 +2755,7 @@ Use placeholders like [COMPANY NAME], [CONTACT EMAIL], [ADDRESS], [DATE], etc. w
 Start with the document title and generate the complete content in plain text format:
 """
 
-        document_content = rate_limited_generate_content(prompt, temperature=0.2)
+        document_content = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         
         if not document_content or len(document_content.strip()) < 500:
             # Fallback to template-based generation
@@ -3083,7 +3190,7 @@ Provide improvement suggestions in the following format:
 Focus on providing specific, actionable advice rather than generating new content.
 """
 
-        suggestions = rate_limited_generate_content(prompt, temperature=0.2)
+        suggestions = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
         
         if not suggestions or len(suggestions.strip()) < 100:
             return f"""## 📋 Document Improvement Recommendations
@@ -3137,6 +3244,110 @@ I've reviewed your {document_type.replace('_', ' ')} document for {framework} co
 3. Regular compliance audits and updates
 
 Would you like me to focus on any specific aspect of your document?"""
+
+# Add in-memory embedding cache for better performance
+EMBEDDING_MEMORY_CACHE = {}
+EMBEDDING_CACHE_MAX_SIZE = 1000
+
+@timing_decorator
+def get_embedding_optimized(text: str) -> np.ndarray:
+    """Get embeddings with aggressive in-memory caching."""
+    # Normalize text for consistent caching
+    text_normalized = text.strip().lower()
+    text_hash = hash_text(text_normalized)
+    
+    # Check in-memory cache first
+    if text_hash in EMBEDDING_MEMORY_CACHE:
+        return EMBEDDING_MEMORY_CACHE[text_hash]
+    
+    # Truncate very long text for performance
+    if len(text.split()) > 500:  # Reduced from 8000 for speed
+        text = " ".join(text.split()[:500])
+    
+    try:
+        embeddings = embedding_model.encode([text], convert_to_numpy=True, show_progress_bar=False)
+        result = embeddings[0]
+        
+        # Cache in memory
+        if len(EMBEDDING_MEMORY_CACHE) >= EMBEDDING_CACHE_MAX_SIZE:
+            # Remove oldest entries (simple FIFO)
+            oldest_key = next(iter(EMBEDDING_MEMORY_CACHE))
+            del EMBEDDING_MEMORY_CACHE[oldest_key]
+        
+        EMBEDDING_MEMORY_CACHE[text_hash] = result
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error generating embedding: {e}")
+        return None
+
+def detect_informational_query(query: str) -> bool:
+    """Detect if this is a simple informational query that needs a concise response."""
+    query_lower = query.lower()
+    
+    # Simple informational patterns
+    informational_patterns = [
+        "what is", "what are", "tell me about", "explain", "define",
+        "definition of", "meaning of", "overview of", "introduction to"
+    ]
+    
+    # Framework/standard specific patterns
+    framework_patterns = [
+        "iso 27001", "gdpr", "ccpa", "hipaa", "soc 2", "nist",
+        "pci dss", "sox", "compliance framework"
+    ]
+    
+    # Check if it's a simple "what is [framework]" type query
+    is_informational = any(pattern in query_lower for pattern in informational_patterns)
+    mentions_framework = any(pattern in query_lower for pattern in framework_patterns)
+    
+    # Look for list requests (top 10, main, key, primary)
+    is_list_request = any(word in query_lower for word in [
+        "top", "main", "key", "primary", "important", "rules", "requirements",
+        "principles", "controls", "steps"
+    ])
+    
+    return is_informational and mentions_framework and is_list_request
+
+def generate_concise_informational_response(query: str) -> str:
+    """Generate a concise, informational response for simple queries."""
+    try:
+        # Extract the framework/topic
+        query_lower = query.lower()
+        framework = "ISO 27001"  # Default
+        
+        if "gdpr" in query_lower:
+            framework = "GDPR"
+        elif "ccpa" in query_lower:
+            framework = "CCPA"
+        elif "hipaa" in query_lower:
+            framework = "HIPAA"
+        elif "soc 2" in query_lower or "soc2" in query_lower:
+            framework = "SOC 2"
+        elif "nist" in query_lower:
+            framework = "NIST"
+        elif "pci" in query_lower:
+            framework = "PCI DSS"
+        
+        # Generate a focused, concise response
+        prompt = f"""
+Provide a clear, concise response to this query: "{query}"
+
+Structure your response as follows:
+1. **Brief Definition** (2-3 sentences about what {framework} is)
+2. **Top 10 Key Points/Rules/Requirements** (numbered list with brief explanations)
+3. **Quick Implementation Tip** (1-2 sentences)
+
+Keep it informative but concise - aim for 300-500 words total.
+Use clear, professional language that's accessible to both beginners and experts.
+Focus on practical, actionable information.
+"""
+        
+        return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 1200))
+        
+    except Exception as e:
+        logger.error(f"Error generating concise response: {e}")
+        return "I'd be happy to help with information about compliance frameworks. Could you please rephrase your question?"
 
 if __name__ == "__main__":
     main() 

@@ -11,12 +11,17 @@ from compliance_rag import (
     process_documents,
     interactive_compliance_query,
     ConversationHistory,
-    select_relevant_experts,
+    select_relevant_experts_optimized,
     expert_security_controls,
     expert_privacy_regulations,
     expert_audit_compliance,
+    expert_financial_compliance,
+    expert_healthcare_compliance,
+    expert_international_compliance,
+    expert_operational_compliance,
+    expert_industry_specific,
     aggregate_expert_outputs,
-    is_compliance_related,
+    is_compliance_related_optimized,
     generate_non_compliance_response,
     detect_query_type,
     get_framework_recommendation,
@@ -25,7 +30,7 @@ from compliance_rag import (
     generate_privacy_policy,
     extract_text_from_pdf,
     extract_text_from_docx,
-    rate_limited_generate_content,
+    rate_limited_generate_content_optimized,
     generate_terms_and_conditions,
     learn_from_user_interaction,
     analyze_document_intent,
@@ -33,12 +38,15 @@ from compliance_rag import (
     generate_intelligent_compliant_document,
     create_docx_with_download_link,
     format_document_response_with_download,
-    generate_document_improvement_suggestions
+    generate_document_improvement_suggestions,
+    process_query_optimized,
+    get_embedding_optimized
 )
 from routes.auth import get_current_user  # Add this import for authentication
 from fastapi.responses import FileResponse
 import hashlib
 from fastapi import status
+import numpy as np
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -267,7 +275,7 @@ The improved document addresses all the compliance gaps identified in the analys
                     "Focus on key compliance-related points and requirements."
                 )
                 
-                response = rate_limited_generate_content(prompt)
+                response = rate_limited_generate_content_optimized(prompt)
                 experts = ['privacy', 'audit']
             else:
                 response = "No document has been uploaded for analysis. Please upload a document first."
@@ -281,7 +289,7 @@ The improved document addresses all the compliance gaps identified in the analys
                 experts = []
             else:
                 # This is a general compliance query
-                is_compliance, reason = is_compliance_related(query, conversation_context)
+                is_compliance, reason = is_compliance_related_optimized(query, conversation_context)
                 logger.info(f"Query compliance status: {is_compliance}, reason: {reason}")
 
                 if not is_compliance:
@@ -306,31 +314,21 @@ The improved document addresses all the compliance gaps identified in the analys
                         logger.error("FAISS index not created")
                         raise HTTPException(status_code=500, detail="FAISS index not created")
 
-                    # Detect query type and get required experts
-                    query_type, required_experts = detect_query_type(query, conversation_context)
-                    logger.info(f"Query type: {query_type}, Required experts: {required_experts}")
-
-                    # For framework selection queries, use specialized handler
-                    if query_type == 'framework_selection':
-                        response, processing_time = get_framework_recommendation(query)
-                        experts = ['audit']
+                    # Get query embedding and relevant context
+                    query_embedding = get_embedding_optimized(query)
+                    if query_embedding is not None:
+                        query_embedding = np.expand_dims(query_embedding, axis=0)
+                        distances, idxs = index.search(query_embedding, 3)
+                        retrieved_context = " ".join([segments[idx] for idx in idxs[0] if idx < len(segments)])
                     else:
-                        # Get expert responses
-                        expert_responses = []
-                        for expert in required_experts:
-                            logger.info(f"Getting response from expert: {expert}")
-                            if expert == "security":
-                                response = expert_security_controls(query, conversation_context, conversation_context)
-                            elif expert == "privacy":
-                                response = expert_privacy_regulations(query, conversation_context, conversation_context)
-                            elif expert == "audit":
-                                response = expert_audit_compliance(query, conversation_context, conversation_context)
-                            expert_responses.append(response)
+                        retrieved_context = ""
 
-                        # Aggregate expert responses
-                        logger.info("Aggregating expert responses...")
-                        response = aggregate_expert_outputs(expert_responses, query, conversation_context)
-                        experts = required_experts
+                    # Use optimized query processing
+                    logger.info("Using optimized query processing...")
+                    response, processing_time = process_query_optimized(query, retrieved_context, conversation_context)
+                    
+                    # Get experts from optimized selection
+                    experts = select_relevant_experts_optimized(query)
 
         # Update conversation history
         conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
