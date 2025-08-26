@@ -9,7 +9,6 @@ from schemas.users import UserInDB  # Changed to UserInDB which is the correct m
 from db import database
 from compliance_rag import (
     process_documents,
-    interactive_compliance_query,
     ConversationHistory,
     select_relevant_experts_optimized,
     expert_security_controls,
@@ -325,7 +324,10 @@ The improved document addresses all the compliance gaps identified in the analys
 
                     # Use optimized query processing
                     logger.info("Using optimized query processing...")
-                    response, processing_time = process_query_optimized(query, retrieved_context, conversation_context)
+                    conversation_obj = conversation_histories.get(session_id)
+                    response, processing_time = process_query_optimized(
+                        query, retrieved_context, conversation_context, conversation_obj
+                    )
                     
                     # Get experts from optimized selection
                     experts = select_relevant_experts_optimized(query)

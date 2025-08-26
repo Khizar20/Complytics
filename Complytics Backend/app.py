@@ -8,6 +8,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.security import HTTPBearer
 from routes.registration import router as registration_router
 from routes.compliance import router as compliance_router
+from routes.azure import router as azure_router
 from flask import request, jsonify, send_file
 
 
@@ -56,6 +57,7 @@ app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(registration_router, prefix="/registration", tags=["registration"])
 app.include_router(team_router, prefix="/team", tags=["team"])
 app.include_router(compliance_router, prefix="/api/compliance", tags=["compliance"])
+app.include_router(azure_router, prefix="/api/azure", tags=["azure"])
 
 
 @app.on_event("startup")

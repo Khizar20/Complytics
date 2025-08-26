@@ -25,7 +25,14 @@ import {
   FaBell,
   FaHistory,
   FaTasks,
-  FaInfo
+  FaInfo,
+  FaEye,
+  FaEyeSlash,
+  FaKey,
+  FaBuilding,
+  FaIdCard,
+  FaSave,
+  FaSpinner
 } from 'react-icons/fa';
 import Profile from '../auth/Profile';
 import ComplianceChat from './ComplianceChat';
@@ -256,6 +263,431 @@ const Notifications = () => {
   );
 };
 
+const AzureConnectionMiniCard = () => {
+  const { authToken } = useAuth();
+  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('http://localhost:8000/api/azure/status', {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setConnected(!!data.connected);
+        } else {
+          setConnected(false);
+        }
+      } catch (e) {
+        setConnected(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (authToken) {
+      fetchStatus();
+    }
+  }, [authToken]);
+
+  return (
+    <motion.div
+      whileHover={{ scale: 1.02 }}
+      className="p-4 bg-card rounded-xl shadow-lg flex items-center justify-between"
+    >
+      <div className="flex items-center space-x-3">
+        <FaCloud className={connected ? 'text-green-600' : 'text-gray-500'} />
+        <div>
+          <div className="text-sm font-semibold">Azure AD</div>
+          <div className="text-xs text-muted-foreground">
+            {loading ? 'Checking connection…' : (connected ? 'Connected' : 'Not connected')}
+          </div>
+        </div>
+      </div>
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'}`}>
+        {loading ? '…' : (connected ? 'Connected' : 'Not Connected')}
+      </span>
+    </motion.div>
+  );
+};
+
+const AzureADConnection = () => {
+  const { authToken } = useAuth();
+  const [formData, setFormData] = useState({
+    clientId: '',
+    clientSecret: '',
+    tenantId: ''
+  });
+  const [showSecret, setShowSecret] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        setStatusLoading(true);
+        const response = await fetch('http://localhost:8000/api/azure/status', {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setIsConnected(!!data.connected);
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        setStatusLoading(false);
+      }
+    };
+    if (authToken) {
+      fetchStatus();
+    }
+  }, [authToken]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    // Clear error when user starts typing
+    if (error) setError(null);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/azure/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to connect to Azure AD');
+      }
+
+      const data = await response.json();
+      setSuccess('Successfully connected to Azure AD!');
+      setIsConnected(true);
+      
+      // Clear form after successful connection
+      setFormData({
+        clientId: '',
+        clientSecret: '',
+        tenantId: ''
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setShowDisconnectModal(true);
+  };
+
+  const confirmDisconnect = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/azure/disconnect', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        setIsConnected(false);
+        setSuccess('Successfully disconnected from Azure AD');
+      }
+    } catch (err) {
+      setError('Failed to disconnect from Azure AD');
+    } finally {
+      setIsLoading(false);
+      setShowDisconnectModal(false);
+    }
+  };
+
+  const cancelDisconnect = () => setShowDisconnectModal(false);
+
+  return (
+    <>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      <div className="flex items-center space-x-4 mb-6">
+        <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+          <FaCloud className="text-2xl text-blue-600 dark:text-blue-400" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Connect to Azure AD</h2>
+          <p className="text-muted-foreground">Configure your Azure Active Directory integration</p>
+        </div>
+      </div>
+
+      <div className={`${isConnected ? 'grid grid-cols-1 gap-6' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}`}>
+        {/* Connection Form - hidden when connected */}
+        {!isConnected && (
+          <div className="lg:col-span-2">
+            <motion.div
+              whileHover={{ scale: 1.01 }}
+              className="p-6 bg-card rounded-xl shadow-lg border border-border"
+            >
+              <div className="flex items-center space-x-3 mb-6">
+                <FaKey className="text-xl text-primary" />
+                <h3 className="text-lg font-semibold">Azure AD Configuration</h3>
+              </div>
+
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg"
+                >
+                  <div className="flex items-center space-x-2">
+                    <FaExclamationTriangle className="text-destructive" />
+                    <span className="text-destructive text-sm">{error}</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {success && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 p-4 bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
+                >
+                  <div className="flex items-center space-x-2">
+                    <FaCheckCircle className="text-green-600 dark:text-green-400" />
+                    <span className="text-green-700 dark:text-green-300 text-sm">{success}</span>
+                  </div>
+                </motion.div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Client ID */}
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2 text-sm font-medium">
+                    <FaIdCard className="text-primary" />
+                    <span>Azure Client ID</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="clientId"
+                    value={formData.clientId}
+                    onChange={handleInputChange}
+                    placeholder="Enter your Azure Client ID"
+                    className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary bg-background transition-colors"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The Application (client) ID from your Azure AD app registration
+                  </p>
+                </div>
+
+                {/* Tenant ID */}
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2 text-sm font-medium">
+                    <FaBuilding className="text-primary" />
+                    <span>Azure Tenant ID</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="tenantId"
+                    value={formData.tenantId}
+                    onChange={handleInputChange}
+                    placeholder="Enter your Azure Tenant ID"
+                    className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary bg-background transition-colors"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The Directory (tenant) ID from your Azure AD
+                  </p>
+                </div>
+
+                {/* Client Secret */}
+                <div className="space-y-2">
+                  <label className="flex items-center space-x-2 text-sm font-medium">
+                    <FaKey className="text-primary" />
+                    <span>Azure Client Secret</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSecret ? "text" : "password"}
+                      name="clientSecret"
+                      value={formData.clientSecret}
+                      onChange={handleInputChange}
+                      placeholder="Enter your Azure Client Secret"
+                      className="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary bg-background transition-colors"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret(!showSecret)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSecret ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    The client secret from your Azure AD app registration
+                  </p>
+                </div>
+
+                {/* Submit Button */}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {isLoading ? (
+                    <>
+                      <FaSpinner className="animate-spin" />
+                      <span>Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FaSave />
+                      <span>Connect to Azure AD</span>
+                    </>
+                  )}
+                </motion.button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Connection Status & Info */}
+        <div className="space-y-6">
+          {/* Connection Status */}
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            className="p-6 bg-card rounded-xl shadow-lg border border-border"
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <FaShieldAlt className="text-xl text-primary" />
+              <h3 className="text-lg font-semibold">Connection Status</h3>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  isConnected 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' 
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
+                }`}>
+                  {statusLoading ? 'Checking…' : (isConnected ? 'Connected' : 'Not Connected')}
+                </span>
+              </div>
+              
+              {isConnected && (
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleDisconnect}
+                  disabled={isLoading}
+                  className="w-full px-4 py-2 border border-destructive text-destructive rounded-lg hover:bg-destructive/10 disabled:opacity-50 transition-colors"
+                >
+                  Disconnect
+                </motion.button>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Help Information */}
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            className="p-6 bg-card rounded-xl shadow-lg border border-border"
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <FaQuestionCircle className="text-xl text-primary" />
+              <h3 className="text-lg font-semibold">How to Get Credentials</h3>
+            </div>
+            
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground">1. Azure Portal</h4>
+                <p>Go to Azure Portal → Azure Active Directory → App registrations</p>
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground">2. Create App</h4>
+                <p>Create a new app registration or use an existing one</p>
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground">3. Get Credentials</h4>
+                <p>Copy the Application ID, Tenant ID, and create a client secret</p>
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground">4. Permissions</h4>
+                <p>Ensure the app has necessary permissions for compliance scanning</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </motion.div>
+    {showDisconnectModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/50" onClick={cancelDisconnect} />
+        <div className="relative z-10 w-full max-w-md p-6 bg-card rounded-xl shadow-xl border border-border">
+          <div className="flex items-center space-x-3 mb-4">
+            <FaExclamationTriangle className="text-destructive" />
+            <h3 className="text-lg font-semibold">Disconnect Azure AD</h3>
+          </div>
+          <p className="text-sm text-muted-foreground mb-6">Are you sure you want to disconnect your Azure Active Directory integration? This will disable Azure-related features until reconnected.</p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={cancelDisconnect}
+              className="px-4 py-2 rounded-lg border border-border hover:bg-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDisconnect}
+              disabled={isLoading}
+              className="px-4 py-2 rounded-lg bg-destructive text-white hover:bg-red-600 disabled:opacity-50"
+            >
+              {isLoading ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+};
+
 const UserDashboard = () => {
   const { user, authToken, logout } = useAuth();
   const navigate = useNavigate();
@@ -394,7 +826,16 @@ const UserDashboard = () => {
             
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-4">Chatbot Analytics</h3>
-              <ChatbotAnalytics />
+              <div className="w-full">
+                <ChatbotAnalytics />
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-4">Integrations</h3>
+              <div className="grid grid-cols-1">
+                <AzureConnectionMiniCard />
+              </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -427,33 +868,7 @@ const UserDashboard = () => {
       case 'profile':
         return <Profile />;
       case 'azure':
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-6"
-          >
-            <h2 className="text-2xl font-bold text-foreground">Azure Connection</h2>
-            <div className="p-6 bg-card rounded-xl shadow-lg">
-              <div className="flex items-center space-x-4 mb-4">
-                <FaCloud className="text-2xl text-primary" />
-                <div>
-                  <h3 className="text-lg font-semibold">Azure Integration</h3>
-                  <p className="text-muted-foreground">Connect and manage your Azure resources</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <button className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
-                  Connect to Azure
-                </button>
-                <button className="w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary">
-                  View Connection Status
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        );
+        return <AzureADConnection />;
             case 'chatbot':        return <ComplianceChat />;
       case 'testing':
         return (

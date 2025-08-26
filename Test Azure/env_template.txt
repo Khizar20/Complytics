@@ -1,0 +1,8 @@
+# Azure AD Configuration
+# Copy this file to .env and fill in your actual values
+AZURE_CLIENT_ID=your_client_id_here
+AZURE_TENANT_ID=your_tenant_id_here
+AZURE_CLIENT_SECRET=your_client_secret_here
+
+# Google API Configuration (for Gemini 2.0 Flash)
+GOOGLE_API_KEY=AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI 

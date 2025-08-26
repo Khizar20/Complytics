@@ -36,7 +36,7 @@ ax1 = sns.barplot(data=bert_with, x='Model', y='Score', palette=colors)
 plt.title('BERT Scores - With Reasoning', fontsize=14, pad=20)
 plt.xlabel('Model', fontsize=12)
 plt.ylabel('BERT Score', fontsize=12)
-plt.ylim(0.7, 1.1)  # Adjusted scale for better visualization
+plt.ylim(0.0, 1.0)  # Adjusted scale for better visualization
 plt.xticks(rotation=45, ha='right')
 
 # Add value labels on top of bars
@@ -53,7 +53,7 @@ ax2 = sns.barplot(data=bert_without, x='Model', y='Score', palette=colors)
 plt.title('BERT Scores - Without Reasoning', fontsize=14, pad=20)
 plt.xlabel('Model', fontsize=12)
 plt.ylabel('BERT Score', fontsize=12)
-plt.ylim(0, 0.3)  # Adjusted scale for better visualization
+plt.ylim(0, 1)  # Adjusted scale for better visualization
 plt.xticks(rotation=45, ha='right')
 
 # Add value labels on top of bars
@@ -70,7 +70,7 @@ ax3 = sns.barplot(data=hall_with, x='Model', y='Score', palette=colors)
 plt.title('Hallucination Scores - With Reasoning', fontsize=14, pad=20)
 plt.xlabel('Model', fontsize=12)
 plt.ylabel('Hallucination Score', fontsize=12)
-plt.ylim(0, 0.7)  # Adjusted scale for better visualization
+plt.ylim(0, 1)  # Adjusted scale for better visualization
 plt.xticks(rotation=45, ha='right')
 
 # Add value labels on top of bars
@@ -87,7 +87,7 @@ ax4 = sns.barplot(data=hall_without, x='Model', y='Score', palette=colors)
 plt.title('Hallucination Scores - Without Reasoning', fontsize=14, pad=20)
 plt.xlabel('Model', fontsize=12)
 plt.ylabel('Hallucination Score', fontsize=12)
-plt.ylim(0.7, 1.0)  # Adjusted scale for better visualization
+plt.ylim(0.0, 1.0)  # Adjusted scale for better visualization
 plt.xticks(rotation=45, ha='right')
 
 # Add value labels on top of bars

@@ -1,0 +1,7 @@
+msal==1.25.0
+requests==2.31.0
+python-dotenv==1.0.0
+httpx==0.25.2
+google-generativeai==0.8.3
+jsonpath-ng==1.6.0
+PyPDF2==3.0.1 

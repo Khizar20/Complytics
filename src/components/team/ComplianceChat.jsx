@@ -149,28 +149,28 @@ const FormattedResponse = ({ content }) => {
         
         // Only render if heading text is meaningful (not just emoji or empty)
         if (headingText && headingText.length > 0 && headingText !== '#' && !/^[🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯\s]*$/.test(headingText)) {
-          return (
-            <Box key={index} sx={{ mb: 3 }}>
-              <Typography
-                variant={level === 1 ? "h4" : level === 2 ? "h5" : "h6"}
-                sx={{
-                  fontFamily: 'Poppins, sans-serif',
-                  fontWeight: 600,
-                  mb: 2,
-                  color: theme.palette.text.primary,
-                  fontSize: level === 1 ? '1.5rem' : level === 2 ? '1.25rem' : '1.1rem'
-                }}
-              >
-                {headingText}
-              </Typography>
-              {content && (
-                <Box sx={{ pl: 2 }}>
-                  {formatBulletPoints(content)}
-                </Box>
-              )}
-            </Box>
-          );
-        }
+        return (
+          <Box key={index} sx={{ mb: 3 }}>
+            <Typography
+              variant={level === 1 ? "h4" : level === 2 ? "h5" : "h6"}
+              sx={{
+                fontFamily: 'Poppins, sans-serif',
+                fontWeight: 600,
+                mb: 2,
+                color: theme.palette.text.primary,
+                fontSize: level === 1 ? '1.5rem' : level === 2 ? '1.25rem' : '1.1rem'
+              }}
+            >
+              {headingText}
+            </Typography>
+            {content && (
+              <Box sx={{ pl: 2 }}>
+                {formatBulletPoints(content)}
+              </Box>
+            )}
+          </Box>
+        );
+      }
       }
       
       // For non-heading sections, format as bullet points or paragraphs

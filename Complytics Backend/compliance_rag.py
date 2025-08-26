@@ -36,22 +36,6 @@ genai.configure(api_key=GOOGLE_API_KEY)
 logger.info("Initializing embedding model...")
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Performance configuration options
-RESPONSE_MODE = "balanced"  # Changed from "comprehensive" to "balanced" for better speed/quality balance
-
-def get_token_limit_for_mode(mode: str, base_limit: int = 2048) -> int:
-    """Get appropriate token limit based on response mode."""
-    token_limits = {
-        "fast": min(base_limit, 1536),
-        "balanced": min(base_limit, 2048),
-        "comprehensive": min(base_limit, 3072)
-    }
-    return token_limits.get(mode, base_limit)
-
-def should_validate_response(mode: str) -> bool:
-    """Determine if response validation should be performed based on mode."""
-    return mode in ["balanced", "comprehensive"]
-
 # Directory structure for embeddings and indexes
 EMBEDDING_DIR = "embeddings"
 INDEX_DIR = "faiss_indexes"
@@ -92,7 +76,7 @@ generation_config = {
     "temperature": 0.1,
     "top_p": 1,
     "top_k": 1,
-    "max_output_tokens": 4096,  # Increased for comprehensive responses
+    "max_output_tokens": 3200,
 }
 
 safety_settings = [
@@ -137,8 +121,8 @@ def wait_for_rate_limit_optimized():
 @sleep_and_retry
 @limits(calls=CALLS_PER_MINUTE, period=60)
 @timing_decorator
-def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.1, max_tokens: int = 2048) -> str:
-    """Optimized rate-limited content generation with adequate tokens for complete responses."""
+def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.1, max_tokens: int = 3200) -> str:
+    """Optimized rate-limited content generation with reduced tokens for speed."""
     # Check cache first using hash of prompt + temperature
     prompt_hash = hash_text(f"{prompt}:{temperature}:{max_tokens}")
     cache_key = f"gemini_opt:{prompt_hash}"
@@ -484,28 +468,59 @@ def process_documents(new_document_path: Optional[str] = None) -> Tuple[List[str
         
         return all_segments, np.array(all_embeddings), index
 
+def detect_concise_request(query: str) -> bool:
+    """Detect if user is asking for a concise/brief response."""
+    concise_indicators = [
+        "concisely", "briefly", "short", "quick", "summarize", "summary",
+        "in brief", "quick answer", "short answer", "bullet points",
+        "key points", "main points", "overview", "tldr", "tl;dr"
+    ]
+    query_lower = query.lower()
+    return any(indicator in query_lower for indicator in concise_indicators)
+
+def get_concise_max_tokens(query: str) -> int:
+    """Return appropriate max_tokens based on whether user wants concise response."""
+    if detect_concise_request(query):
+        return 512  # Much shorter for concise requests
+    return 2500  # Full length for detailed requests
+
 @timing_decorator
 def expert_security_controls(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for security controls."""
-    prompt = (
-        "You are a cybersecurity and information security expert specializing in enterprise security controls and compliance frameworks.\n\n"
-        f"Previous conversation context:\n{conversation_context}\n\n"
-        f"Current Query: {query}\n"
-        f"Relevant Context from Documents: {context}\n\n"
-        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
-        "Provide a comprehensive analysis focusing on:\n"
-        "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS, etc.\n"
-        "2. **Implementation Guidelines**: Step-by-step technical implementation\n"
-        "3. **Risk Assessment**: Identify threats, vulnerabilities, and risk levels\n"
-        "4. **Monitoring & Validation**: Methods to verify control effectiveness\n"
-        "5. **Best Practices**: Industry-proven security measures\n"
-        "6. **Compliance Mapping**: How controls map to regulatory requirements\n\n"
-        "Structure your response with clear headings and actionable recommendations.\n"
-        "Use technical precision while remaining practical for implementation.\n"
-        "Ensure all sections are complete with detailed explanations.\n\n"
-        "Response:"
-    )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    is_concise = detect_concise_request(query)
+    max_tokens = get_concise_max_tokens(query)
+    
+    if is_concise:
+        prompt = (
+            "Provide a CONCISE, bullet-point response for this security/compliance query.\n\n"
+            f"Query: {query}\n"
+            f"Context: {context[:500]}\n\n"
+            "Format as:\n"
+            "**Key Steps:**\n"
+            "• Point 1\n"
+            "• Point 2\n"
+            "• Point 3\n\n"
+            "Keep it under 150 words total. Focus on actionable steps only."
+        )
+    else:
+        prompt = (
+            "You are a cybersecurity and information security expert specializing in enterprise security controls and compliance frameworks.\n\n"
+            f"Previous conversation context:\n{conversation_context}\n\n"
+            f"Current Query: {query}\n"
+            f"Relevant Context from Documents: {context}\n\n"
+            "Provide a comprehensive analysis focusing on:\n"
+            "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS, etc.\n"
+            "2. **Implementation Guidelines**: Step-by-step technical implementation\n"
+            "3. **Risk Assessment**: Identify threats, vulnerabilities, and risk levels\n"
+            "4. **Monitoring & Validation**: Methods to verify control effectiveness\n"
+            "5. **Best Practices**: Industry-proven security measures\n"
+            "6. **Compliance Mapping**: How controls map to regulatory requirements\n\n"
+            "Structure your response with clear headings and actionable recommendations.\n"
+            "Use technical precision while remaining practical for implementation.\n\n"
+            "Once you write an answer iterate over it to see all points are covered before showing it to user\n\n"
+            "Response:"
+        )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
 @timing_decorator
 def expert_privacy_regulations(query: str, context: str, conversation_context: str = "") -> str:
@@ -515,7 +530,6 @@ def expert_privacy_regulations(query: str, context: str, conversation_context: s
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n"
         f"Relevant Context from Documents: {context}\n\n"
-        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
         "Provide a comprehensive analysis focusing on:\n"
         "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA, etc.\n"
         "2. **Data Subject Rights**: Individual rights and how to implement them\n"
@@ -525,11 +539,10 @@ def expert_privacy_regulations(query: str, context: str, conversation_context: s
         "6. **Breach Response**: Notification requirements and procedures\n"
         "7. **Documentation**: Required policies, records, and assessments\n\n"
         "Include specific regulatory citations and practical implementation guidance.\n"
-        "Address both legal compliance and operational requirements.\n"
-        "Ensure all sections are complete with detailed explanations.\n\n"
+        "Address both legal compliance and operational requirements.\n\n"
         "Response:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_audit_compliance(query: str, context: str, conversation_context: str = "") -> str:
@@ -539,7 +552,6 @@ def expert_audit_compliance(query: str, context: str, conversation_context: str 
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n"
         f"Relevant Context from Documents: {context}\n\n"
-        "IMPORTANT: Provide a COMPLETE, comprehensive response. Do not truncate.\n\n"
         "Provide a comprehensive analysis focusing on:\n"
         "1. **Audit Requirements**: Specific audit standards and procedures\n"
         "2. **Evidence Collection**: Documentation and artifacts needed\n"
@@ -549,11 +561,11 @@ def expert_audit_compliance(query: str, context: str, conversation_context: str 
         "6. **Remediation Planning**: Steps to address findings and gaps\n"
         "7. **Continuous Monitoring**: Ongoing compliance assurance processes\n\n"
         "Reference relevant frameworks (ISO 27001, SOC 2, NIST, COBIT) and provide\n"
-        "specific audit procedures and compliance checklists where applicable.\n"
-        "Ensure all sections are complete with detailed explanations.\n\n"
+        "specific audit procedures and compliance checklists where applicable.\n\n"
+        "Think step by step before answering\n\n"
         "Response:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_financial_compliance(query: str, context: str, conversation_context: str = "") -> str:
@@ -572,26 +584,42 @@ def expert_financial_compliance(query: str, context: str, conversation_context: 
         "6. Risk management frameworks (COSO, Basel)\n"
         "Chain-of-Thought Analysis:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_healthcare_compliance(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for healthcare compliance and HIPAA."""
-    prompt = (
-        "As a healthcare compliance expert, analyze the following query:\n\n"
-        f"{conversation_context}"
-        f"Query: {query}\n"
-        f"Context: {context}\n"
-        "Focus on:\n"
-        "1. HIPAA Privacy and Security Rules\n"
-        "2. Healthcare data protection and PHI handling\n"
-        "3. Medical device regulations (FDA, CE marking)\n"
-        "4. Clinical trial compliance (GCP, ICH guidelines)\n"
-        "5. Healthcare IT security requirements\n"
-        "6. Patient consent and data rights\n"
-        "Chain-of-Thought Analysis:"
-    )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    is_concise = detect_concise_request(query)
+    max_tokens = get_concise_max_tokens(query)
+    
+    if is_concise:
+        prompt = (
+            "Provide a CONCISE, bullet-point response for HIPAA/healthcare compliance.\n\n"
+            f"Query: {query}\n"
+            f"Context: {context[:500]}\n\n"
+            "Format as:\n"
+            "**HIPAA Compliance Steps:**\n"
+            "• Step 1\n"
+            "• Step 2\n"
+            "• Step 3\n\n"
+            "Keep it under 150 words total. Focus on actionable steps only."
+        )
+    else:
+        prompt = (
+            "As a healthcare compliance expert, analyze the following query:\n\n"
+            f"{conversation_context}"
+            f"Query: {query}\n"
+            f"Context: {context}\n\n"
+            "Focus on:\n"
+            "1. HIPAA Privacy and Security Rules\n"
+            "2. Healthcare data protection and PHI handling\n"
+            "3. Medical device regulations (FDA, CE marking)\n"
+            "4. Clinical trial compliance (GCP, ICH guidelines)\n"
+            "5. Healthcare IT security requirements\n"
+            "6. Patient consent and data rights\n"
+            "Chain-of-Thought Analysis:"
+        )
+    return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
 @timing_decorator
 def expert_international_compliance(query: str, context: str, conversation_context: str = "") -> str:
@@ -600,7 +628,7 @@ def expert_international_compliance(query: str, context: str, conversation_conte
         "As an international compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
         f"Query: {query}\n"
-        f"Context: {context}\n"
+        f"Context: {context}\n\n"
         "Focus on:\n"
         "1. Cross-border data transfer requirements\n"
         "2. International privacy laws (GDPR, LGPD, PIPEDA, etc.)\n"
@@ -610,7 +638,7 @@ def expert_international_compliance(query: str, context: str, conversation_conte
         "6. International standards harmonization\n"
         "Chain-of-Thought Analysis:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_operational_compliance(query: str, context: str, conversation_context: str = "") -> str:
@@ -619,7 +647,7 @@ def expert_operational_compliance(query: str, context: str, conversation_context
         "As an operational compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
         f"Query: {query}\n"
-        f"Context: {context}\n"
+        f"Context: {context}\n\n"
         "Focus on:\n"
         "1. Business process compliance and controls\n"
         "2. Vendor and third-party risk management\n"
@@ -629,7 +657,7 @@ def expert_operational_compliance(query: str, context: str, conversation_context
         "6. Incident response and breach notification\n"
         "Chain-of-Thought Analysis:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_industry_specific(query: str, context: str, conversation_context: str = "") -> str:
@@ -638,7 +666,7 @@ def expert_industry_specific(query: str, context: str, conversation_context: str
         "As an industry-specific compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
         f"Query: {query}\n"
-        f"Context: {context}\n"
+        f"Context: {context}\n\n"
         "Focus on:\n"
         "1. Industry-specific regulations (FERPA for education, GLBA for finance, etc.)\n"
         "2. Sector-specific standards and frameworks\n"
@@ -648,7 +676,7 @@ def expert_industry_specific(query: str, context: str, conversation_context: str
         "6. Industry-specific risk factors and controls\n"
         "Chain-of-Thought Analysis:"
     )
-    return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> str:
@@ -659,20 +687,41 @@ def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> st
     if len(outputs) == 1:
         return outputs[0]
     
+    is_concise = detect_concise_request(query)
+    max_tokens = get_concise_max_tokens(query)
+    
     # Create a comprehensive synthesis prompt
     expert_analyses_text = ""
     for i, output in enumerate(outputs, 1):
         expert_analyses_text += f"\n--- Expert Analysis {i} ---\n{output}\n"
     
-    prompt = f"""
+    if is_concise:
+        prompt = f"""
+Synthesize these expert analyses into a CONCISE, actionable response.
+
+Original Query: {query}
+Expert Analyses:{expert_analyses_text[:1000]}
+
+Provide response as:
+**Key Steps:**
+• Action 1
+• Action 2  
+• Action 3
+
+**Critical Requirements:**
+• Requirement 1
+• Requirement 2
+
+Keep total response under 200 words. Focus only on actionable steps.
+"""
+    else:
+        prompt = f"""
 You are a senior compliance consultant tasked with synthesizing multiple expert analyses into a comprehensive, actionable response.
 
 Original Query: {query}
 Context: {context}
 
 Expert Analyses:{expert_analyses_text}
-
-IMPORTANT: Provide a COMPLETE response. Do not truncate or cut off mid-sentence. Ensure all sections are fully developed.
 
 Synthesize these expert analyses into a cohesive response that:
 
@@ -682,7 +731,7 @@ Synthesize these expert analyses into a cohesive response that:
    - Complementary perspectives
    - Any conflicting viewpoints and how to resolve them
 3. **Cross-Domain Considerations**: Identify how different compliance areas interact
-4. **Prioritized Recommendations**: List actionable steps in order of importance (provide at least 8-10 recommendations)
+4. **Prioritized Recommendations**: List actionable steps in order of importance
 5. **Implementation Timeline**: Suggest phases for implementation where applicable
 6. **Risk Assessment**: Highlight critical risks and mitigation strategies
 7. **Next Steps**: Specific actions the user should take
@@ -694,39 +743,11 @@ Guidelines:
 - Include relevant regulatory citations and standards
 - Maintain technical accuracy while being accessible
 - Address both immediate needs and long-term compliance strategy
-- ENSURE COMPLETE SENTENCES AND FULL SECTIONS - do not end abruptly
 
 Synthesized Response:
 """
     
-    # Use higher token limit for comprehensive responses
-    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 3072))
-    
-    # Check if response appears truncated and attempt to complete it
-    if response and (response.endswith("*") or response.endswith("**") or 
-                    response.count('.') < 5 or len(response) < 500):
-        logger.warning("Response appears truncated, attempting completion...")
-        
-        completion_prompt = f"""
-The following response appears to be incomplete. Please provide a proper completion:
-
-{response}
-
-Complete this response with:
-- Proper sentence endings
-- Complete bullet points
-- A professional conclusion
-- Ensure all recommendations are fully detailed
-
-Completed Response:
-"""
-        
-        completed_response = rate_limited_generate_content_optimized(completion_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
-        
-        if completed_response and len(completed_response) > len(response):
-            return completed_response
-    
-    return response
+    return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
 # Add ConversationHistory class to maintain context across queries
 class ConversationHistory:
@@ -805,7 +826,7 @@ def classify_compliance_query(query: str, conversation_context: str = "") -> boo
         f"Query: {query}\n"
         "Answer with ONLY 'yes' or 'no':"
     )
-    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    response = rate_limited_generate_content_optimized(prompt)
     return "yes" in response.lower()
 
 # Track recent non-compliance responses to ensure variety
@@ -893,7 +914,7 @@ Make it sound natural and varied - don't use the same phrases every time.
 Avoid being overly formal or robotic.
 """
 
-        response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))  # Increased max_tokens for more variety
+        response = rate_limited_generate_content_optimized(prompt, max_tokens=3200)  # Increased max_tokens for more variety
         
         # Add compliance topic suggestions based on query context
         topic_suggestions = get_contextual_compliance_suggestions(query_lower, response_category)
@@ -1187,7 +1208,7 @@ def generate_privacy_policy(framework: str, format: str = "txt") -> str:
                 "Generate the section content:"
             )
             
-            section_content = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+            section_content = rate_limited_generate_content(prompt)
             sections.append(f"\n{section_title}\n")
             sections.append(f"{section_content}\n")
         
@@ -1353,65 +1374,14 @@ def hash_text(text: str) -> str:
     """Create a hash of text for caching purposes"""
     return hashlib.md5(text.encode()).hexdigest()
 
-def validate_and_complete_response(response: str, query: str, expert_type: str = "") -> str:
-    """Validate response completeness and attempt to complete if truncated."""
-    if not response:
-        return "I apologize, but I'm unable to provide a response at this time. Please try rephrasing your question."
-    
-    # Skip validation in fast mode for performance
-    if not should_validate_response(RESPONSE_MODE):
-        return response
-    
-    # More selective truncation indicators - only check for obvious problems
-    critical_truncation_indicators = [
-        response.endswith("*"),
-        response.endswith("**"),
-        response.endswith("- "),
-        response.endswith(": "),
-        len(response) < 300,  # Only very short responses
-        # Check for incomplete sentences at the end (only obvious cases)
-        response.strip().endswith(('and', 'or', 'but', 'because', 'however', 'therefore')),
-        # Check for incomplete markdown
-        response.count('**') % 2 != 0,
-        # Check if ends with numbered list item without content
-        response.strip().endswith(tuple(str(i) + '.' for i in range(1, 11)))
-    ]
-    
-    # Only validate if there are CRITICAL truncation signs
-    if any(critical_truncation_indicators):
-        logger.warning(f"Critical truncation detected for {expert_type} - attempting completion")
-        
-        completion_prompt = f"""
-The following {expert_type} response appears critically incomplete:
-
-{response}
-
-Please complete this response with proper conclusions and formatting.
-Keep it concise but complete.
-
-Completed Response:
-"""
-        
-        try:
-            token_limit = get_token_limit_for_mode(RESPONSE_MODE, 1536)  # Reduced for speed
-            completed_response = rate_limited_generate_content_optimized(completion_prompt, max_tokens=token_limit)
-            
-            if completed_response and len(completed_response) > len(response) * 0.8:
-                logger.info(f"Successfully completed {expert_type} response")
-                return completed_response
-        except Exception as e:
-            logger.error(f"Error completing response: {e}")
-    
-    return response
-
+# Add cached version of expertise functions
 def cached_expert_response(expert_type: str, query: str, context: str, conversation_context: str = "") -> str:
     """Get expert response from cache if available, otherwise generate and cache it"""
     cache_key = f"{expert_type}:{hash_text(query)}:{hash_text(context)}:{hash_text(conversation_context)}"
     
     if cache_key in QUERY_CACHE:
         logger.info(f"Cache hit for {expert_type} expert")
-        cached_response = QUERY_CACHE[cache_key]
-        return validate_and_complete_response(cached_response, query, expert_type)
+        return QUERY_CACHE[cache_key]
     
     # Call appropriate expert function based on type
     if expert_type == "security":
@@ -1433,17 +1403,14 @@ def cached_expert_response(expert_type: str, query: str, context: str, conversat
     else:
         return ""
     
-    # Validate and complete the response
-    validated_response = validate_and_complete_response(response, query, expert_type)
-    
-    # Cache the validated response
-    QUERY_CACHE[cache_key] = validated_response
+    # Cache the response
+    QUERY_CACHE[cache_key] = response
     
     # Periodically save the cache (every 10 new entries)
     if len(QUERY_CACHE) % 10 == 0:
         save_query_cache()
         
-    return validated_response
+    return response
 
 @timing_decorator
 def process_expert_analyses(query: str, context: str, conversation_context: str, experts: List[str]) -> List[str]:
@@ -1605,7 +1572,7 @@ def get_framework_recommendation(query: str) -> Tuple[str, float]:
         "Response:"
     )
     
-    response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+    response = rate_limited_generate_content(prompt)
     end_time = time.time()
     
     return response, end_time - start_time
@@ -1620,9 +1587,21 @@ async def get_progressive_response(query: str, experts: List[str], context: str,
         yield aggregate_expert_outputs(expert_responses, query, context)
 
 @timing_decorator
-def process_query_optimized(query: str, context: str, conversation_context: str) -> Tuple[str, float]:
+def process_query_optimized(query: str, context: str, conversation_context: str, conversation_history: 'ConversationHistory' = None) -> Tuple[str, float]:
     """Optimized query processing with fast response paths."""
     start_time = time.time()
+    
+    # Step 1: Validate input
+    is_valid, error_message = validate_query_input(query)
+    if not is_valid:
+        end_time = time.time()
+        return error_message, end_time - start_time
+    
+    # Step 2: Check for conversation history queries
+    if detect_conversation_history_query(query):
+        response = handle_conversation_history_query(conversation_history)
+        end_time = time.time()
+        return response, end_time - start_time
     
     # Fast Path: Check if this is a compliance-related query
     is_compliance, reason = is_compliance_related_optimized(query, conversation_context)
@@ -1671,13 +1650,6 @@ def process_query_optimized(query: str, context: str, conversation_context: str)
     else:
         final_response = aggregate_expert_outputs(expert_responses, query, context)
     
-    # Final validation only if response shows obvious issues
-    if (len(final_response) < 500 or 
-        final_response.endswith(('*', '**', ':', '- ')) or
-        final_response.count('.') < 3):
-        logger.info("Applying final validation due to potential issues")
-        final_response = validate_and_complete_response(final_response, query, "final_synthesis")
-    
     # Cache the response
     QUERY_CACHE[cache_key] = final_response
     
@@ -1718,149 +1690,6 @@ def find_similar_cached_response(query: str, experts: List[str]) -> Optional[str
         logger.error(f"Error finding similar cached response: {e}")
         return None
 
-def clear_query_cache():
-    """Clear all cache-related data"""
-    global QUERY_CACHE
-    QUERY_CACHE = {}
-    
-    # Clear the file-based cache
-    if os.path.exists(QUERY_CACHE_FILE):
-        try:
-            os.remove(QUERY_CACHE_FILE)
-            logger.info("Query cache file removed")
-        except Exception as e:
-            logger.error(f"Error removing query cache file: {e}")
-    
-    # Clear the embedding cache
-    get_cached_embedding.cache_clear()
-    logger.info("Embedding cache cleared")
-    
-    # Clear any other cache files that might exist
-    cache_files = [
-        os.path.join(CACHE_DIR, f) for f in os.listdir(CACHE_DIR)
-        if f.endswith('.json') or f.endswith('.npy') or f.endswith('.pkl')
-    ]
-    
-    for cache_file in cache_files:
-        try:
-            os.remove(cache_file)
-            logger.info(f"Removed cache file: {cache_file}")
-        except Exception as e:
-            logger.error(f"Error removing cache file {cache_file}: {e}")
-    
-    logger.info("All cache data cleared successfully")
-
-def interactive_compliance_query(segments: List[str], index: Any) -> None:
-    """Interactive query interface with optimized processing"""
-    logger.info("\nCompliance Framework RAG System")
-    logger.info("Type 'exit' to quit.")
-    logger.info("Type 'upload' to analyze a privacy policy document.")
-    logger.info("Type 'cache' to see cache stats.")
-    logger.info("Type 'clear_cache' to clear the query cache.")
-    conversation = ConversationHistory()
-
-    while True:
-        query = input("\nEnter your compliance query or command: ")
-        
-        if query.lower() == "exit":
-            conversation.reset()
-            save_query_cache()
-            break
-        elif query.lower() == "cache":
-            logger.info(f"Query cache size: {len(QUERY_CACHE)} entries")
-            logger.info(f"Embedding cache stats: {get_cached_embedding.cache_info()}")
-            continue
-        elif query.lower() == "clear_cache":
-            clear_query_cache()
-            continue
-        elif query.lower() == "upload":
-            file_path = input("Enter the path to your privacy policy document (PDF, TXT, or DOCX): ")
-            policy_text = upload_privacy_policy(file_path)
-            if policy_text.startswith("Error") or policy_text.startswith("Unsupported"):
-                logger.info(policy_text)
-                continue
-            framework = input("Enter a specific framework to analyze against (or press Enter for all frameworks): ")
-            logger.info("\nAnalyzing privacy policy...")
-            analysis = analyze_privacy_policy(file_path, segments, index, framework)
-            logger.info("\n=== Privacy Policy Analysis ===")
-            logger.info(analysis)
-            logger.info("\n--- End of Analysis ---\n")
-            conversation.add_exchange("Uploaded privacy policy", analysis)
-            continue
-
-        total_start_time = time.time()
-        
-        try:
-            logger.info("\nProcessing query...")
-            
-            # First check if this is a compliance-related query
-            is_compliance, reason = is_compliance_related_optimized(query, conversation.get_context())
-            
-            if not is_compliance:
-                logger.info("\n=== Response ===")
-                response = generate_non_compliance_response(query)
-                logger.info(response)
-                logger.info("\n--- End of Response ---\n")
-                conversation.add_exchange(query, response)
-                continue
-            
-            # Get query embedding - use cached version
-            query_text_hash = hash_text(query)
-            query_embedding = get_cached_embedding(query_text_hash, query)
-            
-            if query_embedding is None:
-                logger.info("Failed to generate query embedding.")
-                continue
-            
-            # Get relevant context
-            query_embedding = np.expand_dims(query_embedding, axis=0)
-            distances, idxs = index.search(query_embedding, 3)
-            retrieved_context = " ".join([segments[idx] for idx in idxs[0] if idx < len(segments)])
-            
-            # Process the query
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            final_response, processing_time = loop.run_until_complete(
-                process_query_optimized(query, retrieved_context, conversation.get_context())
-            )
-            loop.close()
-            
-            logger.info(f"\nTotal processing time: {processing_time:.2f} seconds")
-            
-            logger.info("\n=== Compliance Analysis ===")
-            logger.info(final_response)
-            logger.info("\n--- End of Analysis ---\n")
-            
-            # Log timing information
-            timing_log = {
-                "timestamp": datetime.now().isoformat(),
-                "query": query,
-                "processing_time": processing_time,
-                "is_compliance": is_compliance,
-                "reason": reason
-            }
-            
-            # Save timing log to file
-            with open("response_timing_log.json", "a") as f:
-                f.write(json.dumps(timing_log) + "\n")
-
-            conversation.add_exchange(query, final_response)
-
-        except Exception as e:
-            logger.error(f"Error processing query: {e}")
-            logger.info("Please try again...")
-            continue
-
-def main():
-    logger.info("Loading compliance framework system...")
-    segments, embeddings, index = process_documents()
-    
-    if segments is None:
-        logger.info("Failed to process documents.")
-        return
-    
-    logger.info(f"Loaded {len(segments)} segments")
-    interactive_compliance_query(segments, index)
 
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract text from a PDF file with support for scanned documents."""
@@ -2137,7 +1966,7 @@ def generate_terms_and_conditions(framework: str, format: str = "txt") -> str:
                 "Generate the section content:"
             )
             
-            section_content = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+            section_content = rate_limited_generate_content(prompt)
             sections.append(f"\n{section_title}\n")
             sections.append(f"{section_content}\n")
         
@@ -2186,182 +2015,6 @@ def generate_terms_and_conditions(framework: str, format: str = "txt") -> str:
         logger.error(f"Error generating Terms and Conditions: {str(e)}")
         return f"Error generating Terms and Conditions: {str(e)}"
 
-def get_document_generation_questions(document_type: str, framework: str) -> Dict[str, Any]:
-    """
-    Get follow-up questions needed for document generation using LLM.
-    Returns a structured response with questions, explanations, and examples.
-    """
-    prompt = (
-        f"Generate a comprehensive guide for creating a {framework}-compliant {document_type} document.\n"
-        f"Provide the following information in JSON format:\n"
-        "1. A list of required information categories\n"
-        "2. For each category:\n"
-        "   - Specific questions to ask\n"
-        "   - Why each question is important\n"
-        "   - Example answers\n"
-        "   - Relevant compliance requirements\n"
-        "3. A step-by-step process for gathering the information\n"
-        "4. Common pitfalls to avoid\n"
-        "5. Best practices for implementation\n\n"
-        f"Focus on {framework} requirements and ensure all questions are actionable and specific.\n"
-        "Return the response as a JSON object with the following structure:\n"
-        "{\n"
-        "  'steps': [{'step_number': int, 'description': str}],\n"
-        "  'categories': [\n"
-        "    {\n"
-        "      'category': str,\n"
-        "      'questions': [\n"
-        "        {\n"
-        "          'question': str,\n"
-        "          'key': str,\n"
-        "          'importance': str,\n"
-        "          'example': str,\n"
-        "          'compliance_requirement': str\n"
-        "        }\n"
-        "      ]\n"
-        "    }\n"
-        "  ],\n"
-        "  'pitfalls': [str],\n"
-        "  'best_practices': [str]\n"
-        "}"
-    )
-    
-    try:
-        response = rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
-        guide = json.loads(response)
-        return guide
-    except Exception as e:
-        logger.error(f"Error generating guide: {str(e)}")
-        # Return basic structure as fallback
-        return {
-            'steps': [
-                {'step_number': 1, 'description': 'Identify your organization type and data processing activities'},
-                {'step_number': 2, 'description': 'Document your data collection and processing practices'}
-            ],
-            'categories': [
-                {
-                    'category': 'Organization Information',
-                    'questions': [
-                        {
-                            'question': 'What type of organization are you?',
-                            'key': 'organization_type',
-                            'importance': 'Helps determine applicable regulations and requirements',
-                            'example': 'Healthcare provider, E-commerce business, SaaS company',
-                            'compliance_requirement': 'Organization classification under the framework'
-                        }
-                    ]
-                }
-            ],
-            'pitfalls': ['Not documenting all data processing activities', 'Incomplete privacy notices'],
-            'best_practices': ['Regular review and updates', 'Clear documentation of all processes']
-        }
-
-def generate_document_with_answers(document_type: str, framework: str, answers: Dict[str, str], format: str = "docx") -> str:
-    """
-    Generate a document using the provided answers with enhanced structure and guidance.
-    """
-    try:
-        # Get framework requirements
-        requirements = get_framework_requirements(framework)
-        
-        # Generate document structure using LLM
-        structure_prompt = (
-            f"Generate a comprehensive structure for a {framework}-compliant {document_type} document.\n"
-            f"Based on the provided answers:\n{json.dumps(answers, indent=2)}\n"
-            "Include:\n"
-            "1. Executive summary\n"
-            "2. Detailed sections for each compliance requirement\n"
-            "3. Implementation guidelines\n"
-            "4. Compliance verification steps\n"
-            "5. Maintenance and update procedures\n\n"
-            "Return a JSON array of section objects, each containing:\n"
-            "- title: section title\n"
-            "- content: section content\n"
-            "- requirements: list of specific compliance requirements addressed\n"
-            "- implementation_steps: list of steps to implement the section\n"
-            "- verification_steps: list of steps to verify compliance"
-        )
-        
-        structure_response = rate_limited_generate_content_optimized(structure_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
-        sections = json.loads(structure_response)
-        
-        # Create document
-        doc = Document()
-        
-        # Add title
-        doc.add_heading(f"{'Privacy Policy' if document_type == 'privacy' else 'Terms and Conditions'}", 0)
-        
-        # Add last updated date
-        doc.add_paragraph(f"Last Updated: {datetime.now().strftime('%Y-%m-%d')}")
-        
-        # Add executive summary
-        summary_prompt = (
-            f"Generate an executive summary for a {framework}-compliant {document_type} document.\n"
-            f"Organization context: {json.dumps(answers, indent=2)}\n"
-            "The summary should:\n"
-            "1. Highlight key compliance requirements\n"
-            "2. Summarize implementation status\n"
-            "3. Identify critical areas\n"
-            "4. Provide an overview of the document structure"
-        )
-        summary = rate_limited_generate_content_optimized(summary_prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
-        doc.add_heading("Executive Summary", level=1)
-        doc.add_paragraph(summary)
-        
-        # Add sections
-        for section in sections:
-            # Add section title
-            doc.add_heading(section['title'], level=1)
-            
-            # Add section content
-            doc.add_paragraph(section['content'])
-            
-            # Add requirements
-            if 'requirements' in section:
-                doc.add_heading("Compliance Requirements", level=2)
-                for req in section['requirements']:
-                    doc.add_paragraph(f"• {req}", style='List Bullet')
-            
-            # Add implementation steps
-            if 'implementation_steps' in section:
-                doc.add_heading("Implementation Steps", level=2)
-                for step in section['implementation_steps']:
-                    doc.add_paragraph(f"• {step}", style='List Bullet')
-            
-            # Add verification steps
-            if 'verification_steps' in section:
-                doc.add_heading("Compliance Verification", level=2)
-                for step in section['verification_steps']:
-                    doc.add_paragraph(f"• {step}", style='List Bullet')
-        
-        # Add standard sections
-        standard_sections = {
-            "Contact Information": "For any questions or concerns regarding this document, please contact us at:\n\n[Company Name]\n[Address]\n[Email]\n[Phone]",
-            "Changes to This Document": f"We may update this {document_type} from time to time to reflect changes in our practices or for other operational, legal, or regulatory reasons. The updated version will be indicated by an updated 'Last Updated' date.",
-            "Compliance and Certification": f"We are committed to maintaining compliance with {framework} requirements and regularly review our practices to ensure they meet the highest standards.",
-            "Implementation Timeline": "This document outlines our compliance implementation plan and timeline.",
-            "Regular Review Process": "We conduct regular reviews of our compliance status and update this document accordingly."
-        }
-        
-        for title, content in standard_sections.items():
-            doc.add_heading(title, level=1)
-            doc.add_paragraph(content)
-        
-        # Add appendix with framework requirements
-        doc.add_heading("Appendix: Framework Requirements", level=1)
-        for req in requirements:
-            doc.add_heading(req['title'], level=2)
-            doc.add_paragraph(req['description'])
-        
-        # Save the document
-        filename = f"generated_{document_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format.lower()}"
-        doc.save(filename)
-        
-        return f"Document generated and saved as {filename}"
-            
-    except Exception as e:
-        logger.error(f"Error generating document: {str(e)}")
-        return f"Error generating document: {str(e)}"
 
 # Dynamic learning system for query classification
 CLASSIFICATION_FEEDBACK_FILE = os.path.join(CACHE_DIR, "classification_feedback.json")
@@ -2493,7 +2146,7 @@ Respond in JSON format:
 }}
 """
 
-        response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+        response = rate_limited_generate_content(prompt, temperature=0.1)
         
         try:
             # Try to parse JSON response
@@ -2688,7 +2341,7 @@ Provide a detailed analysis including:
 Format the response with clear headings and bullet points for easy reading.
 """
 
-        analysis = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 3072))
+        analysis = rate_limited_generate_content(prompt, temperature=0.2)
         
         if not analysis or len(analysis.strip()) < 100:
             return f"I've analyzed your {document_type} document against {framework} requirements. The document appears to have some compliance gaps that need attention. Would you like me to generate a fully compliant version for you?"
@@ -2755,7 +2408,7 @@ Use placeholders like [COMPANY NAME], [CONTACT EMAIL], [ADDRESS], [DATE], etc. w
 Start with the document title and generate the complete content in plain text format:
 """
 
-        document_content = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+        document_content = rate_limited_generate_content(prompt, temperature=0.2)
         
         if not document_content or len(document_content.strip()) < 500:
             # Fallback to template-based generation
@@ -3190,7 +2843,7 @@ Provide improvement suggestions in the following format:
 Focus on providing specific, actionable advice rather than generating new content.
 """
 
-        suggestions = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 2048))
+        suggestions = rate_limited_generate_content(prompt, temperature=0.2)
         
         if not suggestions or len(suggestions.strip()) < 100:
             return f"""## 📋 Document Improvement Recommendations
@@ -3329,8 +2982,28 @@ def generate_concise_informational_response(query: str) -> str:
         elif "pci" in query_lower:
             framework = "PCI DSS"
         
-        # Generate a focused, concise response
-        prompt = f"""
+        # Check if user wants concise response
+        is_concise = detect_concise_request(query)
+        max_tokens = 512 if is_concise else 800
+        
+        if is_concise:
+            # Generate a very brief response
+            prompt = f"""
+Provide a CONCISE answer to: "{query}"
+
+Format as:
+**{framework} Compliance - Key Steps:**
+• Step 1
+• Step 2  
+• Step 3
+• Step 4
+• Step 5
+
+Keep under 100 words total. Focus only on essential actions.
+"""
+        else:
+            # Generate a focused, concise response (original logic)
+            prompt = f"""
 Provide a clear, concise response to this query: "{query}"
 
 Structure your response as follows:
@@ -3343,11 +3016,162 @@ Use clear, professional language that's accessible to both beginners and experts
 Focus on practical, actionable information.
 """
         
-        return rate_limited_generate_content_optimized(prompt, max_tokens=get_token_limit_for_mode(RESPONSE_MODE, 1200))
+        return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
         
     except Exception as e:
         logger.error(f"Error generating concise response: {e}")
         return "I'd be happy to help with information about compliance frameworks. Could you please rephrase your question?"
+
+def validate_query_input(query: str) -> Tuple[bool, str]:
+    """
+    Validate user query input to ensure it's meaningful and processable.
+    Returns (is_valid, error_message)
+    """
+    if not query:
+        return False, "Please enter a question or request."
+    
+    # Strip whitespace
+    query_stripped = query.strip()
+    
+    if not query_stripped:
+        return False, "Please enter a question or request."
+    
+    # Check minimum length
+    if len(query_stripped) < 3:
+        return False, "Please enter a more specific question."
+    
+    # Check if query contains only special characters or numbers
+    import re
+    if re.match(r'^[^a-zA-Z]*$', query_stripped):
+        return False, "Please enter a question using words."
+    
+    # Check for only repeated characters
+    if len(set(query_stripped.lower())) <= 2:
+        return False, "Please enter a meaningful question."
+    
+    # Check for test inputs
+    test_patterns = [
+        r'^test+$', r'^hello+$', r'^hi+$', r'^\.+$', r'^\?+$', 
+        r'^!+$', r'^@+$', r'^#+$', r'^\$+$', r'^%+$', r'^\^+$',
+        r'^&+$', r'^\*+$', r'^\(+$', r'^\)+$', r'^-+$', r'^_+$',
+        r'^=+$', r'^\++$', r'^\[+$', r'^\]+$', r'^\{+$', r'^\}+$',
+        r'^\\+$', r'^\|+$', r'^;+$', r'^:+$', r'^"+$', r"^'+$",
+        r'^<+$', r'^>+$', r'^,+$', r'^\.+$', r'^/+$', r'^\s*$'
+    ]
+    
+    for pattern in test_patterns:
+        if re.match(pattern, query_stripped.lower()):
+            return False, "Please enter a meaningful compliance-related question."
+    
+    # Check for minimum word count
+    words = query_stripped.split()
+    if len(words) < 2:
+        return False, "Please enter a more detailed question."
+    
+    return True, ""
+
+def detect_conversation_history_query(query: str) -> bool:
+    """Detect if user is asking about previous conversation."""
+    # More specific patterns to avoid false positives
+    specific_history_patterns = [
+        "what did we talk about before",
+        "what did we talk about earlier", 
+        "what was our last conversation",
+        "what was our previous conversation",
+        "what did we discuss before",
+        "what did we discuss earlier",
+        "our chat history",
+        "previous chat",
+        "last conversation",
+        "continue our conversation",
+        "where did we leave off",
+        "what were we discussing",
+        "remind me what we talked about"
+    ]
+    
+    query_lower = query.lower().strip()
+    
+    # Exact matches for specific patterns
+    for pattern in specific_history_patterns:
+        if pattern in query_lower:
+            return True
+    
+    # Additional check for very short history queries
+    if len(query_lower.split()) <= 6:  # Short queries only
+        history_keywords = ["before", "earlier", "last time", "previous"]
+        if any(keyword in query_lower for keyword in history_keywords):
+            # Make sure it's actually about conversation
+            conversation_words = ["talk", "discuss", "chat", "conversation", "said", "spoke"]
+            if any(word in query_lower for word in conversation_words):
+                return True
+    
+    return False
+
+def handle_conversation_history_query(conversation: 'ConversationHistory') -> str:
+    """Handle queries about conversation history."""
+    if not conversation or not conversation.history:
+        return """I don't have any record of previous conversations in this session. This appears to be a new conversation.
+
+If you're looking for help with compliance topics, I'd be happy to assist with:
+• GDPR, CCPA, HIPAA compliance
+• Security frameworks (ISO 27001, SOC 2, NIST)
+• Privacy policy development
+• Risk assessments and audits
+
+What specific compliance topic would you like to discuss?"""
+    
+    # If there is history, provide a summary
+    context = conversation.get_context(compact=True)
+    return f"""Here's a summary of our previous conversation:
+
+{context}
+
+What would you like to continue discussing or explore further?"""
+
+def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tokens: int = 3200, max_retries: int = 3) -> str:
+    """Generate content with rate limiting and retries."""
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens
+                }
+            )
+            return response.text
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)  # Wait before retrying
+
+def analyze_query_intent_with_ai(query: str) -> Dict[str, Any]:
+    """Analyze query intent using AI."""
+    try:
+        prompt = f"""Analyze the following query and determine its intent:
+        Query: {query}
+        
+        Return a JSON object with the following fields:
+        - intent: The main intent of the query (e.g., 'GENERAL_COMPLIANCE', 'SPECIFIC_REQUIREMENT', 'DOCUMENT_ANALYSIS')
+        - document_type: The type of document being referenced (if any)
+        - framework: The compliance framework being discussed (if any)
+        - urgency: The urgency level ('low', 'medium', 'high')
+        - confidence: A float between 0 and 1 indicating confidence in the analysis
+        - reasoning: Brief explanation of the analysis
+        """
+        
+        response = rate_limited_generate_content(prompt)
+        return json.loads(response)
+    except Exception as e:
+        logger.warning(f"AI classification failed: {str(e)}")
+        return {
+            'intent': 'GENERAL_COMPLIANCE',
+            'document_type': 'unknown',
+            'framework': 'general',
+            'urgency': 'medium',
+            'confidence': 0.0,
+            'reasoning': f'Default classification due to error: {str(e)}'
+        }
 
 if __name__ == "__main__":
     main() 
