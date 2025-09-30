@@ -19,6 +19,27 @@ const Profile = () => {
     confirm_password: ''
   });
 
+  const [deletionReason, setDeletionReason] = useState('');
+  const [deletionRequest, setDeletionRequest] = useState(null);
+
+  React.useEffect(() => {
+    const fetchDeletionRequest = async () => {
+      try {
+        if (!authToken) return;
+        const res = await fetch(`${API_URL}/admin/account-deletion-request`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDeletionRequest(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch deletion request', e);
+      }
+    };
+    fetchDeletionRequest();
+  }, [authToken]);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -207,6 +228,8 @@ const Profile = () => {
             {isLoading ? 'Updating...' : 'Update Password'}
           </Button>
         </form>
+
+        {/* Account deletion UI moved to Admin Dashboard (Request Account Deletion menu) */}
       </div>
     </motion.div>
   );

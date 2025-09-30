@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 import os
+from typing import Optional
 
 # Load environment variables first
 load_dotenv()
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    GOOGLE_API_KEY: Optional[str] = None
     
     # SMTP settings
     SMTP_HOST: str

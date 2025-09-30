@@ -259,3 +259,20 @@ async def send_forgot_password_email(
     with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
         server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         server.send_message(message)
+
+async def send_simple_email(
+    to_email: str,
+    subject: str,
+    html_body: str
+):
+    message = MIMEMultipart()
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = to_email
+    message["Subject"] = subject
+
+    message.attach(MIMEText(html_body, "html"))
+
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, context=context) as server:
+        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        server.send_message(message)

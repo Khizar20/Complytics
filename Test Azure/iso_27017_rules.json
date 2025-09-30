@@ -3,14 +3,14 @@
     "rule_id": "AZURE_AD_9.2.3",
     "title": "Privileged Access Management (PAM) for Cloud Admins",
     "description": "Ensure multi-factor authentication (MFA) is enforced for all privileged Azure AD roles (Global Admins, Security Admins, etc.).",
-    "graph_path": "/identity/conditionalAccess/policies",
+    "graph_path": "/identity/conditionalAccess/policies", 
     "field": "requireMFAForAdminRoles",
     "operator": "==",
     "value": true,
     "severity": "high",
     "control_id": "ISO/IEC 27017:2015 9.2.3",
     "remediation": "Enable Conditional Access policies enforcing MFA for all administrative roles in Azure AD."
-  },
+  }, 
   {
     "rule_id": "AZURE_AD_9.5.1",
     "title": "Tenant Isolation in Multi-Tenant Environments",
@@ -25,6 +25,7 @@
   },
   {
     "rule_id": "AZURE_AD_12.4.5",
+    "title": "Azure AD Audit Logs",
     "description": "Enable Azure AD audit logs and diagnostic settings for monitoring privileged operations and security events.",
     "graph_path": "/auditLogs/directoryAudits",
     "field": "auditLogsEnabled",
@@ -130,18 +131,7 @@
     "control_id": "ISO/IEC 27017:2015 10.1.2",
     "remediation": "Configure Azure AD to use CMK via Key Vault."
   },
-  {
-    "rule_id": "AZURE_AD_13.1.3",
-    "title": "Network Segregation for Hybrid AD",
-    "description": "Enforce Azure AD Private Link to restrict traffic to private networks.",
-    "graph_path": "/networkAccess/privateLink",
-    "field": "privateLinkEnabled",
-    "operator": "==",
-    "value": true,
-    "severity": "medium",
-    "control_id": "ISO/IEC 27017:2015 13.1.3",
-    "remediation": "Enable Azure AD Private Link and disable public access."
-  },
+ 
   {
     "rule_id": "AZURE_AD_12.4.1",
     "title": "Azure AD Sign-In & Audit Log Retention",
@@ -166,18 +156,7 @@
     "control_id": "ISO/IEC 27017:2015 12.4.3",
     "remediation": "Enable PIM audit logs and alert on privileged role assignments."
   },
-  {
-    "rule_id": "AZURE_AD_16.1.5",
-    "title": "Automated Incident Response Playbooks",
-    "description": "Use Azure Sentinel for automated threat response.",
-    "graph_path": "/security/azureSentinel/playbooks",
-    "field": "sentinelPlaybooksEnabled",
-    "operator": "==",
-    "value": true,
-    "severity": "high",
-    "control_id": "ISO/IEC 27017:2015 16.1.5",
-    "remediation": "Deploy Azure Sentinel and configure SOAR playbooks."
-  },
+  
   {
     "rule_id": "AZURE_AD_17.1.1",
     "title": "Business Continuity for Azure AD",
@@ -190,18 +169,7 @@
     "control_id": "ISO/IEC 27017:2015 17.1.1",
     "remediation": "Enable Azure AD cross-region replication."
   },
-  {
-    "rule_id": "AZURE_AD_18.2.1",
-    "title": "Independent Compliance Audits",
-    "description": "Use Microsoft Compliance Manager for ISO 27017 attestation.",
-    "graph_path": "/compliance/manager/assessments",
-    "field": "complianceManagerEnabled",
-    "operator": "==",
-    "value": true,
-    "severity": "medium",
-    "control_id": "ISO/IEC 27017:2015 18.2.1",
-    "remediation": "Run compliance assessments in Microsoft 365 Compliance Manager."
-  },
+  
   {
     "rule_id": "AZURE_AD_18.1.4",
     "title": "PII Protection in Azure AD",
@@ -213,5 +181,92 @@
     "severity": "high",
     "control_id": "ISO/IEC 27017:2015 18.1.4",
     "remediation": "Configure sensitivity labels and DLP policies for PII."
-  }
+  },
+
+  
+  {
+    "rule_id": "AZURE_AD_9.2.7",
+    "title": "Restrict Guest User Access",
+    "description": "Ensure guest users have the most restrictive access to directory objects.",
+    "graph_path": "/policies/authorizationPolicy",
+    "field": "guestUserAccessLevel",
+    "operator": "==",
+    "value": "restricted",
+    "severity": "high",
+    "control_id": "ISO/IEC 27017:2015 9.2",
+    "remediation": "Configure Azure AD guest access to 'restricted to limited properties'."
+  },
+  {
+    "rule_id": "AZURE_AD_9.2.8",
+    "title": "Restrict Entra Admin Center Access",
+    "description": "Restrict non-admin user access to Microsoft Entra admin center.",
+    "graph_path": "/organization/{organizationId}",
+    "field": "defaultUserRolePermissions.allowedToAccessAADAdminPortal",
+    "operator": "==",
+    "value": false,
+    "severity": "medium",
+    "control_id": "ISO/IEC 27017:2015 9.2",
+    "remediation": "Disable non-admin access to the Entra admin center by setting defaultUserRolePermissions.allowedToAccessAADAdminPortal = false."
+  },
+  {
+    "rule_id": "AZURE_AD_18.1.5",
+    "title": "Restrict LinkedIn Integration",
+    "description": "Disable LinkedIn account connections with work/school identities unless explicitly required.",
+    "graph_path": "/organization/{organizationId}",
+    "field": "linkedinTenantRestrictionsEnabled",
+    "operator": "==",
+    "value": true,
+    "severity": "low",
+    "control_id": "ISO/IEC 27017:2015 18.1",
+    "remediation": "Enable LinkedIn restrictions to prevent account connections, unless a business justification exists."
+  },  
+  {
+    "rule_id": "AZURE_AD_9.5.2",
+    "title": "Cross-Tenant Access Default Deny",
+    "description": "Ensure inbound and outbound cross-tenant access defaults are set to Deny.",
+    "graph_path": "/policies/crossTenantAccessPolicy/default",
+    "field": "accessDefault",
+    "operator": "==",
+    "value": "deny",
+    "severity": "high",
+    "control_id": "ISO/IEC 27017:2015 9.5",
+    "remediation": "Block cross-tenant access by default and configure partner-specific allow rules."
+  },
+  
+    {
+      "rule_id": "AZURE_AD_9.5.3",
+      "title": "Restrict Tenant Trust Settings",
+      "description": "Disable automatic trust of MFA/compliant device claims from external tenants unless explicitly approved.",
+      "graph_path": "/policies/crossTenantAccessPolicy/partners/{tenantId}",
+      "field": "inboundTrust.isMfaAccepted",
+      "operator": "==",
+      "value": false,
+      "severity": "high",
+      "control_id": "ISO/IEC 27017:2015 9.5",
+      "remediation": "Require proof of external tenant security posture before enabling inbound trust claims."
+    },
+    {
+      "rule_id": "AZURE_AD_9.2.5",
+      "title": "Restrict Group Self-Service",
+      "description": "Disable user self-service for creating and managing Microsoft 365 groups.",
+      "graph_path": "/groupSettings",
+      "field": "values[?(@.name=='EnableGroupCreation')].value",
+      "operator": "==",
+      "value": "false",
+      "severity": "medium",
+      "control_id": "ISO/IEC 27017:2015 9.2",
+      "remediation": "Restrict group creation to administrators or use approved workflows for provisioning."
+    },
+    {
+      "rule_id": "AZURE_AD_9.2.6",
+      "title": "Restrict App Registrations by Non-Admins",
+      "description": "Prevent non-admin users from registering applications unless explicitly allowed.",
+      "graph_path": "/policies/authorizationPolicy",
+      "field": "defaultUserRolePermissions.allowedToCreateApps",
+      "operator": "==",
+      "value": false,
+      "severity": "high",
+      "control_id": "ISO/IEC 27017:2015 9.2",
+      "remediation": "Restrict application registrations to a designated administrator or developer group."
+    }
 ]

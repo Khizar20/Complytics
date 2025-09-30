@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
-from schemas.users import UserCreate, UserInDB, OrganizationInDB
-from utils.security import get_current_user
+from schemas.users import UserCreate, UserInDB, OrganizationInDB, AccountDeletionRequest
+from utils.security import get_current_user, send_simple_email
 from db import database
 from typing import List
 from utils.security import get_password_hash
 from datetime import datetime
 from superadmin_deps import get_superadmin
+from bson import ObjectId
 
 
 router = APIRouter()
@@ -98,3 +99,154 @@ async def get_active_users(
     
     # Convert MongoDB documents to UserInDB models
     return [UserInDB.from_mongo(user) for user in users]
+
+@router.get("/deletion-requests")
+async def list_deletion_requests(current_user: UserInDB = Depends(get_superadmin)):
+    requests = await database.db.account_deletion_requests.find({}).to_list(length=None)
+    return [AccountDeletionRequest.from_mongo(r) for r in requests]
+
+@router.post("/deletion-requests/{request_id}/approve")
+async def approve_deletion_request(
+    request_id: str,
+    current_user: UserInDB = Depends(get_superadmin)
+):
+    try:
+        obj_id = ObjectId(request_id)
+    except:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request ID")
+
+    req = await database.db.account_deletion_requests.find_one({"_id": obj_id})
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request is not pending")
+
+    # Execute deletion: delete org-scoped data and accounts
+    org_id = req.get("organization_id")
+    if org_id:
+        # Collect all user ids in the organization (admin + team)
+        org_users = await database.db.users.find({"organization_id": org_id}).to_list(length=None)
+        org_user_ids = [str(u.get("_id")) for u in org_users if u.get("_id")]
+
+        # Delete compliance chat history for all org users
+        if org_user_ids:
+            await database.db.compliance_chat_history.delete_many({
+                "user_id": {"$in": org_user_ids}
+            })
+
+        # Delete Azure connection records for the organization
+        await database.db.azure_connections.delete_many({
+            "organization_id": org_id
+        })
+
+        # Delete team members and admin users under org
+        await database.db.users.delete_many({"organization_id": org_id})
+
+        # Delete organization record
+        try:
+            await database.db.organizations.delete_one({"_id": ObjectId(org_id)})
+        except:
+            # If ObjectId conversion fails, attempt by string match
+            await database.db.organizations.delete_one({"_id": org_id})
+
+    # Mark request as approved and executed
+    await database.db.account_deletion_requests.update_one(
+        {"_id": obj_id},
+        {
+            "$set": {
+                "status": "approved",
+                "reviewed_by": current_user.id,
+                "reviewed_at": datetime.utcnow(),
+                "executed_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            "$push": {
+                "events": {
+                    "type": "approved",
+                    "by": current_user.id,
+                    "at": datetime.utcnow()
+                }
+            }
+        }
+    )
+
+    updated = await database.db.account_deletion_requests.find_one({"_id": obj_id})
+    # Notify involved parties
+    try:
+        # Notify superadmin (self-confirmation)
+        await send_simple_email(
+            to_email="superadmin@complytics.com",
+            subject="Admin Account Deletion Approved",
+            html_body=f"<p>Deletion request {request_id} approved and executed.</p>"
+        )
+        # Notify original admin by email if we can find it
+        requester_id = updated.get("requester_user_id") if updated else req.get("requester_user_id")
+        if requester_id:
+            user = await database.db.users.find_one({"_id": ObjectId(requester_id)})
+            if user and user.get("email"):
+                try:
+                    await send_simple_email(
+                        to_email=user["email"],
+                        subject="Your Account Deletion Has Been Processed",
+                        html_body="<p>Your account and associated organization data have been deleted.</p>"
+                    )
+                except Exception as e:
+                    print(f"Failed to notify requester: {str(e)}")
+    except Exception as e:
+        print(f"Notification error: {str(e)}")
+
+    return AccountDeletionRequest.from_mongo(updated)
+
+@router.post("/deletion-requests/{request_id}/reject")
+async def reject_deletion_request(
+    request_id: str,
+    reason: str | None = None,
+    current_user: UserInDB = Depends(get_superadmin)
+):
+    try:
+        obj_id = ObjectId(request_id)
+    except:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request ID")
+
+    req = await database.db.account_deletion_requests.find_one({"_id": obj_id})
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request is not pending")
+
+    await database.db.account_deletion_requests.update_one(
+        {"_id": obj_id},
+        {
+            "$set": {
+                "status": "rejected",
+                "reviewed_by": current_user.id,
+                "reviewed_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            "$push": {
+                "events": {
+                    "type": "rejected",
+                    "by": current_user.id,
+                    "at": datetime.utcnow(),
+                    "detail": reason or None
+                }
+            }
+        }
+    )
+
+    updated = await database.db.account_deletion_requests.find_one({"_id": obj_id})
+    # Notify requester about rejection
+    try:
+        requester_id = updated.get("requester_user_id") if updated else req.get("requester_user_id")
+        if requester_id:
+            user = await database.db.users.find_one({"_id": ObjectId(requester_id)})
+            if user and user.get("email"):
+                await send_simple_email(
+                    to_email=user["email"],
+                    subject="Your Account Deletion Request Was Rejected",
+                    html_body=f"<p>Your request was rejected. Reason: {reason or 'Not provided'}.</p>"
+                )
+    except Exception as e:
+        print(f"Failed to notify requester of rejection: {str(e)}")
+
+    return AccountDeletionRequest.from_mongo(updated)

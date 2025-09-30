@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
-from schemas.users import UserInDB, UserCreate
+from schemas.users import UserInDB, UserCreate, AccountDeletionRequest
 from utils.security import (
     get_current_user, 
     generate_random_password, 
     send_credentials_email,
     get_password_hash,
-    send_role_change_email
+    send_role_change_email,
+    send_simple_email
 )
 from db import database
 from typing import List, Optional
@@ -31,6 +32,9 @@ class TeamMemberUpdate(BaseModel):
 
 class BulkDeleteRequest(BaseModel):
     member_ids: List[str]
+
+class DeletionRequestCreate(BaseModel):
+    reason: Optional[str] = None
 
 @router.get("/team-members", response_model=List[UserInDB])
 async def list_team_members(
@@ -315,3 +319,78 @@ async def update_team_member(
     # Convert to UserInDB model
     result["_id"] = str(result["_id"])
     return UserInDB(**result)
+
+@router.post("/request-account-deletion")
+async def request_account_deletion(
+    payload: DeletionRequestCreate,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    # Only admins can request deletion of their own account/org
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can request account deletion"
+        )
+
+    # Ensure only one active/pending request per admin/org
+    existing = await database.db.account_deletion_requests.find_one({
+        "requester_user_id": current_user.id,
+        "status": "pending"
+    })
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A pending deletion request already exists"
+        )
+
+    doc = {
+        "requester_user_id": current_user.id,
+        "organization_id": current_user.organization_id,
+        "reason": payload.reason,
+        "status": "pending",
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+        "events": [
+            {
+                "type": "requested",
+                "by": current_user.id,
+                "at": datetime.utcnow(),
+                "detail": payload.reason or None
+            }
+        ]
+    }
+
+    result = await database.db.account_deletion_requests.insert_one(doc)
+    created = await database.db.account_deletion_requests.find_one({"_id": result.inserted_id})
+
+    # Notify superadmin via email if configured
+    try:
+        await send_simple_email(
+            to_email="superadmin@complytics.com",
+            subject="New Admin Account Deletion Request",
+            html_body=f"""
+            <html><body>
+            <p>An admin has requested account deletion.</p>
+            <ul>
+              <li>User: {current_user.email}</li>
+              <li>Organization ID: {current_user.organization_id or 'N/A'}</li>
+              <li>Reason: {payload.reason or 'None provided'}</li>
+            </ul>
+            </body></html>
+            """
+        )
+    except Exception as e:
+        print(f"Failed to send deletion request email: {str(e)}")
+    return AccountDeletionRequest.from_mongo(created)
+
+@router.get("/account-deletion-request", response_model=AccountDeletionRequest | None)
+async def get_my_deletion_request(current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can view deletion requests")
+    req = await database.db.account_deletion_requests.find_one({
+        "requester_user_id": current_user.id,
+        "status": {"$in": ["pending", "rejected", "approved"]}
+    }, sort=[("created_at", -1)])
+    if not req:
+        return None
+    return AccountDeletionRequest.from_mongo(req)

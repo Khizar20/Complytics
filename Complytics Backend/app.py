@@ -9,6 +9,7 @@ from fastapi.security import HTTPBearer
 from routes.registration import router as registration_router
 from routes.compliance import router as compliance_router
 from routes.azure import router as azure_router
+from routes.ui_testing import router as ui_testing_router
 from flask import request, jsonify, send_file
 
 
@@ -58,6 +59,7 @@ app.include_router(registration_router, prefix="/registration", tags=["registrat
 app.include_router(team_router, prefix="/team", tags=["team"])
 app.include_router(compliance_router, prefix="/api/compliance", tags=["compliance"])
 app.include_router(azure_router, prefix="/api/azure", tags=["azure"])
+app.include_router(ui_testing_router, prefix="/api", tags=["ui-testing"])
 
 
 @app.on_event("startup")

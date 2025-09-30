@@ -112,6 +112,7 @@ const SuperadminDashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeTab, setActiveTab] = useState('registrations');
+  const [deletionRequests, setDeletionRequests] = useState([]);
   const [approvingId, setApprovingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -153,6 +154,25 @@ const SuperadminDashboard = () => {
     if (authToken) {
       fetchRequests();
     }
+  }, [authToken, fetchWithRetry]);
+
+  // Fetch deletion requests
+  useEffect(() => {
+    const fetchDeletionRequests = async () => {
+      try {
+        const response = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to fetch deletion requests');
+        }
+        const data = await response.json();
+        setDeletionRequests(data);
+      } catch (err) {
+        console.error('Error fetching deletion requests:', err);
+        setError(err.message);
+      }
+    };
+    if (authToken) fetchDeletionRequests();
   }, [authToken, fetchWithRetry]);
 
   // Fetch active organizations
@@ -377,6 +397,7 @@ const SuperadminDashboard = () => {
     { id: 'registrations', icon: <FaUserPlus />, label: 'Registrations', onClick: () => setActiveTab('registrations') },
     { id: 'organizations', icon: <FaBuilding />, label: 'Organizations', onClick: () => setActiveTab('organizations') },
     { id: 'users', icon: <FaUsers />, label: 'Users', onClick: () => setActiveTab('users') },
+    { id: 'deletions', icon: <FaTimesCircle />, label: 'Deletion Requests', onClick: () => setActiveTab('deletions') },
     { id: 'frameworks', icon: <FaCog />, label: 'Frameworks', onClick: () => setActiveTab('frameworks') },
   ];
 
@@ -825,6 +846,65 @@ const SuperadminDashboard = () => {
                 ))}
               </motion.div>
             )
+          ) : activeTab === 'deletions' ? (
+            <motion.div initial="hidden" animate="show" variants={containerVariants} className="grid gap-6">
+              {deletionRequests.length === 0 ? (
+                <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
+                  <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
+                    <FaTimesCircle className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-medium">No deletion requests</h3>
+                  <p className="text-muted-foreground mt-2">New requests will appear here</p>
+                </motion.div>
+              ) : (
+                deletionRequests.map((req) => (
+                  <motion.div key={req._id} variants={itemVariants} className="glass-card p-6 rounded-lg border border-border/50">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <h3 className="font-medium text-lg">Requester</h3>
+                        <div className="text-sm text-muted-foreground">User ID: {req.requester_user_id}</div>
+                        <div className="text-sm text-muted-foreground">Org ID: {req.organization_id || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm"><span className="font-medium">Status:</span> {req.status}</div>
+                        <div className="text-sm"><span className="font-medium">Reason:</span> {req.reason || 'None'}</div>
+                        <div className="text-sm"><span className="font-medium">Requested:</span> {req.created_at ? new Date(req.created_at).toLocaleString() : ''}</div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        {req.status === 'pending' && (
+                          <>
+                            <Button 
+                              variant="default" 
+                              size="sm"
+                              onClick={async () => {
+                                setError(''); setSuccess('');
+                                const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${req._id}/approve`, { method: 'POST' });
+                                if (!r.ok) { const e = await r.json(); setError(e.detail || 'Failed to approve'); return; }
+                                setSuccess('Deletion approved');
+                                const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+                                if (refresh.ok) setDeletionRequests(await refresh.json());
+                              }}
+                            >Approve</Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={async () => {
+                                setError(''); setSuccess('');
+                                const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${req._id}/reject`, { method: 'POST' });
+                                if (!r.ok) { const e = await r.json(); setError(e.detail || 'Failed to reject'); return; }
+                                setSuccess('Deletion rejected');
+                                const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+                                if (refresh.ok) setDeletionRequests(await refresh.json());
+                              }}
+                            >Reject</Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </motion.div>
           ) : (
             /* Frameworks Tab */
             <motion.div initial="hidden" animate="show" variants={containerVariants} className="space-y-6">

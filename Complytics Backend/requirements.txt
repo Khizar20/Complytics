@@ -16,3 +16,8 @@ numpy
 scikit-learn
 google-generativeai
 msal
+requests
+selenium
+axe-selenium-python
+reportlab
+openpyxl

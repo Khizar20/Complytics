@@ -15,21 +15,26 @@ export function AuthProvider({ children }) {
     const initializeAuth = async () => {
       const token = localStorage.getItem('authToken');
       const userData = localStorage.getItem('userData');
-      
+
       if (token && userData) {
+        // Optimistically set state so reload doesn't flicker/logout, then verify in background
+        setAuthToken(token);
         try {
-          // Verify token is still valid
+          setUser(JSON.parse(userData));
+        } catch {
+          setUser(null);
+        }
+
+        try {
+          // Verify token is still valid in the background
           const response = await fetch('http://localhost:8000/auth/me', {
             headers: {
               'Authorization': `Bearer ${token}`
             }
           });
 
-          if (response.ok) {
-            setAuthToken(token);
-            setUser(JSON.parse(userData));
-          } else {
-            // Token is invalid, clear everything
+          if (!response.ok) {
+            // Token invalid → clear and redirect to login
             localStorage.removeItem('authToken');
             localStorage.removeItem('userData');
             setAuthToken(null);
@@ -40,13 +45,7 @@ export function AuthProvider({ children }) {
           }
         } catch (error) {
           console.error('Error verifying token:', error);
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('userData');
-          setAuthToken(null);
-          setUser(null);
-          if (location.pathname !== '/login') {
-            navigate('/login');
-          }
+          // Network errors: keep current session; avoid forced logout on reload
         }
       }
       setIsLoading(false);

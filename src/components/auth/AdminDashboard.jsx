@@ -73,6 +73,8 @@ const AdminDashboard = () => {
   const [editingMember, setEditingMember] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [deletionReason, setDeletionReason] = useState('');
+  const [deletionRequest, setDeletionRequest] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
@@ -85,6 +87,24 @@ const AdminDashboard = () => {
       fetchTeamMembers();
     }
   }, [authToken, navigate]);
+
+  useEffect(() => {
+    const fetchDeletionRequest = async () => {
+      try {
+        if (!authToken) return;
+        const res = await fetch('http://localhost:8000/admin/account-deletion-request', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDeletionRequest(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch deletion request', e);
+      }
+    };
+    fetchDeletionRequest();
+  }, [authToken]);
 
   const fetchTeamMembers = async () => {
     try {
@@ -259,7 +279,8 @@ const AdminDashboard = () => {
 
   const sidebarItems = [
     { id: 'dashboard', icon: <FaHome />, label: 'Dashboard', onClick: () => setActiveTab('dashboard') },
-    { id: 'profile', icon: <FaUser />, label: 'Profile', onClick: () => setActiveTab('profile') }
+    { id: 'profile', icon: <FaUser />, label: 'Profile', onClick: () => setActiveTab('profile') },
+    { id: 'delete-account', icon: <FaUserSlash />, label: 'Request Account Deletion', onClick: () => setActiveTab('delete-account') }
   ];
 
   const renderContent = () => {
@@ -659,6 +680,70 @@ const AdminDashboard = () => {
         );
       case 'profile':
         return <Profile />;
+      case 'delete-account':
+        return (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+            className="min-h-screen bg-background"
+          >
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <div className="glass-card p-6 rounded-lg">
+                <h2 className="text-2xl font-bold mb-4">Request Account Deletion</h2>
+                {deletionRequest?.status === 'pending' ? (
+                  <div className="p-3 bg-yellow-100 text-yellow-800 rounded-md mb-4">
+                    Your deletion request is pending superadmin review.
+                  </div>
+                ) : deletionRequest?.status === 'rejected' ? (
+                  <div className="p-3 bg-red-100 text-red-800 rounded-md mb-4">
+                    Your previous deletion request was rejected. You may submit a new request.
+                  </div>
+                ) : null}
+                <label className="block text-sm font-medium mb-2">Reason (optional)</label>
+                <textarea
+                  value={deletionReason}
+                  onChange={(e) => setDeletionReason(e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded-md focus:ring-2 focus:ring-primary/50 focus:outline-none mb-4"
+                  rows={4}
+                  placeholder="Why are you requesting deletion?"
+                />
+                <Button
+                  className="w-full"
+                  disabled={isLoading || deletionRequest?.status === 'pending'}
+                  onClick={async () => {
+                    setError('');
+                    setSuccess('');
+                    setIsLoading(true);
+                    try {
+                      const res = await fetch('http://localhost:8000/admin/request-account-deletion', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify({ reason: deletionReason })
+                      });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        throw new Error(data.detail || 'Failed to request account deletion');
+                      }
+                      setDeletionRequest(data);
+                      setSuccess('Deletion request submitted. The superadmin will review it.');
+                      setDeletionReason('');
+                    } catch (e) {
+                      setError(e.message);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                >
+                  {deletionRequest?.status === 'pending' ? 'Request Pending' : (isLoading ? 'Submitting...' : 'Submit Deletion Request')}
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        );
       default:
         return null;
     }
@@ -708,14 +793,14 @@ const AdminDashboard = () => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={item.onClick}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
+                  className={`w-full flex items-center justify-start text-left space-x-3 p-3 rounded-lg transition-colors ${
                     activeTab === item.id
                       ? 'bg-primary text-primary-foreground'
                       : 'hover:bg-secondary'
                   }`}
                 >
                   <span className="text-lg">{item.icon}</span>
-                  {isSidebarOpen && <span>{item.label}</span>}
+                  {isSidebarOpen && <span className="text-left">{item.label}</span>}
                 </motion.button>
               ))}
             </nav>
