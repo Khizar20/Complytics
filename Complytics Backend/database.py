@@ -1,7 +1,7 @@
 async def init_db():
     try:
         # Initialize other collections
-        // ... existing code ...
+        # ... existing code ...
 
         # Initialize compliance chat history collection with new schema
         if 'compliance_chat_history' not in await db.list_collection_names():
@@ -66,6 +66,14 @@ async def init_db():
                 print("Migration completed successfully")
         except Exception as e:
             print(f"Error during migration: {e}")
+
+        # Ensure UI testing results collection and indexes
+        try:
+            if 'ui_testing_results' not in await db.list_collection_names():
+                await db.create_collection('ui_testing_results')
+            await db.ui_testing_results.create_index([('organization_id', 1), ('created_at', -1)])
+        except Exception as e:
+            print(f"Error ensuring ui_testing_results collection: {e}")
 
     except Exception as e:
         print(f"Error initializing database: {e}") 

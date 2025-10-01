@@ -4,6 +4,7 @@ import logging
 import time
 import faiss
 import google.generativeai as genai
+import requests
 import pdfplumber
 import numpy as np
 import re
@@ -29,7 +30,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-GOOGLE_API_KEY = "AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI"
+# GOOGLE_API_KEY = "AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI"
+GOOGLE_API_KEY="AIzaSyBESSLYw4V10xeLYtyIuez9IxXVS41mC_8"
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Initialize the embedding model
@@ -118,6 +120,33 @@ def wait_for_rate_limit_optimized():
         time.sleep(sleep_time)
     last_call_time = time.time()
 
+def _ollama_params() -> tuple:
+    base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL") or "llama3.1"
+    return base, model
+
+def _generate_via_ollama(prompt: str, temperature: float = 0.1, max_tokens: int = 3200) -> str:
+    try:
+        base, model_name = _ollama_params()
+        # Clamp tokens for faster local generation and allow env override
+        max_tokens_ollama = int(os.getenv("OLLAMA_MAX_TOKENS", "800"))
+        max_tokens_ollama = max(1, min(max_tokens_ollama, max_tokens))
+        req_timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": float(max(0.0, min(1.0, temperature))),
+            "max_tokens": max_tokens_ollama,
+        }
+        r = requests.post(f"{base}/chat/completions", json=payload, timeout=req_timeout)
+        r.raise_for_status()
+        data = r.json()
+        text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        return text
+    except Exception as e:
+        logger.info(f"Ollama generation failed: {e}")
+        return ""
+
 @sleep_and_retry
 @limits(calls=CALLS_PER_MINUTE, period=60)
 @timing_decorator
@@ -162,10 +191,16 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
                 logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
                 time.sleep(retry_delay)
                 if attempt == max_retries - 1:
-                    return "Response temporarily unavailable. Please try again."
+                    break
             else:
                 logger.error(f"API error: {e}")
-                return ""
+                break
+    # Gemini unavailable -> fallback to Ollama
+    ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
+    if ollama_text:
+        QUERY_CACHE[cache_key] = ollama_text
+        return ollama_text
+    return "Response temporarily unavailable. Please try again."
 
 @timing_decorator
 def get_embedding(text: str) -> np.ndarray:
@@ -3142,8 +3177,13 @@ def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tok
             return response.text
         except Exception as e:
             if attempt == max_retries - 1:
-                raise
+                break
             time.sleep(1)  # Wait before retrying
+    # Fallback to Ollama
+    ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
+    if ollama_text:
+        return ollama_text
+    return ""
 
 def analyze_query_intent_with_ai(query: str) -> Dict[str, Any]:
     """Analyze query intent using AI."""

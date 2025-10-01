@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToast } from '@/components/ui/toast';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/button';
 import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
@@ -7,6 +8,7 @@ import { API_URL } from '../../config';
 
 const Profile = () => {
   const { user, authToken } = useAuth();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -71,6 +73,7 @@ const Profile = () => {
     }
 
     try {
+      setIsLoading(true);
       console.log('Sending password update request...');
       console.log('Request URL:', `${API_URL}/auth/profile`);
       console.log('Request headers:', {
@@ -104,7 +107,7 @@ const Profile = () => {
         throw new Error(data.detail || 'Failed to update password');
       }
 
-      setSuccess('Password updated successfully');
+      toast({ title: 'Password updated', variant: 'success' });
       setFormData({
         current_password: '',
         new_password: '',
@@ -113,6 +116,9 @@ const Profile = () => {
     } catch (err) {
       console.error('Error updating password:', err);
       setError(err.message);
+      toast({ title: 'Failed to update password', description: err.message, variant: 'error' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -214,11 +220,7 @@ const Profile = () => {
             </div>
           )}
 
-          {success && (
-            <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md">
-              {success}
-            </div>
-          )}
+          {/* Inline success container removed; toast is used */}
 
           <Button
             type="submit"

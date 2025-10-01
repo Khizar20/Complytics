@@ -20,7 +20,7 @@ import {
   FaHome
 } from 'react-icons/fa';
 import Profile from './Profile';
-import {
+import { 
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -30,6 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useToast } from "@/components/ui/toast";
 
 // Animation variants
 const containerVariants = {
@@ -57,6 +58,7 @@ const cardHoverVariants = {
 
 const AdminDashboard = () => {
   const { authToken, logout, fetchWithRetry } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [teamMembers, setTeamMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,6 +81,10 @@ const AdminDashboard = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState(null);
+  const [isAddingMember, setIsAddingMember] = useState(false);
+  const [isEditingMember, setIsEditingMember] = useState(false);
+  const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
+  const [showRequestDeletionDialog, setShowRequestDeletionDialog] = useState(false);
 
   useEffect(() => {
     if (!authToken) {
@@ -133,6 +139,7 @@ const AdminDashboard = () => {
     setSuccess('');
 
     try {
+      setIsAddingMember(true);
       const response = await fetch('http://localhost:8000/admin/create-team-member', {
         method: 'POST',
         headers: {
@@ -152,7 +159,8 @@ const AdminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to add team member');
       }
 
-      setSuccess('Team member added successfully! Credentials have been sent to their email.');
+      const created = await response.json();
+      toast({ title: 'Team member added', description: 'Credentials have been sent to their email.', variant: 'success' });
       setShowAddMemberForm(false);
       setNewMember({
         firstName: '',
@@ -160,9 +168,24 @@ const AdminDashboard = () => {
         email: '',
         role: 'compliance_team'
       });
+      // Optimistically update the list so it appears instantly
+      setTeamMembers(prev => [
+        {
+          _id: created?._id || created?.id,
+          first_name: created?.first_name ?? newMember.firstName,
+          last_name: created?.last_name ?? newMember.lastName,
+          email: created?.email ?? newMember.email,
+          role: created?.role ?? newMember.role,
+          is_active: typeof created?.is_active === 'boolean' ? created.is_active : true
+        },
+        ...prev
+      ]);
+      // Also re-fetch to ensure full sync with server state
       fetchTeamMembers();
     } catch (err) {
-      setError(err.message);
+      toast({ title: 'Failed to add team member', description: err.message, variant: 'error' });
+    } finally {
+      setIsAddingMember(false);
     }
   };
 
@@ -181,10 +204,10 @@ const AdminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to delete team member');
       }
 
-      setSuccess('Team member deleted successfully');
+      toast({ title: 'Team member deleted', variant: 'success' });
       fetchTeamMembers();
     } catch (err) {
-      setError(err.message);
+      toast({ title: 'Failed to delete member', description: err.message, variant: 'error' });
     } finally {
       setIsDeleting(false);
       setShowDeleteDialog(false);
@@ -216,11 +239,11 @@ const AdminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to delete team members');
       }
 
-      setSuccess(`Successfully deleted ${selectedMembers.length} team members`);
+      toast({ title: 'Deleted team members', description: `Removed ${selectedMembers.length} member(s)`, variant: 'success' });
       setSelectedMembers([]);
       fetchTeamMembers();
     } catch (err) {
-      setError(err.message);
+      toast({ title: 'Failed to delete members', description: err.message, variant: 'error' });
     } finally {
       setIsDeleting(false);
       setShowBulkDeleteDialog(false);
@@ -233,6 +256,7 @@ const AdminDashboard = () => {
     setSuccess('');
 
     try {
+      setIsEditingMember(true);
       const response = await fetch(`http://localhost:8000/admin/team-members/${editingMember.id}`, {
         method: 'PATCH',
         headers: {
@@ -252,11 +276,13 @@ const AdminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to update team member');
       }
 
-      setSuccess('Team member updated successfully');
+      toast({ title: 'Team member updated', variant: 'success' });
       setEditingMember(null);
       fetchTeamMembers();
     } catch (err) {
-      setError(err.message);
+      toast({ title: 'Failed to update member', description: err.message, variant: 'error' });
+    } finally {
+      setIsEditingMember(false);
     }
   };
 
@@ -379,33 +405,7 @@ const AdminDashboard = () => {
               </motion.div>
 
               {/* Messages */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="glass-card bg-destructive/10 text-destructive p-4 mb-6 rounded-lg flex items-center"
-                  >
-                    <FaTimesCircle className="mr-2" />
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence>
-                {success && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="glass-card bg-green-500/10 text-green-500 p-4 mb-6 rounded-lg flex items-center"
-                  >
-                    <FaCheckCircle className="mr-2" />
-                    {success}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Inline success/error containers removed; toast notifications are used instead */}
 
               {/* Team Members Section */}
               <div className="glass-card p-6 rounded-lg">
@@ -495,8 +495,10 @@ const AdminDashboard = () => {
                           >
                             Cancel
                           </Button>
-                          <Button type="submit">
-                            Add Member
+                          <Button type="submit" disabled={isAddingMember}>
+                            {isAddingMember ? (
+                              <span className="flex items-center gap-2"><FaSpinner className="animate-spin" /> Adding...</span>
+                            ) : 'Add Member'}
                           </Button>
                         </div>
                       </form>
@@ -569,8 +571,10 @@ const AdminDashboard = () => {
                           >
                             Cancel
                           </Button>
-                          <Button type="submit">
-                            Save Changes
+                          <Button type="submit" disabled={isEditingMember}>
+                            {isEditingMember ? (
+                              <span className="flex items-center gap-2"><FaSpinner className="animate-spin" /> Saving...</span>
+                            ) : 'Save Changes'}
                           </Button>
                         </div>
                       </form>
@@ -710,35 +714,10 @@ const AdminDashboard = () => {
                 />
                 <Button
                   className="w-full"
-                  disabled={isLoading || deletionRequest?.status === 'pending'}
-                  onClick={async () => {
-                    setError('');
-                    setSuccess('');
-                    setIsLoading(true);
-                    try {
-                      const res = await fetch('http://localhost:8000/admin/request-account-deletion', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${authToken}`
-                        },
-                        body: JSON.stringify({ reason: deletionReason })
-                      });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        throw new Error(data.detail || 'Failed to request account deletion');
-                      }
-                      setDeletionRequest(data);
-                      setSuccess('Deletion request submitted. The superadmin will review it.');
-                      setDeletionReason('');
-                    } catch (e) {
-                      setError(e.message);
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }}
+                  disabled={isRequestingDeletion || deletionRequest?.status === 'pending'}
+                  onClick={() => setShowRequestDeletionDialog(true)}
                 >
-                  {deletionRequest?.status === 'pending' ? 'Request Pending' : (isLoading ? 'Submitting...' : 'Submit Deletion Request')}
+                  {deletionRequest?.status === 'pending' ? 'Request Pending' : (isRequestingDeletion ? 'Submitting...' : 'Submit Deletion Request')}
                 </Button>
               </div>
             </div>
@@ -873,6 +852,52 @@ const AdminDashboard = () => {
                 <FaTrash className="mr-2" />
               )}
               Delete All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm admin account deletion request */}
+      <AlertDialog open={showRequestDeletionDialog} onOpenChange={setShowRequestDeletionDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Account Deletion Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to send an account deletion request to the superadmin? You will be signed out once approved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={async () => {
+                setError('');
+                setSuccess('');
+                setIsRequestingDeletion(true);
+                try {
+                  const res = await fetch('http://localhost:8000/admin/request-account-deletion', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ reason: deletionReason })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    throw new Error(data.detail || 'Failed to request account deletion');
+                  }
+                  setDeletionRequest(data);
+                  setSuccess('Deletion request submitted. The superadmin will review it.');
+                  setDeletionReason('');
+                } catch (e) {
+                  setError(e.message);
+                } finally {
+                  setIsRequestingDeletion(false);
+                  setShowRequestDeletionDialog(false);
+                }
+              }}
+            >
+              {isRequestingDeletion ? <FaSpinner className="animate-spin" /> : 'Confirm'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

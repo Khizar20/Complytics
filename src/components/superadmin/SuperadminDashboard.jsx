@@ -16,6 +16,7 @@ import {
   FaCog
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useToast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -102,6 +103,7 @@ const UserSkeleton = () => (
 
 const SuperadminDashboard = () => {
   const { authToken, logout, fetchWithRetry } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -124,6 +126,8 @@ const SuperadminDashboard = () => {
   const [frameworkUploadError, setFrameworkUploadError] = useState('');
   const [frameworks, setFrameworks] = useState([]);
   const [frameworksLoading, setFrameworksLoading] = useState(true);
+  const [showApproveDeletionDialog, setShowApproveDeletionDialog] = useState(false);
+  const [showRejectDeletionDialog, setShowRejectDeletionDialog] = useState(false);
 
   useEffect(() => {
     if (!authToken) {
@@ -265,7 +269,7 @@ const SuperadminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to approve request');
       }
 
-      setSuccess('Request approved successfully');
+      toast({ title: 'Registration approved', variant: 'success' });
       // Refresh the requests list
       const updatedResponse = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
       if (updatedResponse.ok) {
@@ -274,7 +278,7 @@ const SuperadminDashboard = () => {
       }
     } catch (err) {
       console.error('Error approving request:', err);
-      setError(err.message);
+      toast({ title: 'Failed to approve request', description: err.message, variant: 'error' });
     } finally {
       setApprovingId(null);
       setShowApproveDialog(false);
@@ -297,7 +301,7 @@ const SuperadminDashboard = () => {
         throw new Error(errorData.detail || 'Failed to reject request');
       }
 
-      setSuccess('Request rejected successfully');
+      toast({ title: 'Registration rejected', variant: 'success' });
       // Refresh the requests list
       const updatedResponse = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
       if (updatedResponse.ok) {
@@ -306,10 +310,51 @@ const SuperadminDashboard = () => {
       }
     } catch (err) {
       console.error('Error rejecting request:', err);
-      setError(err.message);
+      toast({ title: 'Failed to reject request', description: err.message, variant: 'error' });
     } finally {
       setRejectingId(null);
       setShowRejectDialog(false);
+      setSelectedRequest(null);
+    }
+  };
+
+  // Deletion requests handlers
+  const handleApproveDeletion = async (requestId) => {
+    try {
+      setApprovingId(requestId);
+      const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${requestId}/approve`, { method: 'POST' });
+      if (!r.ok) {
+        const e = await r.json();
+        throw new Error(e.detail || 'Failed to approve deletion');
+      }
+      toast({ title: 'Deletion approved', variant: 'success' });
+      const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+      if (refresh.ok) setDeletionRequests(await refresh.json());
+    } catch (err) {
+      toast({ title: 'Failed to approve deletion', description: err.message, variant: 'error' });
+    } finally {
+      setApprovingId(null);
+      setShowApproveDeletionDialog(false);
+      setSelectedRequest(null);
+    }
+  };
+
+  const handleRejectDeletion = async (requestId) => {
+    try {
+      setRejectingId(requestId);
+      const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${requestId}/reject`, { method: 'POST' });
+      if (!r.ok) {
+        const e = await r.json();
+        throw new Error(e.detail || 'Failed to reject deletion');
+      }
+      toast({ title: 'Deletion rejected', variant: 'success' });
+      const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+      if (refresh.ok) setDeletionRequests(await refresh.json());
+    } catch (err) {
+      toast({ title: 'Failed to reject deletion', description: err.message, variant: 'error' });
+    } finally {
+      setRejectingId(null);
+      setShowRejectDeletionDialog(false);
       setSelectedRequest(null);
     }
   };
@@ -562,34 +607,7 @@ const SuperadminDashboard = () => {
             </motion.div>
           </motion.div>
 
-          {/* Messages */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="glass-card bg-destructive/10 text-destructive p-4 mb-6 rounded-lg flex items-center"
-              >
-                <FaTimesCircle className="mr-2" />
-                {error}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {success && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="glass-card bg-green-500/10 text-green-500 p-4 mb-6 rounded-lg flex items-center"
-              >
-                <FaCheckCircle className="mr-2" />
-                {success}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Inline success/error containers removed; toast notifications are used instead */}
 
           {/* Tabs */}
           <div className="flex border-b border-border mb-6">
@@ -876,27 +894,23 @@ const SuperadminDashboard = () => {
                             <Button 
                               variant="default" 
                               size="sm"
-                              onClick={async () => {
-                                setError(''); setSuccess('');
-                                const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${req._id}/approve`, { method: 'POST' });
-                                if (!r.ok) { const e = await r.json(); setError(e.detail || 'Failed to approve'); return; }
-                                setSuccess('Deletion approved');
-                                const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
-                                if (refresh.ok) setDeletionRequests(await refresh.json());
-                              }}
-                            >Approve</Button>
+                              onClick={() => { setSelectedRequest(req); setShowApproveDeletionDialog(true); }}
+                              className="flex items-center gap-2"
+                              disabled={approvingId === req._id}
+                            >
+                              {approvingId === req._id ? <FaSpinner className="animate-spin" /> : null}
+                              Approve
+                            </Button>
                             <Button 
                               variant="destructive" 
                               size="sm"
-                              onClick={async () => {
-                                setError(''); setSuccess('');
-                                const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${req._id}/reject`, { method: 'POST' });
-                                if (!r.ok) { const e = await r.json(); setError(e.detail || 'Failed to reject'); return; }
-                                setSuccess('Deletion rejected');
-                                const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
-                                if (refresh.ok) setDeletionRequests(await refresh.json());
-                              }}
-                            >Reject</Button>
+                              onClick={() => { setSelectedRequest(req); setShowRejectDeletionDialog(true); }}
+                              className="flex items-center gap-2"
+                              disabled={rejectingId === req._id}
+                            >
+                              {rejectingId === req._id ? <FaSpinner className="animate-spin" /> : null}
+                              Reject
+                            </Button>
                           </>
                         )}
                       </div>
@@ -1055,7 +1069,8 @@ const SuperadminDashboard = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleApprove(selectedRequest?._id)}>
+            <AlertDialogAction onClick={() => handleApprove(selectedRequest?._id)} className="flex items-center gap-2">
+              {approvingId === selectedRequest?._id ? <FaSpinner className="animate-spin" /> : null}
               Approve
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1073,7 +1088,45 @@ const SuperadminDashboard = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleReject(selectedRequest?._id)}>
+            <AlertDialogAction onClick={() => handleReject(selectedRequest?._id)} className="flex items-center gap-2">
+              {rejectingId === selectedRequest?._id ? <FaSpinner className="animate-spin" /> : null}
+              Reject
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deletion requests confirm dialogs */}
+      <AlertDialog open={showApproveDeletionDialog} onOpenChange={setShowApproveDeletionDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve Deletion Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the admin account and related data for the requester. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleApproveDeletion(selectedRequest?._id)} className="flex items-center gap-2">
+              {approvingId === selectedRequest?._id ? <FaSpinner className="animate-spin" /> : null}
+              Approve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showRejectDeletionDialog} onOpenChange={setShowRejectDeletionDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Deletion Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to reject this account deletion request?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleRejectDeletion(selectedRequest?._id)} className="flex items-center gap-2">
+              {rejectingId === selectedRequest?._id ? <FaSpinner className="animate-spin" /> : null}
               Reject
             </AlertDialogAction>
           </AlertDialogFooter>

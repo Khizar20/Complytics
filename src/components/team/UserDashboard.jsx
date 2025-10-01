@@ -41,6 +41,7 @@ import {
 import Profile from '../auth/Profile';
 import ComplianceChat from './ComplianceChat';
 import UiTesting from './UiTesting';
+import ScheduleScan from './ScheduleScan';
 
 const ChatbotAnalytics = () => {
   const { authToken } = useAuth();
@@ -96,61 +97,342 @@ const ChatbotAnalytics = () => {
     );
   }
 
+  const topicPairs = Array.isArray(analytics.topicCounts)
+    ? analytics.topicCounts
+    : (analytics.mostCommonTopics || []).slice(0, 5).map((t) => ({ name: t, count: 1 }));
+  const hasTimeseries = Array.isArray(analytics.queriesOverTime);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="p-4 bg-card rounded-xl shadow-lg"
-      >
-        <div className="flex items-center space-x-3">
-          <FaQuestionCircle className="text-2xl text-primary" />
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground">Total Queries</h4>
-            <p className="text-2xl font-bold">{analytics.totalQueries}</p>
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
+          <div className="flex items-center space-x-3">
+            <FaQuestionCircle className="text-2xl text-primary" />
+            <div>
+              <h4 className="text-sm font-medium text-muted-foreground">Total Queries</h4>
+              <p className="text-2xl font-bold">{analytics.totalQueries}</p>
+            </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
 
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="p-4 bg-card rounded-xl shadow-lg"
-      >
-        <div className="flex items-center space-x-3">
-          <FaClock className="text-2xl text-primary" />
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground">Avg Response Time</h4>
-            <p className="text-2xl font-bold">{analytics.averageResponseTime}s</p>
+        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
+          <div className="flex items-center space-x-3">
+            <FaClock className="text-2xl text-primary" />
+            <div>
+              <h4 className="text-sm font-medium text-muted-foreground">Avg Response Time</h4>
+              <p className="text-2xl font-bold">{analytics.averageResponseTime}s</p>
+            </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
 
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="p-4 bg-card rounded-xl shadow-lg"
-      >
-        <div className="flex items-center space-x-3">
-          <FaChartBar className="text-2xl text-primary" />
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground">Success Rate</h4>
-            <p className="text-2xl font-bold">{analytics.successRate}%</p>
+        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium text-muted-foreground">Success Rate</h4>
+              <p className="text-xs text-muted-foreground">Resolved queries</p>
+            </div>
+            <RadialSuccess value={analytics.successRate || 0} size={88} />
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
+      {/* Removed Topic Distribution and Queries Over Time as requested */}
+    </div>
+  );
+};
 
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="p-4 bg-card rounded-xl shadow-lg"
-      >
-        <div className="flex items-center space-x-3">
-          <FaCheckCircle className="text-2xl text-primary" />
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground">Top Topics</h4>
-            <p className="text-sm font-medium">
-              {analytics.mostCommonTopics?.slice(0, 2).join(', ') || 'No topics yet'}
-            </p>
+const SeverityBarChart = ({ counts }) => {
+  const items = [
+    { key: 'critical', label: 'Critical', value: counts.critical || 0, color: 'bg-red-500' },
+    { key: 'serious', label: 'Serious', value: counts.serious || 0, color: 'bg-orange-500' },
+    { key: 'moderate', label: 'Moderate', value: counts.moderate || 0, color: 'bg-yellow-500' },
+    { key: 'minor', label: 'Minor', value: counts.minor || 0, color: 'bg-green-500' },
+  ];
+  const maxVal = Math.max(1, ...items.map(i => i.value));
+  return (
+    <div className="space-y-3">
+      {items.map((i) => (
+        <div key={i.key} className="space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{i.label}</span>
+            <span className="font-medium">{i.value}</span>
+          </div>
+          <div className="h-3 w-full bg-secondary rounded">
+            <div className={`h-3 rounded ${i.color}`} style={{ width: `${(i.value / maxVal) * 100}%` }} />
           </div>
         </div>
-      </motion.div>
+      ))}
+    </div>
+  );
+};
+
+const HeadersDonutChart = ({ presentCount, missingCount }) => {
+  const total = Math.max(0, (presentCount || 0) + (missingCount || 0));
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  const missingRatio = total > 0 ? missingCount / total : 0;
+  const missingLength = missingRatio * circumference;
+  const remainingLength = circumference - missingLength;
+  return (
+    <div className="flex items-center gap-4">
+      <svg width="110" height="110" viewBox="0 0 110 110">
+        <g transform="translate(55,55)">
+          <circle r={radius} fill="none" stroke="var(--border)" strokeWidth="12" />
+          <g transform="rotate(-90)">
+            <circle r={radius} fill="none" stroke="rgb(239,68,68)" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${missingLength} ${remainingLength}`} />
+          </g>
+          <text x="0" y="-2" textAnchor="middle" className="fill-foreground font-bold" style={{ fontSize: 16 }}>{total}</text>
+          <text x="0" y="12" textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>Headers</text>
+        </g>
+      </svg>
+      <div className="space-y-1 text-sm">
+        <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Missing: <span className="font-medium">{missingCount}</span></div>
+        <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-gray-300" /> Present: <span className="font-medium">{presentCount}</span></div>
+      </div>
+    </div>
+  );
+};
+
+const RadialSuccess = ({ value = 0, size = 64 }) => {
+  const clamped = Math.max(0, Math.min(100, value));
+  const radius = Math.max(16, (size / 2) - 10);
+  const strokeWidth = Math.max(6, Math.round(size / 12));
+  const circumference = 2 * Math.PI * radius;
+  const filled = (clamped / 100) * circumference;
+  const remaining = circumference - filled;
+  const color = clamped >= 80 ? 'rgb(34,197,94)' : clamped >= 50 ? 'rgb(234,179,8)' : 'rgb(239,68,68)';
+  const view = `${size} ${size}`;
+  const half = size / 2;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${view}`}>
+      <g transform={`translate(${half},${half})`}>
+        <circle r={radius} fill="none" stroke="var(--border)" strokeWidth={strokeWidth} />
+        <g transform="rotate(-90)">
+          <circle r={radius} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={`${filled} ${remaining}`} />
+        </g>
+        <text x="0" y="5" textAnchor="middle" className="fill-foreground font-bold" style={{ fontSize: Math.max(12, Math.round(size / 7)) }}>{clamped}%</text>
+      </g>
+    </svg>
+  );
+};
+
+const Sparkline = ({ data = [] }) => {
+  const width = 440;
+  const height = 100;
+  const padding = 8;
+  const n = data.length;
+  if (n === 0) {
+    return <div className="text-sm text-muted-foreground">No data</div>;
+  }
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = Math.max(1, max - min);
+  const pts = data.map((v, i) => {
+    const x = padding + (i * (width - padding * 2)) / Math.max(1, n - 1);
+    const y = height - padding - ((v - min) / range) * (height - padding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+      <polyline fill="none" stroke="rgb(59,130,246)" strokeWidth="2" points={pts} />
+      {data.map((v, i) => {
+        const x = padding + (i * (width - padding * 2)) / Math.max(1, n - 1);
+        const y = height - padding - ((v - min) / range) * (height - padding * 2);
+        return <circle key={i} cx={x} cy={y} r="2" fill="rgb(59,130,246)" />;
+      })}
+    </svg>
+  );
+};
+
+const TopicsBars = ({ data = [] }) => {
+  const items = data.slice(0, 6);
+  const maxVal = Math.max(1, ...items.map(i => i.count || 0));
+  return (
+    <div className="space-y-3">
+      {items.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No topics yet</div>
+      ) : (
+        items.map((t, idx) => (
+          <div key={idx} className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground truncate max-w-[70%]">{t.name}</span>
+              <span className="font-medium">{t.count || 1}</span>
+            </div>
+            <div className="h-3 w-full bg-secondary rounded">
+              <div className="h-3 rounded bg-primary" style={{ width: `${((t.count || 1) / maxVal) * 100}%` }} />
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+};
+
+const UiTestingSummaryCards = () => {
+  const { authToken } = useAuth();
+  const [result, setResult] = useState(null);
+  const [meta, setMeta] = useState({ url: '', mode: 'all', ts: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      // Try backend first for org-wide visibility
+      try {
+        const resp = await fetch('http://localhost:8000/api/ui/latest', {
+          headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.result && !cancelled) {
+            setResult(data.result);
+            setMeta({ url: data.url || '', mode: data.mode || 'all', ts: data.created_at || null });
+            return;
+          }
+        }
+      } catch (e) {}
+      // Fallback to localStorage
+      try {
+        const last = localStorage.getItem('uiTesting:lastResult');
+        if (last && !cancelled) {
+          const parsed = JSON.parse(last);
+          setResult(parsed?.result || null);
+          setMeta({ url: parsed?.url || '', mode: parsed?.mode || 'all', ts: parsed?.ts || null });
+        }
+      } catch (e) {}
+    };
+    load();
+    const id = setInterval(load, 60000); // refresh every 60s to reflect scheduled scans
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [authToken]);
+
+  const violations = result?.wcag_results?.violations || [];
+  const getA11ySeverityCounts = () => {
+    const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+    (violations || []).forEach((v) => {
+      const impact = (v?.impact || '').toLowerCase();
+      if (impact === 'critical') counts.critical += 1;
+      else if (impact === 'serious') counts.serious += 1;
+      else if (impact === 'moderate') counts.moderate += 1;
+      else if (impact === 'minor') counts.minor += 1;
+      else counts.unknown += 1;
+    });
+    return counts;
+  };
+  const computeAccessibilityScore = () => {
+    const c = getA11ySeverityCounts();
+    const deduction = c.critical * 25 + c.serious * 15 + c.moderate * 8 + c.minor * 3 + c.unknown * 5;
+    const score = Math.max(0, Math.min(100, 100 - deduction));
+    return score;
+  };
+  const getSecuritySummaries = () => {
+    const sh = result?.security_results?.securityheaders || {};
+    const ssl = result?.security_results?.ssllabs || {};
+    const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
+    const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '';
+    const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
+    const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+    let securityScore = typeof sh?.score === 'number' ? sh.score : undefined;
+    if (securityScore === undefined) {
+      const missing = missingHeaders.length;
+      securityScore = Math.max(0, 100 - missing * 15);
+    }
+    return { securityScore, sslGrade, missingHeaders, presentHeaders };
+  };
+  const a11yCounts = result ? getA11ySeverityCounts() : { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+  const a11yScore = result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0;
+  const { securityScore, sslGrade, missingHeaders, presentHeaders } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], presentHeaders: [] };
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-lg font-semibold mb-2">UI Testing Summary</h3>
+      <div className="text-xs text-muted-foreground mb-3">{meta.url ? `Last scanned: ${meta.url}` : 'No recent scan available'}</div>
+      {result ? (
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {(meta.mode === 'all' || meta.mode === 'accessibility') && (
+            <div className="glass-card p-6 rounded-lg border-l-4 border-blue-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Accessibility Score</p>
+                  <h3 className="text-2xl font-bold">{a11yScore}</h3>
+                </div>
+                <div className="p-3 rounded-full bg-blue-500/10 text-blue-500">
+                  <FaDesktop className="h-6 w-6" />
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
+            </div>
+          )}
+          {(meta.mode === 'all' || meta.mode === 'accessibility') && (
+            <div className="glass-card p-6 rounded-lg border-l-4 border-red-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">WCAG Violations</p>
+                  <h3 className="text-2xl font-bold">{violations.length}</h3>
+                </div>
+                <div className="p-3 rounded-full bg-red-500/10 text-red-500">
+                  <FaChartLine className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+          )}
+          {(meta.mode === 'all' || meta.mode === 'security') && (
+            <div className="glass-card p-6 rounded-lg border-l-4 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Security Score</p>
+                  <h3 className="text-2xl font-bold">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+                </div>
+                <div className="p-3 rounded-full bg-green-500/10 text-green-500">
+                  <FaChartLine className="h-6 w-6" />
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">Missing headers: {missingHeaders.length}</div>
+            </div>
+          )}
+          {(meta.mode === 'all' || meta.mode === 'security') && (
+            <div className="glass-card p-6 rounded-lg border-l-4 border-purple-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
+                  <h3 className="text-2xl font-bold">{sslGrade || '—'}</h3>
+                </div>
+                <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
+                  <FaChartLine className="h-6 w-6" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="p-4 bg-secondary/50 rounded border text-sm text-muted-foreground">Run a UI Testing scan in the UI Testing page to see summary here.</div>
+      )}
+
+      {result && (
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
+            <h4 className="text-base font-semibold mb-3">WCAG Severity Distribution</h4>
+            <SeverityBarChart counts={a11yCounts} />
+          </div>
+          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
+            <h4 className="text-base font-semibold mb-3">Security Headers Coverage</h4>
+            <HeadersDonutChart presentCount={presentHeaders.length} missingCount={missingHeaders.length} />
+            {missingHeaders.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {missingHeaders.map((h) => (
+                  <span key={h} className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 border border-red-200">{h}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1752,6 +2034,9 @@ const UserDashboard = () => {
               </div>
             </div>
 
+            {/* UI Testing summary cards (consistent for all roles) */}
+            <UiTestingSummaryCards />
+
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-4">Integrations</h3>
               <div className="grid grid-cols-1">
@@ -1797,33 +2082,7 @@ const UserDashboard = () => {
       case 'testing':
         return <UiTesting />;
       case 'scan':
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-6"
-          >
-            <h2 className="text-2xl font-bold text-foreground">Schedule Compliance Scan</h2>
-            <div className="p-6 bg-card rounded-xl shadow-lg">
-              <div className="flex items-center space-x-4 mb-4">
-                <FaCalendarAlt className="text-2xl text-primary" />
-                <div>
-                  <h3 className="text-lg font-semibold">Scan Management</h3>
-              <p className="text-muted-foreground">Schedule and manage compliance scans</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <button className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
-                  Schedule New Scan
-                </button>
-                <button className="w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary">
-                  View Scan History
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        );
+        return <ScheduleScan />;
       default:
         return null;
     }

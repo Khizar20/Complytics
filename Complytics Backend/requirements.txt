@@ -21,3 +21,5 @@ selenium
 axe-selenium-python
 reportlab
 openpyxl
+groq
+apscheduler

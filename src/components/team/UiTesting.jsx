@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner } from 'react-icons/fa';
+import { motion, AnimatePresence } from 'framer-motion';
+import FormattedResponse from '@/components/ui/FormattedResponse';
+import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 
 const UiTesting = () => {
@@ -13,6 +14,9 @@ const UiTesting = () => {
   const [progress, setProgress] = useState(0);
   const [showProgress, setShowProgress] = useState(false);
   const progressTimerRef = useRef(null);
+  const [openSecurity, setOpenSecurity] = useState(false);
+  const [openSSL, setOpenSSL] = useState(false);
+  const [openFindings, setOpenFindings] = useState(false);
 
   const apiBase = 'http://localhost:8000/api';
 
@@ -26,11 +30,15 @@ const UiTesting = () => {
     setResult(null);
     setProgress(0);
     setShowProgress(true);
-    // Increment progress smoothly up to 90% while waiting
+    // Increment progress smoothly up to 90% while waiting (slower)
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     progressTimerRef.current = setInterval(() => {
-      setProgress((p) => (p < 90 ? Math.min(90, p + Math.floor(5 + Math.random() * 7)) : p));
-    }, 500);
+      setProgress((p) => {
+        if (p >= 90) return p;
+        const increment = Math.max(1, Math.floor(2 + Math.random() * 4)); // 2-5%
+        return Math.min(90, p + increment);
+      });
+    }, 900);
     try {
       const resp = await fetch(`${apiBase}/ui/scan`, {
         method: 'POST',
@@ -46,6 +54,9 @@ const UiTesting = () => {
       }
       const data = await resp.json();
       setResult(data);
+      try {
+        localStorage.setItem('uiTesting:lastResult', JSON.stringify({ url, mode, result: data, ts: Date.now() }));
+      } catch (e) {}
     } catch (e) {
       setError(e.message);
     } finally {
@@ -59,8 +70,44 @@ const UiTesting = () => {
       setTimeout(() => {
         setShowProgress(false);
         setProgress(0);
-      }, 800);
+      }, 1200);
     }
+  };
+
+  const getA11ySeverityCounts = () => {
+    const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+    (violations || []).forEach((v) => {
+      const impact = (v?.impact || '').toLowerCase();
+      if (impact === 'critical') counts.critical += 1;
+      else if (impact === 'serious') counts.serious += 1;
+      else if (impact === 'moderate') counts.moderate += 1;
+      else if (impact === 'minor') counts.minor += 1;
+      else counts.unknown += 1;
+    });
+    return counts;
+  };
+
+  const computeAccessibilityScore = () => {
+    const c = getA11ySeverityCounts();
+    const deduction = c.critical * 25 + c.serious * 15 + c.moderate * 8 + c.minor * 3 + c.unknown * 5;
+    const score = Math.max(0, Math.min(100, 100 - deduction));
+    return score;
+  };
+
+  const getSecuritySummaries = () => {
+    const sh = result?.security_results?.securityheaders || {};
+    const ssl = result?.security_results?.ssllabs || {};
+    const live = result?.security_results?.live_headers || {};
+    const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
+    const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '';
+    const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
+    const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+    let securityScore = typeof sh?.score === 'number' ? sh.score : undefined;
+    if (securityScore === undefined) {
+      const missing = missingHeaders.length;
+      securityScore = Math.max(0, 100 - missing * 15);
+    }
+    return { securityScore, sslGrade, missingHeaders, presentHeaders, live };
   };
 
   const download = async (type) => {
@@ -88,6 +135,9 @@ const UiTesting = () => {
   };
 
   const violations = result?.wcag_results?.violations || [];
+  const a11yCounts = (result ? getA11ySeverityCounts() : { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 });
+  const a11yScore = result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0;
+  const { securityScore, sslGrade, missingHeaders } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [] };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
@@ -147,27 +197,96 @@ const UiTesting = () => {
 
       {result && (
         <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {(mode === 'all' || mode === 'accessibility') && (
+              <div className="glass-card p-6 rounded-lg border-l-4 border-blue-500">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Accessibility Score</p>
+                    <h3 className="text-2xl font-bold">{a11yScore}</h3>
+                  </div>
+                  <div className="p-3 rounded-full bg-blue-500/10 text-blue-500">
+                    <FaDesktop className="h-6 w-6" />
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-muted-foreground">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
+              </div>
+            )}
+            {(mode === 'all' || mode === 'accessibility') && (
+              <div className="glass-card p-6 rounded-lg border-l-4 border-red-500">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">WCAG Violations</p>
+                    <h3 className="text-2xl font-bold">{violations.length}</h3>
+                  </div>
+                  <div className="p-3 rounded-full bg-red-500/10 text-red-500">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {(mode === 'all' || mode === 'security') && (
+              <div className="glass-card p-6 rounded-lg border-l-4 border-green-500">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Security Score</p>
+                    <h3 className="text-2xl font-bold">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+                  </div>
+                  <div className="p-3 rounded-full bg-green-500/10 text-green-500">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-muted-foreground">Missing headers: {missingHeaders.length}</div>
+              </div>
+            )}
+            {(mode === 'all' || mode === 'security') && (
+              <div className="glass-card p-6 rounded-lg border-l-4 border-purple-500">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
+                    <h3 className="text-2xl font-bold">{sslGrade || '—'}</h3>
+                  </div>
+                  <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           {(mode === 'all' || mode === 'accessibility') && (
             <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
               <h3 className="text-lg font-semibold mb-4">Accessibility (WCAG)</h3>
               {violations.length > 0 ? (
-                <div className="overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
+                <div className="w-full max-h-96 overflow-auto rounded border border-border/60">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-secondary sticky top-0 z-10">
                       <tr className="text-left border-b">
-                        <th className="py-2 pr-4">Rule</th>
-                        <th className="py-2 pr-4">Impact</th>
-                        <th className="py-2 pr-4">Description</th>
-                        <th className="py-2">Targets</th>
+                        <th className="py-2 px-3">Rule</th>
+                        <th className="py-2 px-3">Impact</th>
+                        <th className="py-2 px-3">Description</th>
+                        <th className="py-2 px-3">Targets</th>
                       </tr>
                     </thead>
                     <tbody>
                       {violations.map((v, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="py-2 pr-4">{v.id}</td>
-                          <td className="py-2 pr-4 capitalize">{v.impact}</td>
-                          <td className="py-2 pr-4">{v.description}</td>
-                          <td className="py-2 text-xs text-muted-foreground">{(v.nodes || []).map(n => (n.target || []).join(' ')).join(', ')}</td>
+                        <tr key={i} className="border-b last:border-0 align-top">
+                          <td className="py-2 px-3 font-mono text-xs whitespace-nowrap">{v.id}</td>
+                          <td className="py-2 px-3 capitalize">
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              v.impact === 'critical' ? 'bg-red-100 text-red-800' :
+                              v.impact === 'serious' ? 'bg-orange-100 text-orange-800' :
+                              v.impact === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>{v.impact}</span>
+                          </td>
+                          <td className="py-2 px-3">{v.description}</td>
+                          <td className="py-2 px-3 text-xs text-muted-foreground break-words whitespace-pre-wrap max-w-[520px]">
+                            {(v.nodes || []).map((n, idx) => (
+                              <div key={idx} className="mb-1 last:mb-0">
+                                {(n.target || []).join(' ')}
+                              </div>
+                            ))}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -182,26 +301,60 @@ const UiTesting = () => {
           {(mode === 'all' || mode === 'security') && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-                <h3 className="text-lg font-semibold mb-4">SecurityHeaders</h3>
-                <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(result.security_results?.securityheaders || {}, null, 2)}</pre>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold">SecurityHeaders</h3>
+                  <button onClick={() => setOpenSecurity((v) => !v)} className="text-sm flex items-center gap-1">
+                    <span>{openSecurity ? 'Hide' : 'Show'}</span>
+                    <FaChevronDown className={`transition-transform ${openSecurity ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+                <AnimatePresence initial={false}>
+                  {openSecurity && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
+                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.security_results?.securityheaders || {}, null, 2)}</pre>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
               <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-                <h3 className="text-lg font-semibold mb-4">SSL Labs</h3>
-                <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(result.security_results?.ssllabs || {}, null, 2)}</pre>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold">SSL Labs</h3>
+                  <button onClick={() => setOpenSSL((v) => !v)} className="text-sm flex items-center gap-1">
+                    <span>{openSSL ? 'Hide' : 'Show'}</span>
+                    <FaChevronDown className={`transition-transform ${openSSL ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+                <AnimatePresence initial={false}>
+                  {openSSL && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
+                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.security_results?.ssllabs || {}, null, 2)}</pre>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           )}
 
           <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
             <h3 className="text-lg font-semibold mb-4">AI Recommendations</h3>
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-              <div dangerouslySetInnerHTML={{ __html: (result.recommendations || '').replace(/\n/g, '<br/>') }} />
-            </div>
+            <FormattedResponse content={result.recommendations || ''} />
           </div>
 
           <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-            <h3 className="text-lg font-semibold mb-4">Structured Findings</h3>
-            <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(result.findings || {}, null, 2)}</pre>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold">Structured Findings</h3>
+              <button onClick={() => setOpenFindings((v) => !v)} className="text-sm flex items-center gap-1">
+                <span>{openFindings ? 'Hide' : 'Show'}</span>
+                <FaChevronDown className={`transition-transform ${openFindings ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+            <AnimatePresence initial={false}>
+              {openFindings && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
+                  <pre className="text-xs whitespace-pre-wrap max-h-96 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.findings || {}, null, 2)}</pre>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       )}
