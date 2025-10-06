@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -38,10 +38,15 @@ import {
   FaGlobe,
   FaClipboardList
 } from 'react-icons/fa';
+import { FaFilePdf, FaFileWord } from 'react-icons/fa';
 import Profile from '../auth/Profile';
 import ComplianceChat from './ComplianceChat';
 import UiTesting from './UiTesting';
 import ScheduleScan from './ScheduleScan';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import autoTable from 'jspdf-autotable';
+import { Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun, ImageRun, Table, TableRow, TableCell, WidthType } from 'docx';
 
 const ChatbotAnalytics = () => {
   const { authToken } = useAuth();
@@ -1897,6 +1902,7 @@ const UserDashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [error, setError] = useState(null);
+  const reportRef = useRef(null);
 
   // Add event listener for setActiveTab event
   useEffect(() => {
@@ -2013,61 +2019,320 @@ const UserDashboard = () => {
             transition={{ duration: 0.5 }}
             className="space-y-6"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-foreground">
-                {userData.role === 'it_team' ? 'IT Team Dashboard' :
-                 userData.role === 'compliance_team' ? 'Compliance Team Dashboard' :
-                 'Management Team Dashboard'}
-              </h2>
-              <div className="flex items-center space-x-2">
-                <FaShieldAlt className="text-primary" />
-                <span className="text-sm text-muted-foreground capitalize">
-                  {userData.role.replace('_', ' ')}
-                </span>
+            {/* Report Content - everything inside will be captured in export */}
+            <div ref={reportRef} className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-foreground">
+                  {userData.role === 'it_team' ? 'IT Team Dashboard' :
+                   userData.role === 'compliance_team' ? 'Compliance Team Dashboard' :
+                   'Management Team Dashboard'}
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <FaShieldAlt className="text-primary" />
+                  <span className="text-sm text-muted-foreground capitalize">
+                    {userData.role.replace('_', ' ')}
+                  </span>
+                </div>
               </div>
-            </div>
-            
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-4">Chatbot Analytics</h3>
-              <div className="w-full">
-                <ChatbotAnalytics />
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-4">Chatbot Analytics</h3>
+                <div className="w-full">
+                  <ChatbotAnalytics />
+                </div>
+              </div>
+
+              {/* UI Testing summary cards (consistent for all roles) */}
+              <UiTestingSummaryCards />
+
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-4">Integrations</h3>
+                <div className="grid grid-cols-1">
+                  <AzureConnectionMiniCard />
+                </div>
               </div>
             </div>
 
-            {/* UI Testing summary cards (consistent for all roles) */}
-            <UiTestingSummaryCards />
+            {/* Reports - actions placed at end of dashboard */}
+            <div className="mt-8">
+              <h3 className="text-lg font-semibold mb-3">Reports</h3>
+              <div className="flex items-center justify-start gap-3 no-export">
+                <button
+                  onClick={async () => {
+                  // Fetch structured data
+                  const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                  const [analyticsResp, uiResp] = await Promise.all([
+                    fetch('http://localhost:8000/api/compliance/analytics', { headers }),
+                    fetch('http://localhost:8000/api/ui/latest', { headers })
+                  ]);
+                  const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
+                  const uiLatest = uiResp.ok ? await uiResp.json() : {};
+                  const ui = uiLatest?.result || {};
 
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-4">Integrations</h3>
-              <div className="grid grid-cols-1">
-                <AzureConnectionMiniCard />
+                  // Derive metrics
+                  const violations = Array.isArray(ui?.wcag_results?.violations) ? ui.wcag_results.violations : [];
+                  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+                  violations.forEach(v => {
+                    const imp = String(v?.impact || '').toLowerCase();
+                    if (imp === 'critical') counts.critical += 1;
+                    else if (imp === 'serious') counts.serious += 1;
+                    else if (imp === 'moderate') counts.moderate += 1;
+                    else if (imp === 'minor') counts.minor += 1;
+                    else counts.unknown += 1;
+                  });
+                  const sh = ui?.security_results?.securityheaders || {};
+                  const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
+                  const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+                  const ssl = ui?.security_results?.ssllabs || {};
+                  const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
+                  const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '—';
+                  const securityScore = typeof sh?.score === 'number' ? sh.score : Math.max(0, 100 - missingHeaders.length * 15);
+                  const nonCompliant = (Array.isArray(ui?.findings?.security) || Array.isArray(ui?.findings?.accessibility))
+                    ? [ ...(ui.findings.security || []), ...(ui.findings.accessibility || []) ]
+                    : [];
+                  const aiRecs = String(ui?.recommendations || '').trim();
+
+                  // Build PDF with headings and tables
+                  const pdf = new jsPDF('p', 'mm', 'a4');
+                  const pageWidth = pdf.internal.pageSize.getWidth();
+                  let y = 18;
+
+                  // Title + Date
+                  pdf.setFontSize(18);
+                  pdf.text('Complytics Dashboard Report', pageWidth / 2, y, { align: 'center' });
+                  y += 8;
+                  pdf.setFontSize(10);
+                  pdf.text(new Date().toLocaleString(), pageWidth / 2, y, { align: 'center' });
+                  y += 10;
+
+                  // Chatbot Analytics
+                  pdf.setFontSize(14);
+                  pdf.text('Chatbot Analytics', 14, y);
+                  y += 4;
+                  autoTable(pdf, {
+                    startY: y,
+                    head: [['Metric', 'Value']],
+                    body: [
+                      ['Total Queries', String(analytics.totalQueries ?? 0)],
+                      ['Avg Response Time (s)', String(analytics.averageResponseTime ?? 0)],
+                      ['Success Rate (%)', String(analytics.successRate ?? 0)]
+                    ],
+                    styles: { fontSize: 9 },
+                    theme: 'striped'
+                  });
+                  y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+
+                  // UI Testing Summary
+                  pdf.setFontSize(14);
+                  pdf.text('UI Testing Summary', 14, y);
+                  y += 4;
+                  autoTable(pdf, {
+                    startY: y,
+                    head: [['Severity', 'Count']],
+                    body: [
+                      ['Critical', String(counts.critical)],
+                      ['Serious', String(counts.serious)],
+                      ['Moderate', String(counts.moderate)],
+                      ['Minor', String(counts.minor)]
+                    ],
+                    styles: { fontSize: 9 },
+                    theme: 'striped'
+                  });
+                  y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 4;
+
+                  autoTable(pdf, {
+                    startY: y,
+                    head: [['Security Metric', 'Value']],
+                    body: [
+                      ['Security Score', String(securityScore)],
+                      ['SSL Labs Grade', String(sslGrade)],
+                      ['Headers Present', String(presentHeaders.length)],
+                      ['Headers Missing', String(missingHeaders.length)]
+                    ],
+                    styles: { fontSize: 9 },
+                    theme: 'grid'
+                  });
+                  y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+
+                  // Recommendations
+                  pdf.setFontSize(14);
+                  pdf.text('Recommendations', 14, y);
+                  y += 4;
+                  const recRows = (nonCompliant || []).slice(0, 30).map((r) => [
+                    String(r.title || '—'),
+                    String(r.severity || '—').toUpperCase(),
+                    String(r.remediation || r.fix || '—')
+                  ]);
+                  if (recRows.length > 0) {
+                    autoTable(pdf, {
+                      startY: y,
+                      head: [['Title', 'Severity', 'Action']],
+                      body: recRows,
+                      styles: { fontSize: 8, cellWidth: 'wrap' },
+                      columnStyles: { 2: { cellWidth: 100 } },
+                      theme: 'striped'
+                    });
+                    y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 6;
+                  }
+                  if (aiRecs) {
+                    pdf.setFontSize(12);
+                    pdf.text('AI Recommendations', 14, y);
+                    y += 6;
+                    pdf.setFontSize(10);
+                    const lines = pdf.splitTextToSize(aiRecs, pageWidth - 28);
+                    lines.forEach((line) => {
+                      if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                      pdf.text(line, 14, y);
+                      y += 5;
+                    });
+                  }
+
+                  // Visual summary (append as image pages)
+                  const node = reportRef.current;
+                  if (node) {
+                    const canvas = await html2canvas(node, {
+                      scale: 2,
+                      useCORS: true,
+                      backgroundColor: '#ffffff',
+                      ignoreElements: (el) => el.classList?.contains('no-export')
+                    });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const imgWidth = pageWidth;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                    let heightLeft = imgHeight;
+                    let position = 0;
+                    pdf.addPage();
+                    pdf.setFontSize(12);
+                    pdf.text('Visual Summary', 14, 16);
+                    pdf.addImage(imgData, 'PNG', 0, 20, imgWidth, Math.min(imgHeight, pageHeight - 24));
+                    heightLeft -= (pageHeight - 24);
+                    while (heightLeft > 0) {
+                      pdf.addPage();
+                      position = 20 - (imgHeight - heightLeft);
+                      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                      heightLeft -= pageHeight;
+                    }
+                  }
+
+                    pdf.save('Complytics-Dashboard-Report.pdf');
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <FaFilePdf />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={async () => {
+                  // Fetch structured data
+                  const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                  const [analyticsResp, uiResp] = await Promise.all([
+                    fetch('http://localhost:8000/api/compliance/analytics', { headers }),
+                    fetch('http://localhost:8000/api/ui/latest', { headers })
+                  ]);
+                  const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
+                  const uiLatest = uiResp.ok ? await uiResp.json() : {};
+                  const ui = uiLatest?.result || {};
+
+                  // Derive metrics similar to PDF
+                  const violations = Array.isArray(ui?.wcag_results?.violations) ? ui.wcag_results.violations : [];
+                  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+                  violations.forEach(v => { const imp = String(v?.impact || '').toLowerCase(); if (imp === 'critical') counts.critical += 1; else if (imp === 'serious') counts.serious += 1; else if (imp === 'moderate') counts.moderate += 1; else if (imp === 'minor') counts.minor += 1; else counts.unknown += 1; });
+                  const sh = ui?.security_results?.securityheaders || {};
+                  const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
+                  const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+                  const ssl = ui?.security_results?.ssllabs || {};
+                  const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
+                  const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '—';
+                  const securityScore = typeof sh?.score === 'number' ? sh.score : Math.max(0, 100 - missingHeaders.length * 15);
+                  const nonCompliant = (Array.isArray(ui?.findings?.security) || Array.isArray(ui?.findings?.accessibility))
+                    ? [ ...(ui.findings.security || []), ...(ui.findings.accessibility || []) ]
+                    : [];
+                  const aiRecs = String(ui?.recommendations || '').trim();
+
+                  // Capture visualization image
+                  const node = reportRef.current;
+                  let imageRun = null;
+                  if (node) {
+                    const canvas = await html2canvas(node, {
+                      scale: 2,
+                      useCORS: true,
+                      backgroundColor: '#ffffff',
+                      ignoreElements: (el) => el.classList?.contains('no-export')
+                    });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const imageBuffer = await (await fetch(dataUrl)).arrayBuffer();
+                    imageRun = new ImageRun({ data: imageBuffer, transformation: { width: 600, height: Math.round(600 * (canvas.height / canvas.width)) } });
+                  }
+
+                  // Helpers for docx tables
+                  const makeHeader = (cells) => new TableRow({ children: cells.map((c) => new TableCell({ children: [new Paragraph({ text: c, bold: true })], width: { size: Math.round(100 / cells.length), type: WidthType.PERCENTAGE } })) });
+                  const makeRow = (cells) => new TableRow({ children: cells.map((c) => new TableCell({ children: [new Paragraph(String(c))], width: { size: Math.round(100 / cells.length), type: WidthType.PERCENTAGE } })) });
+
+                  const analyticsTable = new Table({ rows: [
+                    makeHeader(['Metric', 'Value']),
+                    makeRow(['Total Queries', analytics.totalQueries ?? 0]),
+                    makeRow(['Avg Response Time (s)', analytics.averageResponseTime ?? 0]),
+                    makeRow(['Success Rate (%)', analytics.successRate ?? 0])
+                  ] });
+                  const severityTable = new Table({ rows: [
+                    makeHeader(['Severity', 'Count']),
+                    makeRow(['Critical', counts.critical]),
+                    makeRow(['Serious', counts.serious]),
+                    makeRow(['Moderate', counts.moderate]),
+                    makeRow(['Minor', counts.minor])
+                  ] });
+                  const securityTable = new Table({ rows: [
+                    makeHeader(['Security Metric', 'Value']),
+                    makeRow(['Security Score', securityScore]),
+                    makeRow(['SSL Labs Grade', sslGrade]),
+                    makeRow(['Headers Present', presentHeaders.length]),
+                    makeRow(['Headers Missing', missingHeaders.length])
+                  ] });
+
+                  const recRows = (nonCompliant || []).slice(0, 30).map((r) => makeRow([
+                    String(r.title || '—'),
+                    String(r.severity || '—').toUpperCase(),
+                    String(r.remediation || r.fix || '—')
+                  ]));
+                  const recsTable = new Table({ rows: [ makeHeader(['Title', 'Severity', 'Action']), ...recRows ] });
+
+                  const doc = new DocxDocument({
+                    sections: [
+                      {
+                        properties: {},
+                        children: [
+                          new Paragraph({ text: 'Complytics Dashboard Report', heading: HeadingLevel.TITLE }),
+                          new Paragraph({ children: [new TextRun({ text: new Date().toLocaleString(), italics: true })] }),
+                          new Paragraph({ text: 'Chatbot Analytics', heading: HeadingLevel.HEADING_1 }),
+                          analyticsTable,
+                          new Paragraph({ text: 'UI Testing Summary', heading: HeadingLevel.HEADING_1 }),
+                          severityTable,
+                          securityTable,
+                          new Paragraph({ text: 'Recommendations', heading: HeadingLevel.HEADING_1 }),
+                          ...(recRows.length > 0 ? [recsTable] : [new Paragraph('No specific recommendations available')]),
+                          ...(aiRecs ? [new Paragraph({ text: 'AI Recommendations', heading: HeadingLevel.HEADING_2 }), new Paragraph(aiRecs)] : []),
+                          ...(imageRun ? [new Paragraph({ text: 'Visual Summary', heading: HeadingLevel.HEADING_1 }), new Paragraph({ children: [imageRun] })] : [])
+                        ]
+                      }
+                    ]
+                  });
+                  const blob = await Packer.toBlob(doc);
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'Complytics-Dashboard-Report.docx';
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-secondary"
+                >
+                  <FaFileWord />
+                  <span>Download Word</span>
+                </button>
               </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-4">System Status</h3>
-                <SystemStatus />
-              </motion.div>
-              
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-4">Recent Activities</h3>
-                <RecentActivities />
-              </motion.div>
-              
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-6 bg-card rounded-xl shadow-lg hover:shadow-xl transition-shadow"
-              >
-                <h3 className="text-lg font-semibold mb-4">Notifications</h3>
-                <Notifications />
-              </motion.div>
             </div>
           </motion.div>
         );

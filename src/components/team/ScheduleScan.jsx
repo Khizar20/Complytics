@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaCalendarAlt, FaClock, FaList, FaTrash } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 
 const ScheduleScan = () => {
@@ -11,6 +11,12 @@ const ScheduleScan = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [schedules, setSchedules] = useState([]);
+  const [scanNowLoading, setScanNowLoading] = useState(false);
+  const [showScanNowModal, setShowScanNowModal] = useState(false);
+  const [modalUrl, setModalUrl] = useState('');
+  const [modalError, setModalError] = useState(null);
+  const [modalSubmitting, setModalSubmitting] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   const fetchSchedules = async () => {
     try {
@@ -21,7 +27,10 @@ const ScheduleScan = () => {
       });
       if (!resp.ok) throw new Error(await resp.text() || 'Failed to load schedules');
       const data = await resp.json();
-      setSchedules(Array.isArray(data.schedules) ? data.schedules : []);
+      const items = Array.isArray(data.schedules) ? data.schedules : [];
+      const nowTs = Math.floor(Date.now() / 1000);
+      // Hide past schedules from the list
+      setSchedules(items.filter((s) => (s?.scheduled_for || 0) >= nowTs));
     } catch (e) {
       // Non-blocking
     }
@@ -39,10 +48,33 @@ const ScheduleScan = () => {
     return dt.toISOString();
   };
 
+  const minDateTimeLocal = () => {
+    // Return current local datetime in input-compatible format YYYY-MM-DDTHH:MM
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const mm = pad(now.getMonth() + 1);
+    const dd = pad(now.getDate());
+    const hh = pad(now.getHours());
+    const mi = pad(now.getMinutes());
+    return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  };
+
   const handleSchedule = async () => {
     if (!runAt) {
       setError('Please select a date and time');
       return;
+    }
+    // Prevent scheduling in the past on the client as well
+    try {
+      const selected = new Date(runAt).getTime();
+      const now = Date.now();
+      if (!isFinite(selected) || selected <= now) {
+        setError('Please select a future date and time');
+        return;
+      }
+    } catch {
+      // ignore, backend validates too
     }
     setError(null);
     setSuccess(null);
@@ -66,6 +98,88 @@ const ScheduleScan = () => {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleScanNow = async () => {
+    setError(null);
+    setSuccess(null);
+    setScanNowLoading(true);
+    try {
+      const resp = await fetch(`${apiBase}/ui/scan-now`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        // If no previous site, guide user to UI Testing page
+        if (t && t.toLowerCase().includes('no previous website')) {
+          // open modal to capture URL and run scan immediately
+          setShowScanNowModal(true);
+          return;
+        }
+        throw new Error(t || 'Scan failed');
+      }
+      await resp.json();
+      setSuccess('Scan completed. Dashboard will reflect the latest results.');
+      setShowSuccessPopup(true);
+      setTimeout(() => setShowSuccessPopup(false), 2500);
+      // Refresh schedules and dashboard widgets will auto-refresh via polling
+      fetchSchedules();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setScanNowLoading(false);
+    }
+  };
+
+  const normalizeUrl = (value) => {
+    if (!value) return '';
+    const trimmed = value.trim();
+    const prefixed = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(prefixed);
+      return prefixed;
+    } catch {
+      return '';
+    }
+  };
+
+  const submitScanNowWithUrl = async () => {
+    const normalized = normalizeUrl(modalUrl);
+    if (!normalized) {
+      setModalError('Please enter a valid URL (e.g., https://example.com)');
+      return;
+    }
+    setModalError(null);
+    setModalSubmitting(true);
+    try {
+      const resp = await fetch(`${apiBase}/ui/scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ url: normalized, mode: 'all', force: true }),
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(t || 'Scan failed');
+      }
+      await resp.json();
+      setShowScanNowModal(false);
+      setModalUrl('');
+      setSuccess('Scan completed. Dashboard will reflect the latest results.');
+      setShowSuccessPopup(true);
+      setTimeout(() => setShowSuccessPopup(false), 2500);
+      fetchSchedules();
+    } catch (e) {
+      setModalError(e.message);
+    } finally {
+      setModalSubmitting(false);
     }
   };
 
@@ -127,6 +241,7 @@ const ScheduleScan = () => {
               value={runAt}
               onChange={(e) => setRunAt(e.target.value)}
               className="w-full p-2 border border-border rounded"
+            min={minDateTimeLocal()}
             />
           </div>
           <div>
@@ -137,6 +252,13 @@ const ScheduleScan = () => {
             >
               <FaClock /> {loading ? 'Scheduling...' : 'Schedule Scan'}
             </button>
+          <button
+            disabled={scanNowLoading}
+            onClick={handleScanNow}
+            className="mt-2 w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary flex items-center justify-center gap-2"
+          >
+            {scanNowLoading ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now'}
+          </button>
           </div>
         </div>
       </div>
@@ -172,6 +294,34 @@ const ScheduleScan = () => {
           ))}
         </div>
       </div>
+      {showScanNowModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md p-6 bg-card rounded-xl shadow-xl border border-border">
+            <h3 className="text-lg font-semibold mb-2">Enter Website URL</h3>
+            <p className="text-sm text-muted-foreground mb-4">No previous website found. Provide your site URL to run a full scan now.</p>
+            {modalError && (
+              <div className="mb-3 p-3 rounded bg-red-50 text-red-700 text-sm">{modalError}</div>
+            )}
+            <input
+              value={modalUrl}
+              onChange={(e) => setModalUrl(e.target.value)}
+              placeholder="https://example.com"
+              className="w-full px-3 py-2 border border-border rounded mb-4"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => { setShowScanNowModal(false); setModalUrl(''); setModalError(null); }} className="px-3 py-2 border border-border rounded">Cancel</button>
+              <button onClick={submitScanNowWithUrl} disabled={modalSubmitting} className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2">
+                {modalSubmitting ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showSuccessPopup && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg">
+          Scan completed successfully.
+        </div>
+      )}
     </motion.div>
   );
 };

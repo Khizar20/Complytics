@@ -16,7 +16,6 @@ from ui_testing.scanners.security import run_security_scan
 from ui_testing.scanners.interaction import run_interactive_test
 from ui_testing.ai.recommendations import (
     configure_gemini,
-    configure_ollama,
     generate_findings_and_recommendations,
 )
 from config import settings
@@ -44,6 +43,7 @@ class ScanMode(str, Enum):
 class ScanRequest(BaseModel):
     url: str
     mode: ScanMode = ScanMode.all
+    force: bool = False
 
 
 class ScheduleScanRequest(BaseModel):
@@ -53,7 +53,6 @@ class ScheduleScanRequest(BaseModel):
 @router.on_event("startup")
 async def on_startup() -> None:
     configure_gemini(settings.GOOGLE_API_KEY)
-    configure_ollama(os.getenv("OLLAMA_BASE_URL"), os.getenv("OLLAMA_MODEL"))
     # Initialize scheduler and rehydrate pending jobs
     global SCHEDULER
     try:
@@ -209,11 +208,13 @@ async def scan(payload: ScanRequest, user=Depends(get_current_user)) -> Dict[str
         raise HTTPException(status_code=400, detail="URL is required")
 
     mode = payload.mode or ScanMode.all
+    force = bool(getattr(payload, 'force', False))
 
-    # Return cached results if available and fresh
-    cached = _get_cached_scan(url, mode)
-    if cached is not None:
-        return cached
+    # Return cached results if available and fresh, unless forcing a fresh run
+    if not force:
+        cached = _get_cached_scan(url, mode)
+        if cached is not None:
+            return cached
 
     wcag_task = None
     security_task = None
@@ -284,6 +285,25 @@ async def scan(payload: ScanRequest, user=Depends(get_current_user)) -> Dict[str
         # Do not block scan response on persistence failure
         pass
     return result
+
+
+@router.post("/ui/scan-now")
+async def scan_now(user=Depends(get_current_user)) -> Dict[str, Any]:
+    org_id = getattr(user, 'organization_id', None)
+    if not org_id:
+        raise HTTPException(status_code=400, detail="User has no organization")
+    if database.db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Find most recent URL scanned for this org
+    last_doc = await database.db.ui_testing_results.find_one({"organization_id": org_id}, sort=[("created_at", -1)])
+    url = (last_doc or {}).get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="No previous website found. Please provide a URL in UI Testing first.")
+
+    # Run full scan now and persist
+    result = await _run_scan_and_persist(url=url, mode=ScanMode.all, org_id=org_id, requested_by=getattr(user, 'id', None) or getattr(user, '_id', None))
+    return {"message": "Scan completed", "url": url, "result": result}
 
 
 @router.post("/ui/schedule")

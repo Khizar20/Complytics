@@ -13,7 +13,6 @@ except Exception:
     Groq = None  # type: ignore
 
 _MODEL = None
-_OLLAMA: Optional[Dict[str, str]] = None
 _GROQ: Optional[Dict[str, Any]] = None
 _LAST_CALL_TS: float = 0.0
 _MIN_CALL_INTERVAL_SEC: float = 1.5
@@ -72,14 +71,8 @@ def configure_gemini(api_key: Optional[str]) -> None:
 
 
 def configure_ollama(base_url: Optional[str], model: Optional[str]) -> None:
-    """Configure Ollama (OpenAI-compatible) endpoint.
-    Defaults: base_url=http://localhost:11434/v1, model=llama3.1
-    """
-    global _OLLAMA
-    base = (base_url or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1").rstrip("/")
-    mdl = model or os.getenv("OLLAMA_MODEL") or "llama3.1"
-    _OLLAMA = {"base_url": base, "model": mdl}
-    logger.info("Ollama configured: base=%s model=%s", base, mdl)
+    # Removed by request: Ollama is no longer used for UI testing
+    return
 
 
 def _ensure_groq():
@@ -120,7 +113,13 @@ def _cleanup_recommendations(text: str) -> str:
 
 def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, str]:
     global _MODEL
-    if _MODEL is None:
+    # Agentic switch
+    try:
+        agentic_enabled = str(os.getenv("AGENTIC_MODE", "0")).strip() == "1"
+    except Exception:
+        agentic_enabled = False
+
+    if _MODEL is None and not agentic_enabled:
         logger.warning("AI recommendations requested but Gemini is not configured")
         return (
             "Set GOOGLE_API_KEY to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.",
@@ -198,6 +197,54 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
         "Only provide human-readable recommendations. Use concise bullet points."
     )
 
+    if agentic_enabled:
+        try:
+            # Build agentic prompt and attempt using Gemini if available; else fallback to Groq/plain
+            from .agents import build_agentic_prompt
+            prompt = build_agentic_prompt(scan_results)
+            if _MODEL is not None:
+                response = _MODEL.generate_content(prompt)
+                text = (getattr(response, "text", "") or "No recommendations generated.").strip()
+                text = _cleanup_recommendations(text)
+                logger.info("Recommendations provider: Gemini(agentic) model=gemini-2.0-flash (len=%d)", len(text))
+                return text, "gemini", "gemini-2.0-flash"
+            # Gemini not configured → try Groq fallback
+            _ensure_groq()
+            if _GROQ:
+                try:
+                    if _GROQ.get("sdk"):
+                        comp = _GROQ["sdk"].chat.completions.create(
+                            model="openai/gpt-oss-120b",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=1,
+                            max_tokens=2048,
+                            top_p=1,
+                        )
+                        text_g = (comp.choices[0].message.content or "").strip()
+                    else:
+                        headers = {"Authorization": f"Bearer {_GROQ['api_key']}", "Content-Type": "application/json"}
+                        payload = {"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": prompt}], "temperature": 1, "max_tokens": 2048, "top_p": 1}
+                        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                        r.raise_for_status()
+                        data = r.json()
+                        text_g = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                        text_g = text_g.strip()
+                    if text_g:
+                        text_g = _cleanup_recommendations(text_g)
+                        logger.info("Recommendations provider: Groq(agentic) model=openai/gpt-oss-120b")
+                        return text_g, "groq", "openai/gpt-oss-120b"
+                except Exception as ge:
+                    logger.info("Groq(agentic) fallback failed: %s", ge)
+            # Last resort: compact deterministic baseline
+            baseline = (
+                "Executive Summary\n- Address missing security headers (CSP, HSTS) and fix Critical/Serious WCAG.\n\n"
+                "Accessibility\n- [Major] Resolve axe violations with provided helpUrl.\n\n"
+                "Security\n- [Critical] Add CSP; [Major] enable HSTS and X-Content-Type-Options.\n"
+            )
+            return baseline, "none", "none"
+        except Exception:
+            logger.exception("Agentic pipeline failed; falling back to single-shot mode")
+
     if mode == "accessibility":
         prompt = (
             "You are an accessibility auditor. Only analyze accessibility.\n\n"
@@ -225,45 +272,7 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
         )
 
     try:
-        # Try Ollama first
-        if _OLLAMA is not None:
-            try:
-                payload = {
-                    "model": _OLLAMA["model"],
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 800,
-                }
-                r = requests.post(f"{_OLLAMA['base_url']}/chat/completions", json=payload, timeout=60)
-                r.raise_for_status()
-                data = r.json()
-                text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-                text = _cleanup_recommendations((text or "").strip())
-                if text:
-                    logger.info("Recommendations provider: Ollama model=%s", _OLLAMA["model"])
-                    return text, "ollama", _OLLAMA["model"]
-            except requests.HTTPError as he:
-                # If request too large, retry compact prompt
-                if he.response is not None and he.response.status_code in (400, 413):
-                    compact = "Provide concise, bullet-point recommendations only."
-                    payload2 = {
-                        "model": _OLLAMA["model"],
-                        "messages": [{"role": "user", "content": compact}],
-                        "temperature": 0.3,
-                        "max_tokens": 600,
-                    }
-                    r2 = requests.post(f"{_OLLAMA['base_url']}/chat/completions", json=payload2, timeout=45)
-                    r2.raise_for_status()
-                    data2 = r2.json()
-                    text2 = ((data2.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-                    text2 = _cleanup_recommendations((text2 or "").strip())
-                    if text2:
-                        logger.info("Recommendations provider: Ollama(compact) model=%s", _OLLAMA["model"])
-                        return text2, "ollama", _OLLAMA["model"]
-            except Exception as e:
-                logger.info("Ollama generation failed, falling back to Gemini: %s", e)
-
-        # Space out calls a bit, and retry on quota for Gemini
+        # Use Gemini only
         # Space out calls a bit, and retry on quota
         global _LAST_CALL_TS
         now = time.time()

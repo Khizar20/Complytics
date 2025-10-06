@@ -17,12 +17,14 @@ const UiTesting = () => {
   const [openSecurity, setOpenSecurity] = useState(false);
   const [openSSL, setOpenSSL] = useState(false);
   const [openFindings, setOpenFindings] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   const apiBase = 'http://localhost:8000/api';
 
   const runScan = async () => {
-    if (!url) {
-      setError('Please enter a URL');
+    const normalized = normalizeUrl(url);
+    if (!normalized) {
+      setError('Please enter a valid URL (e.g., https://example.com)');
       return;
     }
     setError(null);
@@ -46,7 +48,7 @@ const UiTesting = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ url, mode }),
+        body: JSON.stringify({ url: normalized, mode, force: true }),
       });
       if (!resp.ok) {
         const t = await resp.text();
@@ -54,8 +56,10 @@ const UiTesting = () => {
       }
       const data = await resp.json();
       setResult(data);
+      setShowSuccessPopup(true);
+      setTimeout(() => setShowSuccessPopup(false), 2500);
       try {
-        localStorage.setItem('uiTesting:lastResult', JSON.stringify({ url, mode, result: data, ts: Date.now() }));
+        localStorage.setItem('uiTesting:lastResult', JSON.stringify({ url: normalized, mode, result: data, ts: Date.now() }));
       } catch (e) {}
     } catch (e) {
       setError(e.message);
@@ -71,6 +75,19 @@ const UiTesting = () => {
         setShowProgress(false);
         setProgress(0);
       }, 1200);
+    }
+  };
+
+  const normalizeUrl = (value) => {
+    if (!value) return '';
+    const trimmed = value.trim();
+    const prefixed = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(prefixed);
+      return prefixed;
+    } catch {
+      return '';
     }
   };
 
@@ -156,6 +173,7 @@ const UiTesting = () => {
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://example.com"
             className="md:col-span-3 w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            aria-invalid={!!error}
           />
           <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full px-4 py-3 border border-border rounded-lg bg-background">
             <option value="all">All</option>
@@ -194,6 +212,11 @@ const UiTesting = () => {
           {error && <span className="text-destructive text-sm ml-2">{error}</span>}
         </div>
       </div>
+      {showSuccessPopup && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg">
+          Scan completed successfully.
+        </div>
+      )}
 
       {result && (
         <div className="space-y-6">
