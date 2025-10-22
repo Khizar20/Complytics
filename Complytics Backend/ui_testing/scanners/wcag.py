@@ -10,7 +10,7 @@ from axe_selenium_python import Axe
 logger = logging.getLogger("scanner.wcag")
 
 
-def _build_chrome_driver(page_load_timeout: int = 60) -> webdriver.Chrome:
+def _build_chrome_driver(page_load_timeout: int = 120) -> webdriver.Chrome:
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
@@ -33,7 +33,25 @@ def _run_axe_sync(url: str) -> Dict[str, Any]:
     try:
         logger.info("Launching headless Chrome for WCAG scan | url=%s", url)
         driver = _build_chrome_driver()
-        driver.get(url)
+        # Normalize URL: drop fragment/query-only hash to reduce SPA router stalls
+        try:
+            if isinstance(url, str) and '#' in url:
+                base = url.split('#', 1)[0]
+                if base:
+                    url = base
+        except Exception:
+            pass
+        try:
+            driver.get(url)
+        except Exception:
+            # Retry once with extended timeout on heavy pages
+            try:
+                logger.warning("First navigation attempt failed, retrying with extended timeout")
+                driver.set_page_load_timeout(180)
+                driver.get(url)
+            except Exception as e:
+                logger.exception("Navigation failed on retry for url=%s", url)
+                return {"error": str(e), "violations": []}
         logger.info("Page loaded, injecting axe-core")
 
         axe = Axe(driver)

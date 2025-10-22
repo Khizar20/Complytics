@@ -18,6 +18,7 @@ import {
   FaQuestionCircle,
   FaClock,
   FaChartBar,
+  FaGlobe,
   FaCheckCircle,
   FaServer,
   FaExclamationTriangle,
@@ -35,7 +36,6 @@ import {
   FaSpinner,
   FaLock,
   FaUsers,
-  FaGlobe,
   FaClipboardList
 } from 'react-icons/fa';
 import { FaFilePdf, FaFileWord } from 'react-icons/fa';
@@ -280,21 +280,29 @@ const UiTestingSummaryCards = () => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      // Try backend first for org-wide visibility
+      // Try backend first for org-wide whole-site scan results
       try {
-        const resp = await fetch('http://localhost:8000/api/ui/latest', {
+        const resp = await fetch('http://localhost:8000/api/ui/site/latest', {
           headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
         });
         if (resp.ok) {
           const data = await resp.json();
+          // Check if it's a valid scan result (not just a message)
           if (data?.result && !cancelled) {
             setResult(data.result);
             setMeta({ url: data.url || '', mode: data.mode || 'all', ts: data.created_at || null });
             return;
+          } else if (data?.message && !cancelled) {
+            // No site scans found, clear the result
+            setResult(null);
+            setMeta({ url: '', mode: 'all', ts: null });
+            return;
           }
         }
-      } catch (e) {}
-      // Fallback to localStorage
+      } catch (e) {
+        console.error('Failed to fetch latest site scan:', e);
+      }
+      // Fallback to localStorage for backward compatibility
       try {
         const last = localStorage.getItem('uiTesting:lastResult');
         if (last && !cancelled) {
@@ -317,8 +325,32 @@ const UiTestingSummaryCards = () => {
     };
   }, [authToken]);
 
-  const violations = result?.wcag_results?.violations || [];
+  // Handle both whole-site scan structure (wcag_aggregate) and single-page structure (wcag_results)
+  const violations = result?.wcag_aggregate?.violations_summary || result?.wcag_results?.violations || [];
+  
+  // Get total violations count (for display)
+  const getTotalViolationsCount = () => {
+    // For whole-site scans, use the total_violations count
+    if (result?.wcag_aggregate?.total_violations !== undefined) {
+      return result.wcag_aggregate.total_violations;
+    }
+    // For single-page scans, use violations array length
+    return violations.length;
+  };
+  
   const getA11ySeverityCounts = () => {
+    // For whole-site scans, use the pre-calculated impact_counts
+    if (result?.wcag_aggregate?.impact_counts) {
+      return {
+        critical: result.wcag_aggregate.impact_counts.critical || 0,
+        serious: result.wcag_aggregate.impact_counts.serious || 0,
+        moderate: result.wcag_aggregate.impact_counts.moderate || 0,
+        minor: result.wcag_aggregate.impact_counts.minor || 0,
+        unknown: 0
+      };
+    }
+    
+    // For single-page scans, count from violations
     const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
     (violations || []).forEach((v) => {
       const impact = (v?.impact || '').toLowerCase();
@@ -330,15 +362,25 @@ const UiTestingSummaryCards = () => {
     });
     return counts;
   };
+  
   const computeAccessibilityScore = () => {
+    // For whole-site scans, use the pre-calculated score
+    if (result?.summary?.accessibility_score !== undefined) {
+      return result.summary.accessibility_score;
+    }
+    
+    // For single-page scans, calculate from severity counts
     const c = getA11ySeverityCounts();
     const deduction = c.critical * 25 + c.serious * 15 + c.moderate * 8 + c.minor * 3 + c.unknown * 5;
     const score = Math.max(0, Math.min(100, 100 - deduction));
     return score;
   };
   const getSecuritySummaries = () => {
-    const sh = result?.security_results?.securityheaders || {};
-    const ssl = result?.security_results?.ssllabs || {};
+    // Handle both whole-site scan structure (security_aggregate.primary_scan) and single-page structure (security_results)
+    const securityData = result?.security_aggregate?.primary_scan || result?.security_results || {};
+    
+    const sh = securityData?.securityheaders || {};
+    const ssl = securityData?.ssllabs || {};
     const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
     const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '';
     const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
@@ -351,13 +393,55 @@ const UiTestingSummaryCards = () => {
     return { securityScore, sslGrade, missingHeaders, presentHeaders };
   };
   const a11yCounts = result ? getA11ySeverityCounts() : { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
-  const a11yScore = result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0;
+  const a11yScore = result ? computeAccessibilityScore() : 0;
   const { securityScore, sslGrade, missingHeaders, presentHeaders } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], presentHeaders: [] };
+
+  // Format timestamp (handles both Unix timestamp and ISO string)
+  const formatTimestamp = (ts) => {
+    if (!ts) return '';
+    try {
+      // If it's a Unix timestamp (number), convert to milliseconds
+      const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+      return date.toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  // Format duration in seconds to human-readable format
+  const formatDuration = (seconds) => {
+    if (!seconds || seconds === 0) return '0s';
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    } else {
+      return `${remainingSeconds}s`;
+    }
+  };
 
   return (
     <div className="mb-6">
-      <h3 className="text-lg font-semibold mb-2">UI Testing Summary</h3>
-      <div className="text-xs text-muted-foreground mb-3">{meta.url ? `Last scanned: ${meta.url}` : 'No recent scan available'}</div>
+      <h3 className="text-lg font-semibold mb-2">Latest UI Testing Results</h3>
+      <div className="text-xs text-muted-foreground mb-3">
+        {meta.url ? (
+          <>
+            <span className="font-medium">Website:</span> {meta.url}
+            {meta.ts && <span className="ml-3"><span className="font-medium">Scanned:</span> {formatTimestamp(meta.ts)}</span>}
+            <span className="ml-3"><span className="font-medium">Mode:</span> {meta.mode.charAt(0).toUpperCase() + meta.mode.slice(1)}</span>
+          </>
+        ) : (
+          'No whole-site scans available. Run a scan from the UI Testing page.'
+        )}
+      </div>
       {result ? (
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {(meta.mode === 'all' || meta.mode === 'accessibility') && (
@@ -379,14 +463,56 @@ const UiTestingSummaryCards = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">WCAG Violations</p>
-                  <h3 className="text-2xl font-bold">{violations.length}</h3>
+                  <h3 className="text-2xl font-bold">{getTotalViolationsCount()}</h3>
                 </div>
                 <div className="p-3 rounded-full bg-red-500/10 text-red-500">
                   <FaChartLine className="h-6 w-6" />
                 </div>
               </div>
+              {result?.wcag_aggregate?.unique_rules_violated && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {result.wcag_aggregate.unique_rules_violated} unique issues across {result.wcag_aggregate.pages_with_issues || 0} pages
+                </div>
+              )}
             </div>
           )}
+          
+          {/* Pages Scanned Card - Always shown for whole-site scans */}
+          <div className="glass-card p-6 rounded-lg border-l-4 border-orange-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Pages Scanned</p>
+                <h3 className="text-2xl font-bold">{result?.summary?.pages_scanned || result?.wcag_aggregate?.total_pages_scanned || 0}</h3>
+              </div>
+              <div className="p-3 rounded-full bg-orange-500/10 text-orange-500">
+                <FaGlobe className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              {result?.summary?.pages_discovered && (
+                <span>{result.summary.pages_discovered} pages discovered</span>
+              )}
+            </div>
+          </div>
+
+          {/* Scan Duration Card - Always shown for whole-site scans */}
+          <div className="glass-card p-6 rounded-lg border-l-4 border-cyan-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Scan Duration</p>
+                <h3 className="text-2xl font-bold">{formatDuration(result?.duration_seconds || 0)}</h3>
+              </div>
+              <div className="p-3 rounded-full bg-cyan-500/10 text-cyan-500">
+                <FaClock className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              {result?.duration_seconds && (
+                <span>{result.duration_seconds}s total</span>
+              )}
+            </div>
+          </div>
+
           {(meta.mode === 'all' || meta.mode === 'security') && (
             <div className="glass-card p-6 rounded-lg border-l-4 border-green-500">
               <div className="flex items-center justify-between">
@@ -416,7 +542,10 @@ const UiTestingSummaryCards = () => {
           )}
         </div>
       ) : (
-        <div className="p-4 bg-secondary/50 rounded border text-sm text-muted-foreground">Run a UI Testing scan in the UI Testing page to see summary here.</div>
+        <div className="p-6 bg-secondary/50 rounded-lg border text-center">
+          <div className="text-sm text-muted-foreground mb-2">No whole-site scan results available</div>
+          <div className="text-xs text-muted-foreground">Visit the UI Testing page to run your first whole-site scan and see results here.</div>
+        </div>
       )}
 
       {result && (
@@ -2063,34 +2192,60 @@ const UserDashboard = () => {
                   const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
                   const [analyticsResp, uiResp] = await Promise.all([
                     fetch('http://localhost:8000/api/compliance/analytics', { headers }),
-                    fetch('http://localhost:8000/api/ui/latest', { headers })
+                    fetch('http://localhost:8000/api/ui/site/latest', { headers })
                   ]);
                   const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
                   const uiLatest = uiResp.ok ? await uiResp.json() : {};
                   const ui = uiLatest?.result || {};
 
-                  // Derive metrics
-                  const violations = Array.isArray(ui?.wcag_results?.violations) ? ui.wcag_results.violations : [];
-                  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
-                  violations.forEach(v => {
-                    const imp = String(v?.impact || '').toLowerCase();
-                    if (imp === 'critical') counts.critical += 1;
-                    else if (imp === 'serious') counts.serious += 1;
-                    else if (imp === 'moderate') counts.moderate += 1;
-                    else if (imp === 'minor') counts.minor += 1;
-                    else counts.unknown += 1;
-                  });
-                  const sh = ui?.security_results?.securityheaders || {};
+                  // Handle both whole-site scan structure (wcag_aggregate) and single-page structure (wcag_results)
+                  const isWholeSiteScan = ui?.wcag_aggregate && ui?.summary;
+                  
+                  // Get violations data
+                  const violations = isWholeSiteScan 
+                    ? (ui?.wcag_aggregate?.violations_summary || [])
+                    : (ui?.wcag_results?.violations || []);
+                  
+                  // Get violation counts
+                  let counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+                  if (isWholeSiteScan) {
+                    // Use pre-calculated impact counts from whole-site scan
+                    counts = ui?.wcag_aggregate?.impact_counts || counts;
+                  } else {
+                    // Count violations for single-page scan
+                    violations.forEach(v => {
+                      const imp = String(v?.impact || '').toLowerCase();
+                      if (imp === 'critical') counts.critical += 1;
+                      else if (imp === 'serious') counts.serious += 1;
+                      else if (imp === 'moderate') counts.moderate += 1;
+                      else if (imp === 'minor') counts.minor += 1;
+                      else counts.unknown += 1;
+                    });
+                  }
+                  
+                  // Get security data (handle both whole-site and single-page formats)
+                  const securityData = isWholeSiteScan 
+                    ? (ui?.security_aggregate?.primary_scan || {})
+                    : (ui?.security_results || {});
+                  
+                  const sh = securityData?.securityheaders || {};
                   const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
                   const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
-                  const ssl = ui?.security_results?.ssllabs || {};
+                  const ssl = securityData?.ssllabs || {};
                   const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
                   const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '—';
                   const securityScore = typeof sh?.score === 'number' ? sh.score : Math.max(0, 100 - missingHeaders.length * 15);
+                  
+                  // Get findings and recommendations
                   const nonCompliant = (Array.isArray(ui?.findings?.security) || Array.isArray(ui?.findings?.accessibility))
                     ? [ ...(ui.findings.security || []), ...(ui.findings.accessibility || []) ]
                     : [];
                   const aiRecs = String(ui?.recommendations || '').trim();
+                  
+                  // Get whole-site scan metrics if available
+                  const pagesScanned = ui?.summary?.pages_scanned || 0;
+                  const accessibilityScore = ui?.summary?.accessibility_score || 0;
+                  const totalViolations = isWholeSiteScan ? (ui?.wcag_aggregate?.total_violations || 0) : violations.length;
 
                   // Build PDF with headings and tables
                   const pdf = new jsPDF('p', 'mm', 'a4');
@@ -2099,10 +2254,10 @@ const UserDashboard = () => {
 
                   // Title + Date
                   pdf.setFontSize(18);
-                  pdf.text('Complytics Dashboard Report', pageWidth / 2, y, { align: 'center' });
+                  pdf.text('Complytics Dashboard Report', 14, y);
                   y += 8;
                   pdf.setFontSize(10);
-                  pdf.text(new Date().toLocaleString(), pageWidth / 2, y, { align: 'center' });
+                  pdf.text(new Date().toLocaleString(), 14, y);
                   y += 10;
 
                   // Chatbot Analytics
@@ -2117,15 +2272,54 @@ const UserDashboard = () => {
                       ['Avg Response Time (s)', String(analytics.averageResponseTime ?? 0)],
                       ['Success Rate (%)', String(analytics.successRate ?? 0)]
                     ],
-                    styles: { fontSize: 9 },
-                    theme: 'striped'
+                    styles: { 
+                      fontSize: 9, 
+                      cellWidth: 'wrap',
+                      overflow: 'linebreak',
+                      cellPadding: 3
+                    },
+                    columnStyles: {
+                      0: { cellWidth: 80, halign: 'left' },
+                      1: { cellWidth: 40, halign: 'right' }
+                    },
+                    theme: 'striped',
+                    margin: { left: 14, right: 14 }
                   });
                   y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
 
                   // UI Testing Summary
                   pdf.setFontSize(14);
-                  pdf.text('UI Testing Summary', 14, y);
+                  pdf.text(isWholeSiteScan ? 'Whole-Site Scan Summary' : 'UI Testing Summary', 14, y);
                   y += 4;
+                  
+                  // Add whole-site scan metrics if available
+                  if (isWholeSiteScan) {
+                    autoTable(pdf, {
+                      startY: y,
+                      head: [['Scan Metric', 'Value']],
+                      body: [
+                        ['Pages Scanned', String(pagesScanned)],
+                        ['Accessibility Score', String(accessibilityScore)],
+                        ['Total Violations', String(totalViolations)],
+                        ['Unique Issues', String(ui?.wcag_aggregate?.unique_rules_violated || 0)],
+                        ['Pages with Issues', String(ui?.wcag_aggregate?.pages_with_issues || 0)]
+                      ],
+                      styles: { 
+                        fontSize: 9, 
+                        cellWidth: 'wrap',
+                        overflow: 'linebreak',
+                        cellPadding: 3
+                      },
+                      columnStyles: {
+                        0: { cellWidth: 80, halign: 'left' },
+                        1: { cellWidth: 40, halign: 'right' }
+                      },
+                      theme: 'striped',
+                      margin: { left: 14, right: 14 }
+                    });
+                    y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+                  }
+                  
                   autoTable(pdf, {
                     startY: y,
                     head: [['Severity', 'Count']],
@@ -2135,8 +2329,18 @@ const UserDashboard = () => {
                       ['Moderate', String(counts.moderate)],
                       ['Minor', String(counts.minor)]
                     ],
-                    styles: { fontSize: 9 },
-                    theme: 'striped'
+                    styles: { 
+                      fontSize: 9, 
+                      cellWidth: 'wrap',
+                      overflow: 'linebreak',
+                      cellPadding: 3
+                    },
+                    columnStyles: {
+                      0: { cellWidth: 80, halign: 'left' },
+                      1: { cellWidth: 40, halign: 'right' }
+                    },
+                    theme: 'striped',
+                    margin: { left: 14, right: 14 }
                   });
                   y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 4;
 
@@ -2149,8 +2353,18 @@ const UserDashboard = () => {
                       ['Headers Present', String(presentHeaders.length)],
                       ['Headers Missing', String(missingHeaders.length)]
                     ],
-                    styles: { fontSize: 9 },
-                    theme: 'grid'
+                    styles: { 
+                      fontSize: 9, 
+                      cellWidth: 'wrap',
+                      overflow: 'linebreak',
+                      cellPadding: 3
+                    },
+                    columnStyles: {
+                      0: { cellWidth: 80, halign: 'left' },
+                      1: { cellWidth: 40, halign: 'right' }
+                    },
+                    theme: 'grid',
+                    margin: { left: 14, right: 14 }
                   });
                   y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
 
@@ -2168,9 +2382,30 @@ const UserDashboard = () => {
                       startY: y,
                       head: [['Title', 'Severity', 'Action']],
                       body: recRows,
-                      styles: { fontSize: 8, cellWidth: 'wrap' },
-                      columnStyles: { 2: { cellWidth: 100 } },
-                      theme: 'striped'
+                      styles: { 
+                        fontSize: 8, 
+                        cellWidth: 'wrap',
+                        overflow: 'linebreak',
+                        cellPadding: 3
+                      },
+                      columnStyles: { 
+                        0: { cellWidth: 60, halign: 'left' },  // Title column
+                        1: { cellWidth: 20, halign: 'center' }, // Severity column
+                        2: { cellWidth: 60, halign: 'left' }    // Action column
+                      },
+                      headStyles: {
+                        fillColor: [66, 139, 202],
+                        textColor: 255,
+                        fontSize: 9,
+                        fontStyle: 'bold'
+                      },
+                      bodyStyles: {
+                        fontSize: 8,
+                        cellPadding: 2
+                      },
+                      theme: 'striped',
+                      tableWidth: 'wrap',
+                      margin: { left: 14, right: 14 }
                     });
                     y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 6;
                   }
@@ -2228,27 +2463,60 @@ const UserDashboard = () => {
                   const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
                   const [analyticsResp, uiResp] = await Promise.all([
                     fetch('http://localhost:8000/api/compliance/analytics', { headers }),
-                    fetch('http://localhost:8000/api/ui/latest', { headers })
+                    fetch('http://localhost:8000/api/ui/site/latest', { headers })
                   ]);
                   const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
                   const uiLatest = uiResp.ok ? await uiResp.json() : {};
                   const ui = uiLatest?.result || {};
 
-                  // Derive metrics similar to PDF
-                  const violations = Array.isArray(ui?.wcag_results?.violations) ? ui.wcag_results.violations : [];
-                  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
-                  violations.forEach(v => { const imp = String(v?.impact || '').toLowerCase(); if (imp === 'critical') counts.critical += 1; else if (imp === 'serious') counts.serious += 1; else if (imp === 'moderate') counts.moderate += 1; else if (imp === 'minor') counts.minor += 1; else counts.unknown += 1; });
-                  const sh = ui?.security_results?.securityheaders || {};
+                  // Handle both whole-site scan structure (wcag_aggregate) and single-page structure (wcag_results)
+                  const isWholeSiteScan = ui?.wcag_aggregate && ui?.summary;
+                  
+                  // Get violations data
+                  const violations = isWholeSiteScan 
+                    ? (ui?.wcag_aggregate?.violations_summary || [])
+                    : (ui?.wcag_results?.violations || []);
+                  
+                  // Get violation counts
+                  let counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
+                  if (isWholeSiteScan) {
+                    // Use pre-calculated impact counts from whole-site scan
+                    counts = ui?.wcag_aggregate?.impact_counts || counts;
+                  } else {
+                    // Count violations for single-page scan
+                    violations.forEach(v => {
+                      const imp = String(v?.impact || '').toLowerCase();
+                      if (imp === 'critical') counts.critical += 1;
+                      else if (imp === 'serious') counts.serious += 1;
+                      else if (imp === 'moderate') counts.moderate += 1;
+                      else if (imp === 'minor') counts.minor += 1;
+                      else counts.unknown += 1;
+                    });
+                  }
+                  
+                  // Get security data (handle both whole-site and single-page formats)
+                  const securityData = isWholeSiteScan 
+                    ? (ui?.security_aggregate?.primary_scan || {})
+                    : (ui?.security_results || {});
+                  
+                  const sh = securityData?.securityheaders || {};
                   const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
                   const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
-                  const ssl = ui?.security_results?.ssllabs || {};
+                  const ssl = securityData?.ssllabs || {};
                   const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
                   const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '—';
                   const securityScore = typeof sh?.score === 'number' ? sh.score : Math.max(0, 100 - missingHeaders.length * 15);
+                  
+                  // Get findings and recommendations
                   const nonCompliant = (Array.isArray(ui?.findings?.security) || Array.isArray(ui?.findings?.accessibility))
                     ? [ ...(ui.findings.security || []), ...(ui.findings.accessibility || []) ]
                     : [];
                   const aiRecs = String(ui?.recommendations || '').trim();
+                  
+                  // Get whole-site scan metrics if available
+                  const pagesScanned = ui?.summary?.pages_scanned || 0;
+                  const accessibilityScore = ui?.summary?.accessibility_score || 0;
+                  const totalViolations = isWholeSiteScan ? (ui?.wcag_aggregate?.total_violations || 0) : violations.length;
 
                   // Capture visualization image
                   const node = reportRef.current;

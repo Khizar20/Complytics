@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from db import database
-from routes import auth_router, superadmin_router, admin_router
+from routes import auth_router, superadmin_router, admin_router, ml_router
 from routes.team import router as team_router
 from config import settings
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -60,6 +60,7 @@ app.include_router(team_router, prefix="/team", tags=["team"])
 app.include_router(compliance_router, prefix="/api/compliance", tags=["compliance"])
 app.include_router(azure_router, prefix="/api/azure", tags=["azure"])
 app.include_router(ui_testing_router, prefix="/api", tags=["ui-testing"])
+app.include_router(ml_router, prefix="/api/ml", tags=["ml"])
 
 
 @app.on_event("startup")

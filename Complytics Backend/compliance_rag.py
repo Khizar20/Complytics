@@ -1,4 +1,5 @@
 import os
+import inspect
 import json
 import logging
 import time
@@ -31,7 +32,12 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 # GOOGLE_API_KEY = "AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI"
-GOOGLE_API_KEY="AIzaSyBESSLYw4V10xeLYtyIuez9IxXVS41mC_8"
+# Khizar API KEY
+# GOOGLE_API_KEY="AIzaSyBESSLYw4V10xeLYtyIuez9IxXVS41mC_8"
+# Ayesha API KEY
+GOOGLE_API_KEY="AIzaSyDwl89KPOzPNTOKIdV2ndZlURJRV6RmAso"
+# Khizar 2 API KEY
+# GOOGLE_API_KEY = "AIzaSyDp5MleUzgMF5BmOWda6TTdOAghAsZCjSs"
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Initialize the embedding model
@@ -73,6 +79,151 @@ def save_query_cache():
     except Exception as e:
         logger.error(f"Error saving query cache: {e}")
 
+def classify_document_type(text: str, allow_general_docs: bool = False) -> str:
+    """Classify uploaded document content with hybrid rules + LLM fallback.
+
+    Returns:
+        - 'privacy_policy' for privacy policies
+        - 'terms_and_conditions' for terms of service
+        - 'general_documentation' for system/technical docs (when allow_general_docs=True)
+        - 'other' for unrelated documents (CV, personal docs, academic content, etc.)
+    """
+    if not text:
+        return "other"
+    t = (text or "").lower()
+    try:
+        logger.info(f"DocType: start len={len(t)} preview='{t[:120].strip()}'")
+    except Exception:
+        pass
+
+    # Direct phrase shortcuts for high precision before any heuristics
+    try:
+        contains_privacy = "privacy policy" in t
+        contains_terms = ("terms and conditions" in t) or ("terms of service" in t) or ("terms of use" in t)
+        logger.info(
+            f"DocType: phrase checks -> privacy='{'yes' if contains_privacy else 'no'}', "
+            f"terms='{'yes' if contains_terms else 'no'}'"
+        )
+        if contains_privacy:
+            return "privacy_policy"
+        if contains_terms:
+            return "terms_and_conditions"
+    except Exception:
+        pass
+    
+    # Quick exits for CV/resume keywords
+    cv_hits = 0
+    for kw in [
+        "curriculum vitae", "resume", "linkedin.com/in", "objective", "experience",
+        "education", "skills", "certifications", "projects", "work history", "references"
+    ]:
+        if kw in t:
+            cv_hits += 1
+    if cv_hits >= 3:
+        return "other"
+    
+    # Academic/Educational content indicators (quizzes, exams, assignments, lectures)
+    academic_indicators = [
+        "quiz", "exam", "test", "midterm", "final exam", "assignment", "homework",
+        "solution:", "question", "marks:", "total marks", "reg. no:", "registration number",
+        "semester", "course code", "clo", "plo", "learning outcome", "lecture notes",
+        "department of", "university", "college", "instructor:", "professor:",
+        "due date:", "submission", "grading rubric", "answer key", "correct answer"
+    ]
+    
+    academic_hits = sum(1 for k in academic_indicators if k in t)
+    if academic_hits >= 3:
+        return "other"
+    
+    # Privacy policy indicators (expanded and more flexible)
+    privacy_indicators = [
+        "privacy policy", "data privacy", "personal data", "data controller", "data processor",
+        "gdpr", "ccpa", "cpra", "data subject", "right to access", "right to erasure",
+        "how we collect", "how we use", "retention", "cookie policy", "consent",
+        "information we collect", "what information", "data we collect", "personal information",
+        "data practices", "privacy notice", "data protection", "user data", "customer data",
+        "third parties", "third-party", "data sharing", "information sharing",
+        "opt-out", "opt out", "marketing communications", "analytics", "tracking"
+    ]
+    
+    # Terms & conditions indicators
+    terms_indicators = [
+        "terms and conditions", "terms of service", "terms of use", "user agreement",
+        "limitation of liability", "governing law", "arbitration", "indemnification",
+        "warranty disclaimer", "acceptable use", "license grant", "intellectual property",
+        "user obligations", "termination", "suspension of account"
+    ]
+    
+    # General documentation indicators (REAL system/technical docs ONLY)
+    # These must indicate actual system documentation, not academic content
+    general_doc_indicators = [
+        "system architecture document", "technical design document", "api specification",
+        "software architecture", "deployment guide", "infrastructure setup",
+        "authentication implementation", "authorization mechanism", "security architecture",
+        "data flow diagram", "database design", "microservices architecture",
+        "production deployment", "development environment", "staging environment",
+        "disaster recovery plan", "backup strategy", "monitoring setup",
+        "ci/cd pipeline", "devops workflow", "release notes"
+    ]
+    
+    # Count matches for each category
+    privacy_matches = [k for k in privacy_indicators if k in t]
+    terms_matches = [k for k in terms_indicators if k in t]
+    general_matches = [k for k in general_doc_indicators if k in t] if allow_general_docs else []
+    
+    p_score = len(privacy_matches)
+    t_score = len(terms_matches)
+    g_score = len(general_matches)
+    
+    # Log classification details for debugging
+    logger.info(
+        f"DocType scores - Privacy: {p_score} (matches: {privacy_matches[:3]}), "
+        f"Terms: {t_score}, General: {g_score}, Academic: {academic_hits}"
+    )
+    
+    # Prefer privacy/terms with >=1 strong indicator (LLM will handle borderline cases)
+    if p_score >= 1 and p_score >= max(t_score, g_score):
+        return "privacy_policy"
+    if t_score >= 1 and t_score >= max(p_score, g_score):
+        return "terms_and_conditions"
+    
+    # If general docs allowed and detected (and NOT academic content)
+    if allow_general_docs and g_score >= 2 and academic_hits < 3:
+        return "general_documentation"
+    
+    # LLM fallback for ambiguous cases
+    try:
+        logger.info(
+            f"DocType: LLM fallback (privacy={p_score}, terms={t_score}, general={g_score}, academic={academic_hits}, allow_general_docs={allow_general_docs})"
+        )
+        prompt = (
+            "Classify the following document into ONE category: \n"
+            "- privacy_policy \n"
+            "- terms_and_conditions \n"
+            + ("- general_documentation \n" if allow_general_docs else "") +
+            "- other \n\n"
+            "Instructions: base your decision on purpose and structure, not isolated keywords. "
+            "Templates with placeholders like [Your Company Name] are valid. "
+            "Academic content (quizzes, exams) and personal documents (CVs) are 'other'.\n\n"
+            f"Document (first 2000 chars):\n{text[:2000]}\n\n"
+            "Respond with ONLY one of: privacy_policy, terms_and_conditions, "
+            + ("general_documentation, " if allow_general_docs else "") + "other"
+        )
+        llm_response = rate_limited_generate_content(prompt, temperature=0.1, max_tokens=20)
+        logger.info(f"DocType: LLM raw='{str(llm_response)[:200]}'")
+        classification = (llm_response or "").strip().lower()
+        valid = ["privacy_policy", "terms_and_conditions", "general_documentation", "other"]
+        if not allow_general_docs and "general_documentation" in valid:
+            valid.remove("general_documentation")
+        if classification in valid:
+            logger.info(f"DocType: LLM classified='{classification}'")
+            return classification
+        logger.warning(f"DocType: invalid LLM classification '{classification}', defaulting to 'other'")
+        return "other"
+    except Exception as e:
+        logger.warning(f"DocType: LLM classification failed: {e}", exc_info=True)
+    return "other"
+
 # Set up the Gemini model
 generation_config = {
     "temperature": 0.1,
@@ -94,10 +245,36 @@ model = genai.GenerativeModel(
     safety_settings=safety_settings
 )
 
-# Optimized rate limiting configuration
-CALLS_PER_MINUTE = 40  # Increased from 20
-DELAY_BETWEEN_CALLS = 1.5  # Reduced from 3 seconds
+# Optimized rate limiting configuration (env-driven)
+CALLS_PER_MINUTE = int(os.getenv("GEMINI_CALLS_PER_MINUTE", "40"))
+DELAY_BETWEEN_CALLS = float(os.getenv("LLM_CALL_SPREAD_SECONDS", "1.5"))
+LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "2"))
 last_call_time = 0
+GEMINI_CALL_COUNT = 0
+
+def _log_gemini_api_call(context: str, prompt: str, temperature: float, max_tokens: int, optimized: bool) -> None:
+    """Centralized logging for every Gemini API call."""
+    try:
+        global GEMINI_CALL_COUNT
+        GEMINI_CALL_COUNT += 1
+        prompt_len = len(prompt) if isinstance(prompt, str) else 0
+        prompt_digest = hash_text(prompt[:512]) if isinstance(prompt, str) else ""
+        logger.info(
+            f"GEMINI_CALL #{GEMINI_CALL_COUNT} optimized={optimized} context='{context}' prompt_len={prompt_len} temp={temperature} max_tokens={max_tokens} prompt_hash={prompt_digest}"
+        )
+    except Exception:
+        pass
+
+# Concurrency limiter and in-flight deduplication for Gemini calls
+try:
+    import threading
+    _llm_semaphore = threading.Semaphore(LLM_CONCURRENCY)
+    _inflight_lock = threading.Lock()
+    _inflight_prompts = {}
+except Exception:
+    _llm_semaphore = None
+    _inflight_lock = None
+    _inflight_prompts = {}
 
 # Define timing decorator first
 def timing_decorator(func):
@@ -119,6 +296,20 @@ def wait_for_rate_limit_optimized():
         sleep_time = DELAY_BETWEEN_CALLS - time_since_last_call
         time.sleep(sleep_time)
     last_call_time = time.time()
+
+def _wait_for_inflight(cache_key: str):
+    """Block if the same prompt is already being processed."""
+    if _inflight_lock is None:
+        return None
+    while True:
+        with _inflight_lock:
+            evt = _inflight_prompts.get(cache_key)
+            if evt is None:
+                evt = threading.Event()
+                _inflight_prompts[cache_key] = evt
+                return evt
+        evt.wait(timeout=5)
+        # After wait, re-check the map
 
 def _ollama_params() -> tuple:
     base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1").rstrip("/")
@@ -161,40 +352,61 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
         return QUERY_CACHE[cache_key]
     
     wait_for_rate_limit_optimized()
-    
+
     # Reduced retry attempts for speed
     max_retries = 3
     base_delay = 1.5
-    
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens  # Limit response length for speed
-                }
-            )
-            result = response.text.strip()
-            
-            # Cache the result
-            QUERY_CACHE[cache_key] = result
-            
-            # Less frequent cache saves
-            if len(QUERY_CACHE) % 20 == 0:
-                save_query_cache()
-                
-            return result
-        except Exception as e:
-            if "429" in str(e):
-                retry_delay = base_delay * (1.5 ** attempt)  # Reduced exponential backoff
-                logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
-                time.sleep(retry_delay)
-                if attempt == max_retries - 1:
+
+    inflight_evt = _wait_for_inflight(cache_key)
+    try:
+        for attempt in range(max_retries):
+            try:
+                if _llm_semaphore is not None:
+                    _llm_semaphore.acquire()
+                _log_gemini_api_call(
+                    context="rate_limited_generate_content_optimized",
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    optimized=True,
+                )
+                response = model.generate_content(
+                    prompt,
+                    generation_config={
+                        "temperature": temperature,
+                        "max_output_tokens": max_tokens
+                    }
+                )
+                result = response.text.strip()
+                QUERY_CACHE[cache_key] = result
+                if len(QUERY_CACHE) % 20 == 0:
+                    save_query_cache()
+                return result
+            except Exception as e:
+                if any(k in str(e) for k in ["429", "ResourceExhausted", "quota"]):
+                    retry_delay = base_delay * (1.5 ** attempt)
+                    logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    if attempt == max_retries - 1:
+                        break
+                else:
+                    logger.error(f"API error: {e}")
                     break
-            else:
-                logger.error(f"API error: {e}")
-                break
+            finally:
+                try:
+                    if _llm_semaphore is not None:
+                        _llm_semaphore.release()
+                except Exception:
+                    pass
+    finally:
+        if inflight_evt is not None and _inflight_lock is not None:
+            with _inflight_lock:
+                try:
+                    evt = _inflight_prompts.pop(cache_key, None)
+                    if evt is not None:
+                        evt.set()
+                except Exception:
+                    pass
     # Gemini unavailable -> fallback to Ollama
     ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
     if ollama_text:
@@ -838,31 +1050,7 @@ class ConversationHistory:
         """Reset conversation history"""
         self.history = []
 
-@timing_decorator
-def classify_compliance_query(query: str, conversation_context: str = "") -> bool:
-    """Determine if query is compliance-related using AI-based classification"""
-    # First, check if the query is about compliance, regulations, or business requirements
-    prompt = (
-        "You are a compliance query classifier. Your task is to determine if the following query is related to compliance, regulations, policies, standards, or legal requirements. "
-        "Consider ONLY these specific topics:\n"
-        "1. Regulatory compliance (GDPR, CCPA, HIPAA, etc.)\n"
-        "2. Security standards and controls\n"
-        "3. Data protection and privacy policies\n"
-        "4. Business process compliance\n"
-        "5. Audit requirements and documentation\n"
-        "6. Legal requirements for businesses\n\n"
-        "If the query is about ANYTHING ELSE, including but not limited to:\n"
-        "- Personal or general topics\n"
-        "- Health or medical advice\n"
-        "- Social or cultural topics\n"
-        "- Scientific or technical topics not related to compliance\n"
-        "- Any other non-business or non-regulatory topics\n"
-        "Answer 'no'.\n\n"
-        f"Query: {query}\n"
-        "Answer with ONLY 'yes' or 'no':"
-    )
-    response = rate_limited_generate_content_optimized(prompt)
-    return "yes" in response.lower()
+    
 
 # Track recent non-compliance responses to ensure variety
 recent_non_compliance_responses = {}
@@ -1012,6 +1200,22 @@ Avoid being overly formal or robotic.
         # Final fallback
         return "I'm a compliance assistant focused on regulatory and security topics. I'd be happy to help you with compliance frameworks, privacy regulations, or security requirements instead!"
 
+def generate_simple_non_compliance_response(query: str) -> str:
+    """Generate a simple, concise non-compliance response (1-2 sentences max)"""
+    try:
+        simple_responses = [
+            "I'm a compliance assistant focused on privacy, security, and regulatory topics. Feel free to ask about GDPR, ISO 27001, privacy policies, or other compliance matters!",
+            "That's outside my area of expertise. I specialize in compliance frameworks, data protection, and security regulations. How can I help with those?",
+            "I focus on compliance and regulatory guidance. Ask me about privacy policies, security frameworks, or compliance requirements!",
+            "I'm here to help with compliance topics like GDPR, HIPAA, ISO 27001, and security best practices. What compliance question can I answer for you?",
+            "That's not a compliance topic I can help with. I'd be happy to discuss data protection, security frameworks, or regulatory requirements instead!",
+            "I specialize in compliance, privacy, and security matters. Feel free to ask about frameworks, regulations, or policy development!"
+        ]
+        return random.choice(simple_responses)
+    except Exception as e:
+        logger.error(f"Error generating simple non-compliance response: {e}")
+        return "I'm a compliance assistant focused on regulatory and security topics. How can I help with compliance matters?"
+
 def get_contextual_compliance_suggestions(query_lower: str, category: str) -> str:
     """Generate contextual compliance topic suggestions based on the query"""
     try:
@@ -1122,27 +1326,7 @@ def select_relevant_experts_optimized(query: str) -> List[str]:
     # Quick fallback
     return ['audit', 'security']
 
-# Add support for DOCX files in upload_privacy_policy
-def upload_privacy_policy(file_path: str) -> str:
-    """Upload and extract text from a privacy policy document."""
-    try:
-        if file_path.endswith('.pdf'):
-            with pdfplumber.open(file_path) as pdf:
-                text = ""
-                for page in pdf.pages:
-                    text += page.extract_text() + "\n"
-        elif file_path.endswith('.txt'):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                text = f.read()
-        elif file_path.endswith('.docx'):
-            import docx
-            doc = docx.Document(file_path)
-            text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-        else:
-            return "Unsupported file format. Please upload a PDF, TXT, or DOCX file."
-        return text
-    except Exception as e:
-        return f"Error uploading document: {e}"
+    
 
 # Modify analyze_privacy_policy to accept a specific framework for analysis
 def analyze_privacy_policy(file_path: str, segments: List[str], index: Any, framework: str) -> str:
@@ -1447,27 +1631,7 @@ def cached_expert_response(expert_type: str, query: str, context: str, conversat
         
     return response
 
-@timing_decorator
-def process_expert_analyses(query: str, context: str, conversation_context: str, experts: List[str]) -> List[str]:
-    """Process multiple expert analyses in parallel with optimized scheduling."""
-    results = []
     
-    # Process experts in parallel using ThreadPoolExecutor
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = []
-        for expert in experts:
-            futures.append(executor.submit(cached_expert_response, expert, query, context, conversation_context))
-        
-        # Process results as they complete
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                if result:
-                    results.append(result)
-            except Exception as e:
-                logger.error(f"Error processing expert analysis: {e}")
-    
-    return results
 
 @timing_decorator
 def is_compliance_related_optimized(query: str, conversation_context: str = "") -> Tuple[bool, str]:
@@ -1529,8 +1693,13 @@ def is_compliance_related_optimized(query: str, conversation_context: str = "") 
     
     # Only use expensive AI analysis for borderline cases
     try:
-        ai_classification, confidence = analyze_query_intent_with_ai(query, conversation_context)
-        result = (ai_classification and confidence > 0.5, f"AI analysis: {confidence:.2f} confidence")
+        ai_result = analyze_query_intent_with_ai(query, conversation_context)
+        confidence = ai_result.get('confidence', 0.0)
+        # Check if intent suggests compliance-related query
+        intent = ai_result.get('intent', 'GENERAL_COMPLIANCE')
+        is_compliance_intent = intent in {'GENERAL_COMPLIANCE', 'SPECIFIC_REQUIREMENT', 'DOCUMENT_ANALYSIS', 'ANALYZE_UPLOADED'}
+        
+        result = (is_compliance_intent and confidence > 0.3, f"AI analysis: {confidence:.2f} confidence, intent: {intent}")
         QUERY_CACHE[cache_key] = {'is_compliance': result[0], 'reason': result[1]}
         return result
     except Exception as e:
@@ -1592,34 +1761,9 @@ def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, 
     
     return query_type, required_experts
 
-@timing_decorator
-def get_framework_recommendation(query: str) -> Tuple[str, float]:
-    """Get framework recommendation for framework selection queries"""
-    start_time = time.time()
     
-    prompt = (
-        "Based on the following query, recommend appropriate compliance frameworks or standards:\n\n"
-        f"Query: {query}\n\n"
-        "Provide a concise recommendation focusing on:\n"
-        "1. Most relevant frameworks\n"
-        "2. Key requirements\n"
-        "3. Implementation considerations\n"
-        "Response:"
-    )
-    
-    response = rate_limited_generate_content(prompt)
-    end_time = time.time()
-    
-    return response, end_time - start_time
 
-async def get_progressive_response(query: str, experts: List[str], context: str, conversation_context: str) -> AsyncIterator[str]:
-    """Generate progressive responses from multiple experts"""
-    expert_responses = []
     
-    for expert in experts:
-        response = cached_expert_response(expert, query, context, conversation_context)
-        expert_responses.append(response)
-        yield aggregate_expert_outputs(expert_responses, query, context)
 
 @timing_decorator
 def process_query_optimized(query: str, context: str, conversation_context: str, conversation_history: 'ConversationHistory' = None) -> Tuple[str, float]:
@@ -2088,41 +2232,7 @@ def learn_from_user_interaction(query: str, was_helpful: bool, actual_classifica
     classification_feedback[query_hash] = feedback_entry
     save_classification_feedback()
 
-def get_historical_classification_patterns(query: str) -> Tuple[float, str]:
-    """Analyze historical patterns to predict classification"""
-    try:
-        if not classification_feedback:
-            return 0.0, "No historical data"
-        
-        query_embedding = get_embedding(query)
-        if query_embedding is None:
-            return 0.0, "Could not generate embedding"
-        
-        # Find similar historical queries
-        similarities = []
-        helpful_classifications = []
-        
-        for feedback in classification_feedback.values():
-            if feedback.get('embedding'):
-                hist_embedding = np.array(feedback['embedding'])
-                similarity = cosine_similarity([query_embedding], [hist_embedding])[0][0]
-                
-                if similarity > 0.7:  # High similarity threshold
-                    similarities.append(similarity)
-                    if feedback['was_helpful']:
-                        helpful_classifications.append(feedback['actual_classification'])
-        
-        if helpful_classifications:
-            # Weight by similarity and recency
-            compliance_score = sum(helpful_classifications) / len(helpful_classifications)
-            confidence = min(1.0, len(helpful_classifications) * 0.2)  # More samples = higher confidence
-            return compliance_score * confidence, f"Based on {len(helpful_classifications)} similar queries"
-        
-        return 0.0, "No similar historical queries found"
-        
-    except Exception as e:
-        logger.error(f"Error in historical analysis: {e}")
-        return 0.0, "Error in historical analysis"
+    
 
 def analyze_document_intent(query: str, conversation_context: str = "", has_uploaded_doc: bool = False) -> Dict[str, Any]:
     """
@@ -3167,6 +3277,13 @@ def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tok
     """Generate content with rate limiting and retries."""
     for attempt in range(max_retries):
         try:
+            _log_gemini_api_call(
+                context="rate_limited_generate_content",
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                optimized=False,
+            )
             response = model.generate_content(
                 prompt,
                 generation_config={
@@ -3185,23 +3302,235 @@ def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tok
         return ollama_text
     return ""
 
-def analyze_query_intent_with_ai(query: str) -> Dict[str, Any]:
-    """Analyze query intent using AI."""
+def detect_document_analysis_request(query: str) -> bool:
+    """Detect if user is asking to analyze their uploaded document.
+
+    Requires both an analysis verb and a document reference to avoid
+    false positives on general compliance questions.
+    """
     try:
-        prompt = f"""Analyze the following query and determine its intent:
-        Query: {query}
+        if not isinstance(query, str):
+            return False
+        q = query.lower()
+        analysis_verbs = [
+            "analyze", "analyse", "review", "check", "assess", "evaluate", "summarize", "read", "tell me about"
+        ]
+        document_terms = [
+            "document", "file", "pdf", "docx", "policy", "privacy policy", "terms", "terms and conditions",
+            "this", "it"  # Added to catch "analyze this" or "check it"
+        ]
+        has_analysis = any(v in q for v in analysis_verbs)
+        has_doc_ref = any(t in q for t in document_terms)
+        return has_analysis and has_doc_ref
+    except Exception:
+        return False
+
+def detect_document_reference(query: str, conversation_context: str = "") -> bool:
+    """Detect whether the user is referring to a specific uploaded document using intelligent pattern matching.
+
+    Uses multiple heuristics to identify document references without relying on simple keyword matching:
+    1. Strong possession patterns (my/the/this doc I uploaded, file I provided)
+    2. Upload/possession indicators combined with compliance questions
+    3. Explicit self-reference with compliance context
+    4. Context-aware patterns (looks at conversation history for document mentions)
+    """
+    try:
+        text = ((query or "") + "\n" + (conversation_context or "")).lower()
+        if not text.strip():
+            return False
+
+        # Pattern 1: Strong possession indicators with upload context
+        strong_possession_patterns = [
+            r"\b(?:my|the|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)\s+(?:i|we|that\s+i)\s+(?:uploaded|provided|attached|sent|have)",
+            r"\b(?:uploaded|provided|attached|sent)\s+(?:my|the|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)",
+            r"\b(?:the\s+)?(?:doc|document|file)\s+(?:i|we)\s+(?:uploaded|provided|attached|sent|have)\s+(?:is|for|to)",
+            r"\b(?:check|review|analyze|examine|assess)\s+(?:my|the|this|our)\s+(?:uploaded|provided|attached|sent)\s+(?:doc|document|file|policy)",
+            r"\b(?:is|does)\s+(?:my|the|this)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)\s+(?:compliant|comply|follow|meet)"
+        ]
+
+        # Pattern 2: Self-reference with specific compliance questions
+        self_reference_patterns = [
+            r"\b(?:my|this|the)\s+(?:doc|document|file|policy|privacy\s+policy|terms)\s+(?:is|does|can|will|should)\s+(?:compliant|comply|follow|meet|according\s+to|align\s+with)",
+            r"\b(?:is|does|can)\s+(?:my|this|the)\s+(?:doc|document|file|policy)\s+(?:gdpr|hipaa|ccpa|compliant|comply)",
+            r"\b(?:tell\s+me\s+about|what\s+about|how\s+about)\s+(?:my|the)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)"
+        ]
+
+        # Pattern 3: Context-aware patterns (document possession + compliance context)
+        context_patterns = [
+            r"\b(?:doc|document|file|policy)\s+(?:i|we)\s+(?:uploaded|provided|have|sent)\s+(?:for|to|with)\s+(?:gdpr|hipaa|ccpa|compliance|standards)",
+            r"\b(?:uploaded|provided)\s+(?:doc|document|file|policy)\s+(?:for|to)\s+(?:compliance|gdpr|hipaa|ccpa|review|check)"
+        ]
+
+        # Pattern 4: Hypothetical vs. actual document distinction
+        # Look for indicators of hypothetical/general questions
+        hypothetical_indicators = [
+            r"\b(?:if\s+i\s+had|suppose\s+i\s+have|what\s+would|how\s+would\s+you|in\s+a|for\s+a\s+sample|example|typical|standard)",
+            r"\b(?:what\s+should|how\s+do\s+i|can\s+you\s+explain|tell\s+me\s+about\s+general)",
+            r"\b(?:companies|organizations|businesses|people)\s+(?:implement|create|write|draft)"
+        ]
+
+        # Check if it's likely hypothetical/general (should NOT trigger)
+        is_hypothetical = any(re.search(pattern, text) for pattern in hypothetical_indicators)
+
+        # Only check for document references if it's not clearly hypothetical
+        if not is_hypothetical:
+            # Check strong possession patterns first (highest confidence)
+            for pattern in strong_possession_patterns + self_reference_patterns + context_patterns:
+                if re.search(pattern, text):
+                    return True
+
+        return False
+    except Exception:
+        return False
+
+def analyze_general_documentation_compliance(document_text: str, frameworks: List[str]) -> str:
+    """Analyze general system/technical documentation for compliance issues against specified frameworks.
+    
+    Args:
+        document_text: The content of the system documentation
+        frameworks: List of frameworks to check against (e.g., ['GDPR', 'ISO 27001', 'SOC 2'])
+    
+    Returns:
+        Comprehensive compliance analysis report
+    """
+    try:
+        frameworks_str = ", ".join(frameworks) if frameworks else "GDPR, ISO 27001, SOC 2, HIPAA"
         
-        Return a JSON object with the following fields:
-        - intent: The main intent of the query (e.g., 'GENERAL_COMPLIANCE', 'SPECIFIC_REQUIREMENT', 'DOCUMENT_ANALYSIS')
-        - document_type: The type of document being referenced (if any)
-        - framework: The compliance framework being discussed (if any)
-        - urgency: The urgency level ('low', 'medium', 'high')
-        - confidence: A float between 0 and 1 indicating confidence in the analysis
-        - reasoning: Brief explanation of the analysis
-        """
+        prompt = f"""You are a compliance security expert. Analyze the following system/technical documentation for compliance issues and security gaps against these frameworks: {frameworks_str}
+
+DOCUMENTATION:
+{document_text[:8000]}
+
+Provide a comprehensive compliance analysis with the following structure:
+
+## 📋 Document Overview
+- Brief summary of what the document describes
+- Key systems/components identified
+
+## 🔍 Compliance Analysis per Framework
+
+For each framework ({frameworks_str}):
+
+### [Framework Name] Compliance Assessment
+
+**✅ Compliant Areas:**
+- List aspects that meet framework requirements
+- Reference specific sections/controls
+
+**❌ Gaps & Issues:**
+- Identify missing controls or requirements
+- Highlight security concerns
+- Rate severity (Critical/High/Medium/Low)
+
+**📊 Compliance Score:** [X/10]
+
+## 🔐 Security & Privacy Findings
+
+**Data Protection:**
+- How is data handled, stored, encrypted?
+- Are there data retention/deletion policies?
+- Is access control properly defined?
+
+**Authentication & Authorization:**
+- How are users authenticated?
+- What authorization mechanisms exist?
+- Are there privilege escalation risks?
+
+**Audit & Monitoring:**
+- Are there audit logs?
+- What monitoring is in place?
+- Incident response procedures?
+
+**Infrastructure Security:**
+- Network security measures?
+- Encryption in transit/at rest?
+- Backup and disaster recovery?
+
+## ⚠️ Critical Risks Identified
+1. [Risk description] - [Impact] - [Recommendation]
+2. [Risk description] - [Impact] - [Recommendation]
+
+## ✨ Recommendations
+
+**Immediate Actions (Priority: High):**
+1. [Specific action]
+2. [Specific action]
+
+**Short-term Improvements (1-3 months):**
+1. [Specific action]
+2. [Specific action]
+
+**Long-term Enhancements (3-6 months):**
+1. [Specific action]
+2. [Specific action]
+
+## 📝 Missing Documentation
+List any critical documentation that should exist but is missing:
+- [ ] Data flow diagrams
+- [ ] Security architecture
+- [ ] Incident response plan
+- [ ] etc.
+
+Provide specific, actionable insights with clear references to framework requirements."""
+
+        analysis = rate_limited_generate_content_optimized(prompt, temperature=0.2, max_tokens=4000)
+        return analysis
         
-        response = rate_limited_generate_content(prompt)
-        return json.loads(response)
+    except Exception as e:
+        logger.error(f"Error analyzing general documentation: {e}")
+        return f"Error analyzing documentation: {str(e)}"
+
+def analyze_query_intent_with_ai(query: str, conversation_context: str = "") -> Dict[str, Any]:
+    """Analyze query intent using AI, considering conversation context when provided."""
+    try:
+        prompt = f"""Analyze the following query and determine its intent.
+
+Query: {query}
+Conversation Context: {conversation_context}
+
+You must respond with ONLY a valid JSON object, nothing else. No explanations, no markdown, just pure JSON.
+
+Return this exact JSON structure:
+{{
+  "intent": "GENERAL_COMPLIANCE",
+  "document_type": "unknown",
+  "framework": "general",
+  "urgency": "medium",
+  "confidence": 0.5,
+  "reasoning": "Brief explanation"
+}}
+
+Valid intent values: GENERAL_COMPLIANCE, SPECIFIC_REQUIREMENT, DOCUMENT_ANALYSIS, ANALYZE_UPLOADED
+Valid urgency values: low, medium, high
+Confidence must be between 0.0 and 1.0"""
+        
+        response = rate_limited_generate_content(prompt, temperature=0.1, max_tokens=200)
+        
+        # Clean response - remove markdown code blocks if present
+        cleaned = response.strip()
+        if cleaned.startswith('```'):
+            # Remove markdown code block formatting
+            lines = cleaned.split('\n')
+            cleaned = '\n'.join([l for l in lines if not l.strip().startswith('```')])
+            cleaned = cleaned.strip()
+        
+        # Try to extract JSON if embedded in text
+        if '{' in cleaned and '}' in cleaned:
+            start = cleaned.find('{')
+            end = cleaned.rfind('}') + 1
+            cleaned = cleaned[start:end]
+        
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        logger.warning(f"AI classification failed - JSON parse error: {str(e)}")
+        return {
+            'intent': 'GENERAL_COMPLIANCE',
+            'document_type': 'unknown',
+            'framework': 'general',
+            'urgency': 'medium',
+            'confidence': 0.0,
+            'reasoning': f'Default classification due to JSON error'
+        }
     except Exception as e:
         logger.warning(f"AI classification failed: {str(e)}")
         return {
@@ -3210,7 +3539,7 @@ def analyze_query_intent_with_ai(query: str) -> Dict[str, Any]:
             'framework': 'general',
             'urgency': 'medium',
             'confidence': 0.0,
-            'reasoning': f'Default classification due to error: {str(e)}'
+            'reasoning': f'Default classification due to error'
         }
 
 if __name__ == "__main__":

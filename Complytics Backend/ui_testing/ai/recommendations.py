@@ -15,7 +15,9 @@ except Exception:
 _MODEL = None
 _GROQ: Optional[Dict[str, Any]] = None
 _LAST_CALL_TS: float = 0.0
-_MIN_CALL_INTERVAL_SEC: float = 1.5
+_MIN_CALL_INTERVAL_SEC: float = float(os.getenv("UI_AI_MIN_INTERVAL_SEC", "1.5"))
+_UI_REC_CACHE: Dict[str, str] = {}
+_UI_MAX_TOKENS: int = int(os.getenv("UI_AI_MAX_TOKENS", "8192"))
 logger = logging.getLogger("ai.recommendations")
 
 
@@ -60,7 +62,7 @@ def configure_gemini(api_key: Optional[str]) -> None:
         "temperature": 0.3,
         "top_p": 0.9,
         "top_k": 40,
-        "max_output_tokens": 2048,
+        "max_output_tokens": 8192,  # Maximum for Gemini 2.0 Flash - for comprehensive site-wide recommendations
     }
 
     _MODEL = genai.GenerativeModel(
@@ -202,11 +204,21 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
             # Build agentic prompt and attempt using Gemini if available; else fallback to Groq/plain
             from .agents import build_agentic_prompt
             prompt = build_agentic_prompt(scan_results)
+            # Cache by bundle fingerprint to avoid re-calling when inputs unchanged
+            bundle_fingerprint = _hash_text(_safe_json_dumps({
+                "mode": mode,
+                "wcag": wcag_summary,
+                "sec": sec_summary
+            }))
+            if bundle_fingerprint in _UI_REC_CACHE:
+                text = _UI_REC_CACHE[bundle_fingerprint]
+                return text, "cache", "agentic"
             if _MODEL is not None:
-                response = _MODEL.generate_content(prompt)
+                response = _MODEL.generate_content(prompt, generation_config={"max_output_tokens": _UI_MAX_TOKENS})
                 text = (getattr(response, "text", "") or "No recommendations generated.").strip()
                 text = _cleanup_recommendations(text)
                 logger.info("Recommendations provider: Gemini(agentic) model=gemini-2.0-flash (len=%d)", len(text))
+                _UI_REC_CACHE[bundle_fingerprint] = text
                 return text, "gemini", "gemini-2.0-flash"
             # Gemini not configured → try Groq fallback
             _ensure_groq()
@@ -246,12 +258,50 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
             logger.exception("Agentic pipeline failed; falling back to single-shot mode")
 
     if mode == "accessibility":
+        # Enhanced prompt for accessibility-only mode with site-wide data
+        violations = wcag.get("violations", [])
+        impact_counts = wcag.get("impact_counts", {})
+        
+        # Build detailed violation summary with pages affected
+        violation_details = []
+        for v in violations[:15]:  # Top 15 violations
+            pages_affected = v.get("pages_affected", 0)
+            total_instances = v.get("total_instances", 0)
+            violation_details.append({
+                "rule": v.get("id"),
+                "description": v.get("description"),
+                "impact": v.get("impact"),
+                "pages_affected": pages_affected,
+                "total_instances": total_instances,
+                "help": v.get("help", "")
+            })
+        
         prompt = (
-            "You are an accessibility auditor. Only analyze accessibility.\n\n"
-            f"WCAG Summary (top {len(wcag_summary)}): {wcag_summary}\n\n"
-            "Generate clear, actionable, human-friendly accessibility recommendations with severity levels (Critical, Major, Minor).\n"
-            "For each issue, include a short 'How to fix' line with concrete steps.\n"
-            f"{common_rules} If data is missing, state assumptions."
+            "You are an accessibility expert analyzing a whole-site WCAG audit.\n\n"
+            "## Site-Wide Accessibility Results:\n"
+            f"- Total violations: {wcag.get('total_violations', 0)}\n"
+            f"- Unique issues: {wcag.get('unique_rules_violated', 0)}\n"
+            f"- Pages with issues: {wcag.get('pages_with_issues', 0)}\n"
+            f"- Critical: {impact_counts.get('critical', 0)} | Serious: {impact_counts.get('serious', 0)} | "
+            f"Moderate: {impact_counts.get('moderate', 0)} | Minor: {impact_counts.get('minor', 0)}\n\n"
+            f"## Top Issues:\n{violation_details}\n\n"
+            "## Your Task:\n"
+            "Generate practical, human-friendly accessibility recommendations organized by severity.\n\n"
+            "For EACH violation, provide:\n"
+            "1. **Issue Title** - Clear, non-technical description\n"
+            "2. **Impact** - Why this matters for users with disabilities\n"
+            "3. **How to Fix** - Step-by-step implementation guide in plain language\n"
+            "4. **Affected Pages** - Mention how many pages have this issue\n"
+            "5. **Priority** - When to fix this\n\n"
+            "Format as:\n"
+            "### [Severity] Issue Title (X pages affected)\n"
+            "**Impact:** ...\n"
+            "**How to Fix:**\n"
+            "1. Step one...\n"
+            "2. Step two...\n"
+            "**Priority:** ...\n\n"
+            f"{common_rules}\n"
+            "Focus on actionable guidance. Avoid technical jargon. Be specific about implementation."
         )
     elif mode == "security":
         prompt = (
@@ -261,14 +311,52 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
             "For each issue, include a short 'How to fix' line with concrete steps.\n"
             f"{common_rules} If data is missing, state assumptions."
         )
-    else:
+    else:  # "all" mode
+        # Enhanced prompt for combined mode
+        violations = wcag.get("violations", [])
+        impact_counts = wcag.get("impact_counts", {})
+        
+        # Build detailed violation summary
+        violation_details = []
+        for v in violations[:12]:  # Top 12 violations
+            pages_affected = v.get("pages_affected", 0)
+            total_instances = v.get("total_instances", 0)
+            violation_details.append({
+                "rule": v.get("id"),
+                "description": v.get("description"),
+                "impact": v.get("impact"),
+                "pages_affected": pages_affected,
+                "total_instances": total_instances,
+                "help": v.get("help", "")
+            })
+        
         prompt = (
-            "You are an accessibility and security auditor.\n\n"
-            f"WCAG Summary (top {len(wcag_summary)}): {wcag_summary}\n"
-            f"Security Summary: {sec_summary}\n\n"
-            "Generate clear, actionable, human-friendly recommendations with severity levels (Critical, Major, Minor).\n"
-            "Group items by Accessibility vs Security. For each issue, include a short 'How to fix' line.\n"
-            f"{common_rules} If data is missing, state assumptions."
+            "You are a comprehensive web compliance expert analyzing accessibility and security.\n\n"
+            "## ACCESSIBILITY Results:\n"
+            f"- Total violations: {wcag.get('total_violations', 0)}\n"
+            f"- Unique issues: {wcag.get('unique_rules_violated', 0)}\n"
+            f"- Pages with issues: {wcag.get('pages_with_issues', 0)}\n"
+            f"- Critical: {impact_counts.get('critical', 0)} | Serious: {impact_counts.get('serious', 0)} | "
+            f"Moderate: {impact_counts.get('moderate', 0)} | Minor: {impact_counts.get('minor', 0)}\n"
+            f"Top Issues: {violation_details}\n\n"
+            "## SECURITY Results:\n"
+            f"{sec_summary}\n\n"
+            "## Your Task:\n"
+            "Generate practical recommendations organized into TWO sections:\n\n"
+            "**SECTION 1: ACCESSIBILITY RECOMMENDATIONS**\n"
+            "For each violation, provide:\n"
+            "- Clear issue title and why it matters\n"
+            "- Step-by-step fix in plain language\n"
+            "- How many pages are affected\n"
+            "- Priority level\n\n"
+            "**SECTION 2: SECURITY RECOMMENDATIONS**\n"
+            "For each security issue, provide:\n"
+            "- What's missing or misconfigured\n"
+            "- Why it's important\n"
+            "- How to implement the fix\n"
+            "- Priority level\n\n"
+            f"{common_rules}\n"
+            "Be specific and actionable. Focus on helping developers understand and implement fixes."
         )
 
     try:
@@ -284,20 +372,22 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
         base_delay = 2.0
         response = None
         final_text = ""
+        # Cache by compact bundle fingerprint in non-agentic mode too
+        bundle_fingerprint = _hash_text(_safe_json_dumps({
+            "mode": mode,
+            "wcag": wcag_summary,
+            "sec": sec_summary
+        }))
+        if bundle_fingerprint in _UI_REC_CACHE:
+            cached = _UI_REC_CACHE[bundle_fingerprint]
+            return cached, "cache", "single-shot"
+
         for attempt in range(max_retries):
             try:
-                response = _MODEL.generate_content(prompt)
-                # If response is short and we still have room, ask for continuation once
+                response = _MODEL.generate_content(prompt, generation_config={"max_output_tokens": _UI_MAX_TOKENS})
+                # single shot only (no continuation) to reduce usage
                 text_try = getattr(response, "text", "") or ""
-                if attempt == 0 and len(text_try) < 1200:
-                    cont_prompt = (
-                        "Continue the previous answer. Complete any truncated sections, and include the remaining 'Security Recommendations' with 'How to fix' steps."
-                    )
-                    response2 = _MODEL.generate_content(cont_prompt)
-                    text_try2 = getattr(response2, "text", "") or ""
-                    final_text = (text_try + "\n" + text_try2).strip() if text_try2 else text_try
-                else:
-                    final_text = text_try
+                final_text = text_try
                 break
             except Exception as e:
                 msg = str(e)
@@ -306,24 +396,32 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
                     # Build compact-but-complete summaries
                     wcag_full = _summarize_wcag_full(wcag)
                     sec_summary = _summarize_security(sec)
+                    impact_counts = wcag.get("impact_counts", {})
+                    
                     if mode == "accessibility":
                         prompt = (
-                            "You are an accessibility auditor. Only analyze accessibility.\n\n"
-                            f"WCAG (all summarized): {wcag_full}\n\n"
-                            "Provide concise bullet-point recommendations with severity and a 'How to fix' line per item."
+                            "You are an accessibility auditor analyzing a whole-site WCAG audit.\n\n"
+                            f"Site Stats: {wcag.get('total_violations', 0)} violations across {wcag.get('pages_with_issues', 0)} pages\n"
+                            f"Impact: Critical={impact_counts.get('critical', 0)}, Serious={impact_counts.get('serious', 0)}\n"
+                            f"Violations: {wcag_full}\n\n"
+                            "Provide concise recommendations organized by severity.\n"
+                            "For each: Title, why it matters, how to fix (step-by-step), pages affected, priority."
                         )
                     elif mode == "security":
                         prompt = (
-                            "You are a security auditor. Only analyze security.\n\n"
+                            "You are a security auditor.\n\n"
                             f"Security Summary: {sec_summary}\n\n"
-                            "Provide concise bullet-point recommendations with severity and a 'How to fix' line per item."
+                            "Provide concise recommendations with severity, what's wrong, how to fix, and priority."
                         )
                     else:
                         prompt = (
-                            "You are an accessibility and security auditor.\n\n"
-                            f"WCAG (all summarized): {wcag_full}\n"
-                            f"Security Summary: {sec_summary}\n\n"
-                            "Provide concise bullet-point recommendations grouped by Accessibility vs Security, each with a 'How to fix' line."
+                            "You are a web compliance expert.\n\n"
+                            f"Accessibility: {wcag.get('total_violations', 0)} violations, {wcag_full}\n"
+                            f"Security: {sec_summary}\n\n"
+                            "Provide concise recommendations in TWO sections:\n"
+                            "1. ACCESSIBILITY: organized by severity\n"
+                            "2. SECURITY: what's missing and how to fix\n"
+                            "Be specific and actionable."
                         )
                     time.sleep(base_delay * (attempt + 1))
                     continue

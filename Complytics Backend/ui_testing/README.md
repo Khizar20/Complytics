@@ -24,6 +24,7 @@ This document explains how the UI testing subsystem works end‑to‑end: the sc
 
 ## Endpoints (FastAPI)
 
+### Single-Page Scanning
 - `POST /api/ui/scan` — Run a scan for a URL
   - Request: `{ "url": "https://example.com", "mode": "all|accessibility|security", "force": false }`
   - Response: `{ wcag_results, security_results, findings, recommendations }`
@@ -35,7 +36,189 @@ This document explains how the UI testing subsystem works end‑to‑end: the sc
 - `DELETE /api/ui/schedules/{id}` — Cancel a scheduled scan.
 - `POST /api/ui/export/pdf|excel` — Server‑side exports (simple) in addition to client‑side PDF/Word in the dashboard.
 
+### Whole-Site Scanning (NEW)
+- `POST /api/ui/scan-site` — Scan entire website by crawling and testing multiple pages
+  - Request: `{ "url": "https://example.com", "max_pages": 50, "max_depth": 3, "scan_mode": "all", "parallel_scans": 3, "use_selenium_crawler": false }`
+  - Response: `{ summary, crawl_result, page_results, wcag_aggregate, security_aggregate, duration_seconds }`
+  - Features:
+    - Discovers pages via sitemap.xml parsing
+    - Crawls HTML pages to find links (BFS algorithm)
+    - Respects robots.txt
+    - Filters non-page resources (images, PDFs, etc.)
+    - Scans multiple pages in parallel
+    - Aggregates results for site-wide analysis
+
+- `POST /api/ui/crawl-only` — Crawl a website to discover pages without running scans (preview mode)
+  - Request: `{ "url": "https://example.com", "max_pages": 50, "max_depth": 3, "use_selenium": false }`
+  - Response: `{ urls: [...], stats: {...}, errors: [...] }`
+
+- `GET /api/ui/site/latest` — Get the most recent whole-site scan result for the org
+- `GET /api/ui/site/history` — Get history of whole-site scans (limit: 10 by default)
+
 All endpoints require authentication (org scoping is enforced in handlers).
+
+## Whole-Site Scanning Architecture (NEW)
+
+### Overview
+The whole-site scanning feature extends the single-page scanner to provide comprehensive website-wide accessibility and security analysis. It automatically discovers pages, tests them in parallel, and aggregates results.
+
+### Components
+
+#### 1. Website Crawler (`ui_testing/scanners/crawler.py`)
+Intelligent web crawler that discovers pages for testing:
+
+**Features:**
+- **Sitemap.xml Parsing**: Automatically fetches and parses sitemap.xml (including sitemap indexes) for comprehensive page discovery
+- **HTML Link Extraction**: Crawls pages using BeautifulSoup to find additional links
+- **Robots.txt Respect**: Fetches robots.txt and respects disallowed paths
+- **Smart Filtering**: 
+  - Removes non-HTML resources (images, PDFs, JS, CSS, etc.)
+  - Filters out API endpoints, download links, logout links
+  - Deduplicates URLs
+  - Normalizes URLs (removes fragments, tracking parameters)
+- **Domain Scoping**: Optionally restricts crawling to same domain
+- **Depth Control**: Limits crawl depth (BFS algorithm)
+- **Selenium Support**: Optional Selenium-based crawling for JavaScript-heavy sites
+- **Rate Limiting**: Built-in delays to avoid overwhelming servers
+
+**Usage:**
+```python
+from ui_testing.scanners.crawler import crawl_website
+
+result = await crawl_website(
+    url="https://example.com",
+    max_pages=50,
+    max_depth=3,
+    use_selenium=False
+)
+# Returns: { urls: [...], stats: {...}, errors: [...] }
+```
+
+#### 2. Site Scanner (`ui_testing/scanners/site_scanner.py`)
+Orchestrates multi-page testing and result aggregation:
+
+**Features:**
+- **Parallel Scanning**: Scans multiple pages concurrently (configurable batch size)
+- **Per-Page Testing**: Runs WCAG, Security, and Interaction tests on each page
+- **Aggregation Logic**:
+  - **WCAG Aggregation**: 
+    - Groups violations by rule ID across all pages
+    - Tracks which pages are affected by each issue
+    - Counts instances per violation type
+    - Calculates impact distribution (critical/serious/moderate/minor)
+    - Identifies top 10 most widespread issues
+  - **Security Aggregation**:
+    - Recognizes that security headers are typically domain-level
+    - Takes primary security scan and notes any variations
+    - Provides SSL Labs grade and security headers analysis
+- **Site-Wide Scoring**: Calculates accessibility score (0-100) based on violation severity and frequency
+- **Executive Summary**: Generates high-level stats and metrics
+
+**Usage:**
+```python
+from ui_testing.scanners.site_scanner import scan_whole_site
+
+result = await scan_whole_site(
+    url="https://example.com",
+    max_pages=50,
+    max_depth=3,
+    scan_mode="all",  # or "accessibility", "security"
+    parallel_scans=3,
+    use_selenium_crawler=False
+)
+```
+
+**Result Structure:**
+```json
+{
+  "summary": {
+    "site_url": "https://example.com",
+    "pages_discovered": 45,
+    "pages_scanned": 45,
+    "accessibility_score": 72.5,
+    "accessibility_summary": {
+      "total_violations": 127,
+      "unique_issues": 8,
+      "pages_with_issues": 32,
+      "critical_issues": 3,
+      "serious_issues": 12
+    },
+    "security_summary": {
+      "securityheaders_grade": "A",
+      "ssl_grade": "A+"
+    }
+  },
+  "crawl_result": {
+    "urls": ["..."],
+    "stats": {
+      "total_discovered": 45,
+      "from_sitemap": 38,
+      "from_crawl": 7,
+      "duration_seconds": 12.4
+    }
+  },
+  "page_results": [
+    {
+      "url": "https://example.com/page1",
+      "wcag_results": {...},
+      "security_results": {...},
+      "errors": []
+    }
+  ],
+  "wcag_aggregate": {
+    "total_pages_scanned": 45,
+    "pages_with_issues": 32,
+    "total_violations": 127,
+    "unique_rules_violated": 8,
+    "impact_counts": {
+      "critical": 15,
+      "serious": 45,
+      "moderate": 50,
+      "minor": 17
+    },
+    "violations_summary": [
+      {
+        "id": "image-alt",
+        "description": "Images must have alternate text",
+        "impact": "critical",
+        "pages_affected": 25,
+        "pages_affected_urls": ["url1", "url2", ...],
+        "total_instances": 38
+      }
+    ],
+    "top_issues": [...]
+  },
+  "security_aggregate": {
+    "primary_scan": {...},
+    "variations_detected": 0
+  }
+}
+```
+
+### Performance Characteristics
+
+- **Crawling**: 0.5s delay per page (respects servers)
+- **Scanning**: Parallel batches (default: 3 concurrent scans)
+- **Typical Duration**: 
+  - 10 pages: ~2-4 minutes
+  - 50 pages: ~8-15 minutes (depending on page complexity)
+- **Resource Usage**: Headless Chrome instances are created/destroyed per page scan
+
+### Use Cases
+
+1. **Comprehensive Audits**: Scan entire website before launch or major updates
+2. **Regression Testing**: Regular full-site scans to catch new accessibility/security issues
+3. **Compliance Reporting**: Generate site-wide compliance reports for stakeholders
+4. **Issue Prioritization**: Identify which accessibility issues affect the most pages
+5. **Security Posture**: Assess domain-level security headers and SSL configuration
+
+### Limitations
+
+- **Scale**: Designed for sites up to ~100 pages (configurable max_pages limit)
+- **Auth**: Currently cannot scan pages behind authentication
+- **JavaScript**: Standard crawler uses requests (fast); opt-in Selenium for JS-heavy sites (slower)
+- **API Rate Limits**: External services (SSL Labs, SecurityHeaders) may rate-limit
+- **Completeness**: Automated testing cannot catch all accessibility issues (manual testing still needed)
 
 ## Scanners
 

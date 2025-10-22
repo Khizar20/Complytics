@@ -47,47 +47,149 @@ def _summarize_navigation_for_agent(bundle: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_agentic_prompt(scan_bundle: Dict[str, Any]) -> str:
-    wcag_s = _summarize_wcag_for_agent(scan_bundle)
-    sec_s = _summarize_security_for_agent(scan_bundle)
-    nav_s = _summarize_navigation_for_agent(scan_bundle)
+    """
+    Build mode-specific agentic prompt with multi-agent collaboration.
+    Only includes relevant agents based on scan mode.
+    """
     mode = (scan_bundle.get("_mode") or "all").lower()
-
-    header = (
-        "You are a small team of specialized compliance agents working together on a website audit.\n"
-        "Your goal is to produce a single, actionable plan grouped by Accessibility and Security, with explicit 'How to fix' steps.\n"
-        "Do not echo raw HTML or ARIA attributes. Be concise and precise.\n\n"
-    )
-
-    accessibility_agent = (
-        "[Accessibility Agent]\n"
-        "Input (axe-core summary): " + str(wcag_s) + "\n"
-        "Task: Identify WCAG issues, assign severity (Critical/Major/Minor), and give a one-line How-to-fix per item.\n\n"
-    )
-
-    security_agent = (
-        "[Security Agent]\n"
-        "Input (headers + SSL Labs summary): " + str(sec_s) + "\n"
-        "Task: Identify missing/weak controls (headers/TLS), assign severity (Critical/Major/Minor),\n"
-        "and give a one-line How-to-fix per item mapped to OWASP guidance.\n\n"
-    )
-
-    navigation_agent = (
-        "[Navigation Agent]\n"
-        "Input (light interaction log): " + str(nav_s) + "\n"
-        "Task: Note any form/keyboard issues that impact accessibility or security posture, with concise fixes.\n\n"
-    )
-
-    reviewer = (
-        "[Reviewer]\n"
-        "Task: Merge and de-duplicate all items into a final plan grouped by Accessibility vs Security.\n"
-        "Include a short executive summary, then bullet points with severity and How-to-fix.\n"
-        f"Mode: {mode}\n\n"
-        "[Final Output Format]\n"
-        "Executive Summary (2-4 bullets)\n"
-        "Accessibility\n  - [Severity] Title — How to fix\n"
-        "Security\n  - [Severity] Title — How to fix\n"
-    )
-
-    return header + accessibility_agent + security_agent + navigation_agent + reviewer
+    
+    # Get site-wide data if available
+    wcag_results = scan_bundle.get("wcag_results") or {}
+    total_violations = wcag_results.get("total_violations", 0)
+    unique_issues = wcag_results.get("unique_rules_violated", 0)
+    pages_with_issues = wcag_results.get("pages_with_issues", 0)
+    total_pages = wcag_results.get("total_pages_scanned", 0)
+    impact_counts = wcag_results.get("impact_counts", {})
+    
+    # Enhanced summaries with site-wide context
+    wcag_violations = wcag_results.get("violations", [])
+    wcag_summary = []
+    for v in wcag_violations[:15]:
+        wcag_summary.append({
+            "rule": v.get("id"),
+            "description": _truncate(v.get("description") or "", 200),
+            "impact": v.get("impact"),
+            "pages_affected": v.get("pages_affected", 0),
+            "total_instances": v.get("total_instances", 0),
+            "help": _truncate(v.get("help") or "", 150)
+        })
+    
+    sec_s = _summarize_security_for_agent(scan_bundle)
+    
+    # Mode-specific prompt configuration
+    if mode == "accessibility":
+        # Accessibility-only mode: Direct recommendations
+        site_context = (
+            f"Site-Wide Audit Results:\n"
+            f"- Total violations: {total_violations}\n"
+            f"- Unique issues: {unique_issues}\n"
+            f"- Pages with issues: {pages_with_issues} out of {total_pages} pages scanned\n"
+            f"- Impact breakdown: Critical={impact_counts.get('critical', 0)}, Serious={impact_counts.get('serious', 0)}, "
+            f"Moderate={impact_counts.get('moderate', 0)}, Minor={impact_counts.get('minor', 0)}\n\n"
+        )
+        
+        prompt = (
+            "You are an accessibility expert providing actionable WCAG recommendations.\n\n"
+            f"{site_context}"
+            f"Detected Issues:\n{wcag_summary}\n\n"
+            "For EACH issue, provide:\n\n"
+            "### [Severity] Issue Title (X pages affected)\n\n"
+            "**Impact:** One sentence explaining why this matters for users with disabilities.\n\n"
+            "**How to Fix:**\n\n"
+            "1. First step with clear explanation. Include code example if relevant:\n"
+            "```html\n"
+            "<label for=\"email\">Email</label>\n"
+            "<input id=\"email\" type=\"email\">\n"
+            "```\n\n"
+            "2. Second step with explanation and code example if needed.\n\n"
+            "3. Verification: How to test the fix.\n\n"
+            "---\n\n"
+            "Rules:\n"
+            "- Severity: [Critical], [Serious], [Moderate], or [Minor]\n"
+            "- Include code snippets in ```html blocks\n"
+            "- Separate each recommendation with ---\n"
+            "- Focus on practical, implementable solutions\n"
+            "- Be concise and clear\n"
+        )
+        
+        return prompt
+    
+    elif mode == "security":
+        # Security-only mode: Direct recommendations
+        prompt = (
+            "You are a security expert providing actionable web security recommendations.\n\n"
+            f"Security Assessment Results:\n{sec_s}\n\n"
+            "For EACH issue, provide:\n\n"
+            "### [Severity] Issue Title\n\n"
+            "**Impact:** One sentence explaining the security risk.\n\n"
+            "**How to Fix:**\n\n"
+            "1. First step with explanation. Include server configuration example:\n"
+            "```apache\n"
+            "Header set Content-Security-Policy \"default-src 'self';\"\n"
+            "```\n\n"
+            "2. Alternative for Nginx (if applicable):\n"
+            "```nginx\n"
+            "add_header Content-Security-Policy \"default-src 'self';\";\n"
+            "```\n\n"
+            "3. Verification: How to test the fix.\n\n"
+            "---\n\n"
+            "Rules:\n"
+            "- Severity: [Critical], [Major], or [Minor]\n"
+            "- Include configuration examples in appropriate code blocks\n"
+            "- Separate each recommendation with ---\n"
+            "- Reference OWASP when relevant\n"
+            "- Be concise and practical\n"
+        )
+        
+        return prompt
+    
+    else:  # "all" mode
+        # Combined mode: Both accessibility and security recommendations
+        site_context = (
+            f"Audit Scope:\n"
+            f"- Accessibility: {total_violations} violations across {pages_with_issues} of {total_pages} pages\n"
+            f"- Impact breakdown: Critical={impact_counts.get('critical', 0)}, Serious={impact_counts.get('serious', 0)}, "
+            f"Moderate={impact_counts.get('moderate', 0)}, Minor={impact_counts.get('minor', 0)}\n\n"
+        )
+        
+        prompt = (
+            "You are a compliance expert providing actionable recommendations for accessibility and security.\n\n"
+            f"{site_context}"
+            f"Detected WCAG Issues:\n{wcag_summary[:10]}\n\n"
+            f"Security Assessment:\n{sec_s}\n\n"
+            "Organize your response into two sections:\n\n"
+            "## Accessibility Recommendations\n\n"
+            "For each issue:\n\n"
+            "### [Severity] Issue Title (X pages affected)\n\n"
+            "**Impact:** One sentence about impact on users.\n\n"
+            "**How to Fix:**\n\n"
+            "1. Step with code example:\n"
+            "```html\n"
+            "<label for=\"field\">Label</label>\n"
+            "```\n\n"
+            "2. Another step.\n\n"
+            "3. Verification: How to test.\n\n"
+            "---\n\n"
+            "## Security Recommendations\n\n"
+            "For each issue:\n\n"
+            "### [Severity] Issue Title\n\n"
+            "**Impact:** One sentence about security risk.\n\n"
+            "**How to Fix:**\n\n"
+            "1. Step with configuration:\n"
+            "```apache\n"
+            "Header set X-Frame-Options \"DENY\"\n"
+            "```\n\n"
+            "2. Another step.\n\n"
+            "3. Verification: How to test.\n\n"
+            "---\n\n"
+            "Rules:\n"
+            "- Accessibility severity: [Critical], [Serious], [Moderate], [Minor]\n"
+            "- Security severity: [Critical], [Major], [Minor]\n"
+            "- Use code blocks appropriately\n"
+            "- Separate recommendations with ---\n"
+            "- Be practical and concise\n"
+        )
+        
+        return prompt
 
 

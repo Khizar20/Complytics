@@ -91,7 +91,7 @@ const ScheduleScan = () => {
       });
       if (!resp.ok) throw new Error(await resp.text() || 'Failed to schedule scan');
       await resp.json();
-      setSuccess('Scan scheduled successfully. You will receive an email after it completes.');
+      setSuccess('Whole-site scan scheduled successfully. You will receive an email after it completes.');
       setRunAt('');
       fetchSchedules();
     } catch (e) {
@@ -123,7 +123,7 @@ const ScheduleScan = () => {
         throw new Error(t || 'Scan failed');
       }
       await resp.json();
-      setSuccess('Scan completed. Dashboard will reflect the latest results.');
+      setSuccess('Whole-site scan completed. Dashboard will reflect the latest results.');
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 2500);
       // Refresh schedules and dashboard widgets will auto-refresh via polling
@@ -157,13 +157,20 @@ const ScheduleScan = () => {
     setModalError(null);
     setModalSubmitting(true);
     try {
-      const resp = await fetch(`${apiBase}/ui/scan`, {
+      const resp = await fetch(`${apiBase}/ui/scan-site`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ url: normalized, mode: 'all', force: true }),
+        body: JSON.stringify({ 
+          url: normalized, 
+          scan_mode: 'all',
+          max_pages: 50,
+          max_depth: 3,
+          parallel_scans: 3,
+          use_selenium_crawler: false
+        }),
       });
       if (!resp.ok) {
         const t = await resp.text();
@@ -172,7 +179,7 @@ const ScheduleScan = () => {
       await resp.json();
       setShowScanNowModal(false);
       setModalUrl('');
-      setSuccess('Scan completed. Dashboard will reflect the latest results.');
+      setSuccess('Whole-site scan completed. Dashboard will reflect the latest results.');
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 2500);
       fetchSchedules();
@@ -221,8 +228,8 @@ const ScheduleScan = () => {
         <div className="flex items-center space-x-4 mb-4">
           <FaCalendarAlt className="text-2xl text-primary" />
           <div>
-            <h3 className="text-lg font-semibold">Schedule a One-Time Scan</h3>
-            <p className="text-muted-foreground">Runs on the selected date/time (uses last scanned URL)</p>
+            <h3 className="text-lg font-semibold">Schedule a One-Time Whole-Site Scan</h3>
+            <p className="text-muted-foreground">Runs comprehensive website testing on the selected date/time (uses last scanned URL)</p>
           </div>
         </div>
 
@@ -257,7 +264,7 @@ const ScheduleScan = () => {
             onClick={handleScanNow}
             className="mt-2 w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary flex items-center justify-center gap-2"
           >
-            {scanNowLoading ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now'}
+            {scanNowLoading ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now (Whole-Site)'}
           </button>
           </div>
         </div>
@@ -268,7 +275,7 @@ const ScheduleScan = () => {
           <FaList className="text-2xl text-primary" />
           <div>
             <h3 className="text-lg font-semibold">Scheduled Scans</h3>
-            <p className="text-muted-foreground">Upcoming and past one-time schedules</p>
+            <p className="text-muted-foreground">Upcoming schedules</p>
           </div>
         </div>
 
@@ -298,7 +305,7 @@ const ScheduleScan = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-md p-6 bg-card rounded-xl shadow-xl border border-border">
             <h3 className="text-lg font-semibold mb-2">Enter Website URL</h3>
-            <p className="text-sm text-muted-foreground mb-4">No previous website found. Provide your site URL to run a full scan now.</p>
+            <p className="text-sm text-muted-foreground mb-4">No previous website found. Provide your site URL to run a comprehensive whole-site scan now.</p>
             {modalError && (
               <div className="mb-3 p-3 rounded bg-red-50 text-red-700 text-sm">{modalError}</div>
             )}
@@ -311,7 +318,7 @@ const ScheduleScan = () => {
             <div className="flex items-center justify-end gap-2">
               <button onClick={() => { setShowScanNowModal(false); setModalUrl(''); setModalError(null); }} className="px-3 py-2 border border-border rounded">Cancel</button>
               <button onClick={submitScanNowWithUrl} disabled={modalSubmitting} className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2">
-                {modalSubmitting ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now'}
+                {modalSubmitting ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now (Whole-Site)'}
               </button>
             </div>
           </div>
@@ -319,7 +326,7 @@ const ScheduleScan = () => {
       )}
       {showSuccessPopup && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg">
-          Scan completed successfully.
+          Whole-site scan completed successfully.
         </div>
       )}
     </motion.div>

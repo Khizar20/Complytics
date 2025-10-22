@@ -26,7 +26,8 @@ import {
   Select,
   FormControl,
   InputLabel,
-  Tooltip
+  Tooltip,
+  Chip
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -377,6 +378,7 @@ const ComplianceChat = () => {
   const [documentType, setDocumentType] = useState('privacy');
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [messageFeedback, setMessageFeedback] = useState({}); // Track feedback for each message
+  const [pendingAttachment, setPendingAttachment] = useState(null); // File attached to next send
   
   const DRAWER_WIDTH = 280;
 
@@ -597,16 +599,18 @@ const ComplianceChat = () => {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || !authToken) return;
+    if ((!input.trim()) || !authToken) return;
 
     const userMessage = {
       type: 'user',
       content: input,
-      timestamp: new Date()
+      timestamp: new Date(),
+      attachments: pendingAttachment ? [pendingAttachment] : []
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    setPendingAttachment(null);
     setLoading(true);
     setIsTyping(true);
 
@@ -870,6 +874,9 @@ const ComplianceChat = () => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('session_id', sessionId);
+    if (input && input.trim()) {
+      formData.append('query', input.trim());
+    }
 
     try {
       const response = await fetchWithRetry('http://localhost:8000/api/compliance/upload-document', {
@@ -878,17 +885,11 @@ const ComplianceChat = () => {
       });
 
       const data = await response.json();
-      
-      // Add system message about document upload
-      const systemMessage = {
-        type: 'response',
-        content: `Document "${file.name}" has been uploaded and processed. You can now ask questions about its contents, request analysis against specific frameworks, or ask me to generate a new document based on a framework.`,
-        timestamp: new Date(),
-        isTyping: false
-      };
 
-      setMessages(prev => [...prev, systemMessage]);
-      scrollToBottom();
+      // Store pending attachment to be sent with the next user message
+      if (data && data.attachment) {
+        setPendingAttachment(data.attachment);
+      }
     } catch (error) {
       console.error('Error uploading document:', error);
       alert('Error uploading document. Please try again.');
@@ -1186,7 +1187,7 @@ const ComplianceChat = () => {
   );
 
   const renderInputArea = () => (
-    <Box sx={{ display: 'flex', gap: 1 }}>
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
       <input
         type="file"
         accept=".pdf,.docx"
@@ -1212,7 +1213,18 @@ const ComplianceChat = () => {
           )}
         </IconButton>
       </Tooltip>
-      <TextField
+      <Box sx={{ flex: 1 }}>
+        {pendingAttachment && (
+          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              label={`${pendingAttachment.filename} (${pendingAttachment.doc_type || 'document'})`}
+              onDelete={() => setPendingAttachment(null)}
+              color="primary"
+              variant="outlined"
+            />
+          </Box>
+        )}
+        <TextField
         fullWidth
         variant="outlined"
         placeholder="Ask about the uploaded document, request analysis, or ask to generate a new document..."
@@ -1237,7 +1249,8 @@ const ComplianceChat = () => {
             },
           },
         }}
-      />
+        />
+      </Box>
       <Button
         variant="contained"
         onClick={handleSend}
@@ -1588,7 +1601,22 @@ const ComplianceChat = () => {
                       ) : (
                         <FormattedResponse content={message.content} />
                       )}
-                      {message.experts && !message.isTyping && (
+              {message.attachments && message.attachments.length > 0 && (
+                <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  {message.attachments.map((att, i) => (
+                    <Chip
+                      key={i}
+                      label={`${att.filename}${att.doc_type ? ` • ${att.doc_type}` : ''}`}
+                      variant="outlined"
+                      size="small"
+                      onClick={() => {
+                        // optionally open a sidebar or just ignore
+                      }}
+                    />
+                  ))}
+                </Box>
+              )}
+              {message.experts && !message.isTyping && (
                         <Box sx={{ mt: 1, pt: 1, borderTop: `1px solid ${theme.palette.divider}` }}>
                           <Typography 
                             variant="caption"

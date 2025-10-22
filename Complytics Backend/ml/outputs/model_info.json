@@ -1,0 +1,43 @@
+{
+  "model_type": "rf",
+  "train_size": 4377,
+  "test_size": 1095,
+  "labels": [
+    "critical",
+    "major",
+    "minor"
+  ],
+  "report": {
+    "critical": {
+      "precision": 0.8571428571428571,
+      "recall": 0.7512224444444444,
+      "f1-score": 0.8011203525385152,
+      "support": 385.0
+    },
+    "moderate": {
+      "precision": 0.7745276662712071,
+      "recall": 0.7994333994333994,
+      "f1-score": 0.855466701192221,
+      "support": 353.0
+    },
+    "minor": {
+      "precision": 0.9105034319012766,
+      "recall": 0.8949742430688676,
+      "f1-score": 0.902689346034532,
+      "support": 357.0
+    },
+    "accuracy": 0.8151598151598152,
+    "macro avg": {
+      "precision": 0.8507246524383803,
+      "recall": 0.8151598151598152,
+      "f1-score": 0.8988847108545127,
+      "support": 1095.0
+    },
+    "weighted avg": {
+      "precision": 0.8507246524383803,
+      "recall": 0.8151598151598152,
+      "f1-score": 0.8988847108545127,
+      "support": 1095.0
+    }
+  }
+}

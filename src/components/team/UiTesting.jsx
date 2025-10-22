@@ -42,13 +42,21 @@ const UiTesting = () => {
       });
     }, 900);
     try {
-      const resp = await fetch(`${apiBase}/ui/scan`, {
+      // Use whole-site scanning endpoint for comprehensive testing
+      const resp = await fetch(`${apiBase}/ui/scan-site`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ url: normalized, mode, force: true }),
+        body: JSON.stringify({ 
+          url: normalized, 
+          scan_mode: mode,
+          max_pages: 50,
+          max_depth: 3,
+          parallel_scans: 3,
+          use_selenium_crawler: false
+        }),
       });
       if (!resp.ok) {
         const t = await resp.text();
@@ -91,9 +99,26 @@ const UiTesting = () => {
     }
   };
 
+  // Check if this is a whole-site scan result or single-page scan result
+  const isSiteScan = result && result.summary && result.page_results;
+
   const getA11ySeverityCounts = () => {
+    // For site scans, use aggregated impact counts
+    if (isSiteScan && result?.wcag_aggregate?.impact_counts) {
+      const impactCounts = result.wcag_aggregate.impact_counts;
+      return {
+        critical: impactCounts.critical || 0,
+        serious: impactCounts.serious || 0,
+        moderate: impactCounts.moderate || 0,
+        minor: impactCounts.minor || 0,
+        unknown: 0
+      };
+    }
+    
+    // For single-page scans, count from violations array
     const counts = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
-    (violations || []).forEach((v) => {
+    const viols = result?.wcag_results?.violations || [];
+    (viols || []).forEach((v) => {
       const impact = (v?.impact || '').toLowerCase();
       if (impact === 'critical') counts.critical += 1;
       else if (impact === 'serious') counts.serious += 1;
@@ -112,9 +137,15 @@ const UiTesting = () => {
   };
 
   const getSecuritySummaries = () => {
-    const sh = result?.security_results?.securityheaders || {};
-    const ssl = result?.security_results?.ssllabs || {};
-    const live = result?.security_results?.live_headers || {};
+    // For site scans, security data is in security_aggregate.primary_scan
+    // For single-page scans, it's in security_results
+    const securityData = isSiteScan 
+      ? result?.security_aggregate?.primary_scan 
+      : result?.security_results;
+    
+    const sh = securityData?.securityheaders || {};
+    const ssl = securityData?.ssllabs || {};
+    const live = securityData?.live_headers || {};
     const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
     const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '';
     const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
@@ -124,7 +155,7 @@ const UiTesting = () => {
       const missing = missingHeaders.length;
       securityScore = Math.max(0, 100 - missing * 15);
     }
-    return { securityScore, sslGrade, missingHeaders, presentHeaders, live };
+    return { securityScore, sslGrade, missingHeaders, presentHeaders, live, securityData };
   };
 
   const download = async (type) => {
@@ -151,10 +182,18 @@ const UiTesting = () => {
     } catch (e) {}
   };
 
-  const violations = result?.wcag_results?.violations || [];
+  // Extract violations based on scan type
+  const violations = isSiteScan 
+    ? (result?.wcag_aggregate?.violations_summary || [])
+    : (result?.wcag_results?.violations || []);
+  
   const a11yCounts = (result ? getA11ySeverityCounts() : { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 });
-  const a11yScore = result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0;
-  const { securityScore, sslGrade, missingHeaders } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [] };
+  
+  const a11yScore = isSiteScan
+    ? (result?.summary?.accessibility_score || 0)
+    : (result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0);
+  
+  const { securityScore, sslGrade, missingHeaders, securityData } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], securityData: null };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
@@ -162,7 +201,7 @@ const UiTesting = () => {
         <FaDesktop className="text-2xl text-primary" />
         <div>
           <h2 className="text-2xl font-bold text-foreground">UI Testing</h2>
-          <p className="text-muted-foreground">WCAG + Security headers + SSL Labs + AI recommendations</p>
+          <p className="text-muted-foreground">Whole-site WCAG accessibility + Security + SSL testing with AI recommendations</p>
         </div>
       </div>
 
@@ -220,7 +259,49 @@ const UiTesting = () => {
 
       {result && (
         <div className="space-y-6">
+          {/* Site scan summary banner */}
+          {isSiteScan && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">Whole-Site Scan Complete</h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Scanned {result?.summary?.pages_scanned || 0} pages across the website
+                    {result?.duration_seconds && ` in ${(result.duration_seconds / 60).toFixed(1)} minutes`}
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    Discovered {result?.summary?.pages_discovered || 0} pages total
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-blue-600 dark:text-blue-400">
+                    {result?.crawl_result?.stats?.from_sitemap || 0} from sitemap • {result?.crawl_result?.stats?.from_crawl || 0} from crawling
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Pages Scanned Card - Only show for site scans */}
+            {isSiteScan && (
+              <div className="glass-card p-6 rounded-lg border-l-4 border-indigo-500">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pages Scanned</p>
+                    <h3 className="text-2xl font-bold">{result?.summary?.pages_scanned || 0}</h3>
+                  </div>
+                  <div className="p-3 rounded-full bg-indigo-500/10 text-indigo-500">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-muted-foreground">
+                  Discovered: {result?.summary?.pages_discovered || 0} • 
+                  Successful: {result?.summary?.pages_scanned_successfully || 0}
+                </div>
+              </div>
+            )}
+            
             {(mode === 'all' || mode === 'accessibility') && (
               <div className="glass-card p-6 rounded-lg border-l-4 border-blue-500">
                 <div className="flex items-center justify-between">
@@ -240,12 +321,22 @@ const UiTesting = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">WCAG Violations</p>
-                    <h3 className="text-2xl font-bold">{violations.length}</h3>
+                    <h3 className="text-2xl font-bold">
+                      {isSiteScan 
+                        ? (result?.wcag_aggregate?.total_violations || 0)
+                        : violations.length}
+                    </h3>
                   </div>
                   <div className="p-3 rounded-full bg-red-500/10 text-red-500">
                     <FaChartLine className="h-6 w-6" />
                   </div>
                 </div>
+                {isSiteScan && (
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Unique issues: {result?.wcag_aggregate?.unique_rules_violated || 0} • 
+                    Pages affected: {result?.wcag_aggregate?.pages_with_issues || 0}
+                  </div>
+                )}
               </div>
             )}
             {(mode === 'all' || mode === 'security') && (
@@ -280,40 +371,155 @@ const UiTesting = () => {
             <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
               <h3 className="text-lg font-semibold mb-4">Accessibility (WCAG)</h3>
               {violations.length > 0 ? (
-                <div className="w-full max-h-96 overflow-auto rounded border border-border/60">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-secondary sticky top-0 z-10">
-                      <tr className="text-left border-b">
-                        <th className="py-2 px-3">Rule</th>
-                        <th className="py-2 px-3">Impact</th>
-                        <th className="py-2 px-3">Description</th>
-                        <th className="py-2 px-3">Targets</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="space-y-3">
                       {violations.map((v, i) => (
-                        <tr key={i} className="border-b last:border-0 align-top">
-                          <td className="py-2 px-3 font-mono text-xs whitespace-nowrap">{v.id}</td>
-                          <td className="py-2 px-3 capitalize">
-                            <span className={`px-2 py-1 text-xs rounded-full ${
+                    <details key={i} className="border border-border rounded-lg overflow-hidden">
+                      <summary className="px-4 py-3 bg-secondary/50 cursor-pointer hover:bg-secondary/70 transition-colors flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
                               v.impact === 'critical' ? 'bg-red-100 text-red-800' :
                               v.impact === 'serious' ? 'bg-orange-100 text-orange-800' :
                               v.impact === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
                               'bg-green-100 text-green-800'
                             }`}>{v.impact}</span>
-                          </td>
-                          <td className="py-2 px-3">{v.description}</td>
-                          <td className="py-2 px-3 text-xs text-muted-foreground break-words whitespace-pre-wrap max-w-[520px]">
-                            {(v.nodes || []).map((n, idx) => (
-                              <div key={idx} className="mb-1 last:mb-0">
-                                {(n.target || []).join(' ')}
+                          <span className="font-mono text-xs font-semibold">{v.id}</span>
+                          <span className="text-sm flex-1">{v.description}</span>
+                          {isSiteScan && (
+                            <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                              {v.pages_affected || 0} page(s)
+                            </span>
+                          )}
+                        </div>
+                      </summary>
+                      <div className="px-4 py-3 bg-card space-y-3">
+                        {/* Help Text */}
+                        {v.help && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">How to fix:</p>
+                            <p className="text-sm">{v.help}</p>
+                          </div>
+                        )}
+                        
+                        {/* Help URL */}
+                        {v.helpUrl && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">Learn more:</p>
+                            <a href={v.helpUrl} target="_blank" rel="noopener noreferrer" 
+                               className="text-sm text-primary hover:underline break-all">
+                              {v.helpUrl}
+                            </a>
+                          </div>
+                        )}
+                        
+                        {/* For site scans: Show affected pages */}
+                        {isSiteScan && v.pages_affected_urls && v.pages_affected_urls.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                              Affected pages ({v.total_instances || 0} total instances):
+                            </p>
+                            <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                              {v.pages_affected_urls.map((pageUrl, idx) => (
+                                <li key={idx} className="text-muted-foreground break-all">
+                                  • {pageUrl}
+                                </li>
+                              ))}
+                              {v.pages_affected > (v.pages_affected_urls?.length || 0) && (
+                                <li className="text-muted-foreground italic">
+                                  ... and {v.pages_affected - v.pages_affected_urls.length} more pages
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* For single-page scans: Show target nodes */}
+                        {!isSiteScan && v.nodes && v.nodes.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                              Elements affected ({v.nodes.length} instances):
+                            </p>
+                            <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                              {v.nodes.map((n, idx) => (
+                                <li key={idx} className="font-mono text-muted-foreground break-all">
+                                  • {(n.target || []).join(' ')}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Sample HTML Nodes (for site scans) */}
+                        {isSiteScan && v.sample_nodes && v.sample_nodes.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                              Sample violations (showing {v.sample_nodes.length} of {v.total_instances}):
+                            </p>
+                            <div className="space-y-2">
+                              {v.sample_nodes.map((node, idx) => (
+                                <div key={idx} className="border border-border/50 rounded p-2 bg-secondary/20">
+                                  {/* CSS Selector */}
+                                  {node.target && node.target.length > 0 && (
+                                    <div className="mb-1">
+                                      <span className="text-xs font-semibold text-muted-foreground">Selector:</span>
+                                      <code className="ml-1 text-xs font-mono bg-secondary px-1 py-0.5 rounded">
+                                        {node.target.join(' ')}
+                                      </code>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Page URL */}
+                                  {node.page_url && (
+                                    <div className="mb-1">
+                                      <span className="text-xs font-semibold text-muted-foreground">On page:</span>
+                                      <span className="ml-1 text-xs text-muted-foreground break-all">
+                                        {node.page_url}
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Failure Summary */}
+                                  {node.failureSummary && (
+                                    <div className="mb-1">
+                                      <span className="text-xs font-semibold text-muted-foreground">Issue:</span>
+                                      <span className="ml-1 text-xs text-muted-foreground">
+                                        {node.failureSummary}
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* HTML Snippet */}
+                                  {node.html && (
+                                    <details className="mt-2">
+                                      <summary className="text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground">
+                                        View HTML snippet ▼
+                                      </summary>
+                                      <pre className="mt-1 text-xs font-mono bg-background p-2 rounded border border-border overflow-x-auto max-h-32">
+                                        <code>{node.html}</code>
+                                      </pre>
+                                    </details>
+                                  )}
                               </div>
                             ))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Tags */}
+                        {v.tags && v.tags.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">WCAG Standards:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {v.tags.map((tag, idx) => (
+                                <span key={idx} className="px-2 py-0.5 bg-secondary text-xs rounded">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  ))}
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">No WCAG violations detected.</div>
@@ -334,7 +540,7 @@ const UiTesting = () => {
                 <AnimatePresence initial={false}>
                   {openSecurity && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.security_results?.securityheaders || {}, null, 2)}</pre>
+                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(securityData?.securityheaders || {}, null, 2)}</pre>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -350,7 +556,7 @@ const UiTesting = () => {
                 <AnimatePresence initial={false}>
                   {openSSL && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.security_results?.ssllabs || {}, null, 2)}</pre>
+                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(securityData?.ssllabs || {}, null, 2)}</pre>
                     </motion.div>
                   )}
                 </AnimatePresence>

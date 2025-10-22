@@ -11,19 +11,9 @@ from compliance_rag import (
     process_documents,
     ConversationHistory,
     select_relevant_experts_optimized,
-    expert_security_controls,
-    expert_privacy_regulations,
-    expert_audit_compliance,
-    expert_financial_compliance,
-    expert_healthcare_compliance,
-    expert_international_compliance,
-    expert_operational_compliance,
-    expert_industry_specific,
-    aggregate_expert_outputs,
     is_compliance_related_optimized,
     generate_non_compliance_response,
-    detect_query_type,
-    get_framework_recommendation,
+    generate_simple_non_compliance_response,
     process_uploaded_document,
     analyze_privacy_policy,
     generate_privacy_policy,
@@ -39,7 +29,19 @@ from compliance_rag import (
     format_document_response_with_download,
     generate_document_improvement_suggestions,
     process_query_optimized,
-    get_embedding_optimized
+    get_embedding_optimized,
+    classify_document_type,
+    detect_document_analysis_request,
+    detect_document_reference,
+    analyze_general_documentation_compliance
+)
+from compliance_rag_refined import (
+    analyze_refined_intent,
+    privacy_policy_expert_extractive,
+    terms_expert_extractive,
+    scenario_guidance_expert,
+    short_qa_answer,
+    format_extractive_findings
 )
 from routes.auth import get_current_user  # Add this import for authentication
 from fastapi.responses import FileResponse
@@ -55,6 +57,32 @@ router = APIRouter(tags=["compliance"])
 
 # Initialize conversation history
 conversation_histories = {}
+
+async def _get_or_extract_document_text(doc, db):
+    try:
+        # Prefer stored content if available
+        text = (doc or {}).get("content")
+        if isinstance(text, str) and text.strip():
+            return text
+        # Fallback to reading from disk
+        path = (doc or {}).get("file_path") or ""
+        if not path or not os.path.exists(path):
+            return ""
+        if path.endswith('.pdf'):
+            text = extract_text_from_pdf(path)
+        elif path.endswith('.docx'):
+            text = extract_text_from_docx(path)
+        else:
+            return ""
+        if isinstance(text, str) and text.strip():
+            try:
+                await db.documents.update_one({"_id": doc.get("_id")}, {"$set": {"content": text}})
+            except Exception:
+                pass
+            return text
+        return ""
+    except Exception:
+        return ""
 
 @router.post("/chat")
 async def compliance_chat(
@@ -83,18 +111,388 @@ async def compliance_chat(
         conversation_context = conversation_histories[session_id].get_context()
         logger.info(f"Got conversation context: {conversation_context[:100]}...")
 
-        # Check if user has uploaded documents
+        # Check if user has uploaded documents scoped to this session only
         has_uploaded_doc = False
         latest_doc = await db.documents.find_one(
             {"session_id": session_id},
-            sort=[("upload_date", -1)]
-        )
+                sort=[("upload_date", -1)]
+            )
         if latest_doc:
             has_uploaded_doc = True
+            try:
+                logger.info(f"Latest uploaded doc for session={session_id} user={current_user.id}: name={latest_doc.get('original_name')} path={latest_doc.get('file_path')} has_content={'content' in latest_doc}")
+            except Exception:
+                pass
 
-        # Intelligent document intent analysis
+        # Quick pattern-based non-compliance detection (safety net)
+        query_lower = query.lower()
+        personal_life_patterns = [
+            r'\b(what|which).+(should i|do i|can i).+(eat|drink|play|watch|buy|wear)',
+            r'\bi got (in )?an? accident\b',
+            r'\bcar accident\b',
+            r'\bvideo game\b',
+            r'\bmovie (to watch|recommendation)\b',
+            r'\brestaurant\b',
+            r'\bfood (to eat|recommendation)\b',
+            r'\bwhat (should|can) i (do|play|eat|watch) (today|tonight)',
+        ]
+        
+        import re
+        is_personal_query = any(re.search(pattern, query_lower) for pattern in personal_life_patterns)
+        
+        if is_personal_query:
+            logger.info(f"Pattern-based detection: Personal/non-compliance query detected")
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = generate_simple_non_compliance_response(query)
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=False)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": False}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info("Blocked personal query with pattern detection")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": False}
+        
+        # Early document analysis detection - check if user is asking about a document BEFORE intent analysis
+        # This prevents queries like "analyze this document" from triggering experts when no doc is uploaded
+        doc_analysis_detected = detect_document_analysis_request(query)
+        doc_reference_detected = detect_document_reference(query, conversation_context)
+        
+        logger.info(f"Early document detection: analysis={doc_analysis_detected}, reference={doc_reference_detected}, has_doc={has_uploaded_doc}")
+        
+        # If user is clearly asking about a document but hasn't uploaded one, stop early
+        if (doc_analysis_detected or doc_reference_detected) and not has_uploaded_doc:
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = "Please upload your document first. I don't see any file attached in this session."
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info(f"Blocked document query without upload (early): {query}")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # Refined intent analysis with sub-intents
+        refined_intent = analyze_refined_intent(query, conversation_context, has_uploaded_doc)
+        logger.info(f"Refined intent: {refined_intent}")
+        
+        # Fallback to old intent for compatibility
         intent_analysis = analyze_document_intent(query, conversation_context, has_uploaded_doc)
-        logger.info(f"Intent analysis: {intent_analysis}")
+        logger.info(f"Legacy intent analysis: {intent_analysis}")
+
+        # If user is referring to uploaded document and one exists, validate document type early
+        if (doc_analysis_detected or doc_reference_detected) and has_uploaded_doc:
+            document_text = (latest_doc or {}).get("content") or ""
+            if not document_text:
+                path = latest_doc.get("file_path") or ""
+                if path and os.path.exists(path):
+                    if path.endswith('.pdf'):
+                        document_text = extract_text_from_pdf(path)
+                    elif path.endswith('.docx'):
+                        document_text = extract_text_from_docx(path)
+            
+            # Check if document has enough text (minimum 50 chars for classification)
+            if not document_text or len(document_text.strip()) < 50:
+                end_time = datetime.utcnow()
+                response_time = (end_time - start_time).total_seconds()
+                response = "The uploaded document appears to be empty or too short to analyze. Please upload a document with substantial content (at least 50 characters)."
+                experts = []
+                conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                await db.compliance_chat_history.update_one(
+                    {"user_id": current_user.id, "session_id": session_id},
+                    {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                     "$set": {"last_updated": end_time}},
+                    upsert=True
+                )
+                logger.info(f"Rejected document - too short: {len(document_text.strip())} chars")
+                return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+            
+            if document_text:
+                # Check with allow_general_docs=True to detect system documentation
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                logger.info(f"Early document type check: {doc_type}")
+                
+                # If it's a privacy policy or terms doc, smart-route before generic flows
+                if doc_type in ("privacy_policy", "terms_and_conditions"):
+                    ql = (query or "").lower()
+                    # Summarization intents: avoid heavy expert flows
+                    if any(p in ql for p in ["summarize", "summary", "tell me about", "what is this", "what's this", "overview"]):
+                        end_time = datetime.utcnow()
+                        response_time = (end_time - start_time).total_seconds()
+                        prompt = (
+                            "Summarize the following document in a concise, non-generic way.\n\n"
+                            f"{document_text[:2500]}\n\n"
+                            "Focus on real content from the document (not generic frameworks)."
+                        )
+                        response = rate_limited_generate_content_optimized(prompt)
+                        experts = []
+                        conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                        await db.compliance_chat_history.update_one(
+                            {"user_id": current_user.id, "session_id": session_id},
+                            {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                             "$set": {"last_updated": end_time}},
+                            upsert=True
+                        )
+                        logger.info("Completed concise document summary (no experts)")
+                        return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+
+                    # Analysis intents: require/ask framework; avoid generic expert boilerplate
+                    analysis_verbs = ["analyze", "analyse", "review", "check", "assess", "evaluate", "compare", "improve"]
+                    if any(v in ql for v in analysis_verbs):
+                        # Detect frameworks from query
+                        frameworks = []
+                        if "gdpr" in ql:
+                            frameworks.append("GDPR")
+                        if "ccpa" in ql or "cpra" in ql:
+                            frameworks.append("CCPA")
+                        if "hipaa" in ql:
+                            frameworks.append("HIPAA")
+                        if "iso" in ql or "27001" in ql:
+                            frameworks.append("ISO 27001")
+                        if "soc" in ql or "soc2" in ql or "soc 2" in ql:
+                            frameworks.append("SOC 2")
+
+                        end_time = datetime.utcnow()
+                        response_time = (end_time - start_time).total_seconds()
+
+                        if not frameworks:
+                            response = "Which framework should I use to analyze your document? For example: GDPR, CCPA."
+                            experts = []
+                            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                            await db.compliance_chat_history.update_one(
+                                {"user_id": current_user.id, "session_id": session_id},
+                                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                                 "$set": {"last_updated": end_time}},
+                                upsert=True
+                            )
+                            logger.info("Asked user to select framework for analysis (no experts)")
+                            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+
+                        # Use the first specified framework for targeted analysis
+                        framework_choice = frameworks[0]
+                        response = generate_comprehensive_document_analysis(
+                            document_text, framework_choice, doc_type
+                        )
+                        experts = ['privacy', 'audit']
+                        conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                        await db.compliance_chat_history.update_one(
+                            {"user_id": current_user.id, "session_id": session_id},
+                            {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                             "$set": {"last_updated": end_time}},
+                            upsert=True
+                        )
+                        logger.info(f"Completed targeted {doc_type} analysis for framework {framework_choice}")
+                        return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+
+                # Handle general documentation (system docs, architecture, etc.)
+                if doc_type == "general_documentation":
+                    # Extract frameworks from query or use defaults
+                    frameworks = []
+                    query_lower = query.lower()
+                    if "gdpr" in query_lower:
+                        frameworks.append("GDPR")
+                    if "iso" in query_lower or "27001" in query_lower:
+                        frameworks.append("ISO 27001")
+                    if "soc" in query_lower or "soc2" in query_lower or "soc 2" in query_lower:
+                        frameworks.append("SOC 2")
+                    if "hipaa" in query_lower:
+                        frameworks.append("HIPAA")
+                    if "pci" in query_lower or "dss" in query_lower:
+                        frameworks.append("PCI DSS")
+                    if "nist" in query_lower:
+                        frameworks.append("NIST")
+                    
+                    # Default frameworks if none specified
+                    if not frameworks:
+                        frameworks = ["GDPR", "ISO 27001", "SOC 2"]
+                    
+                    logger.info(f"Analyzing general documentation for frameworks: {frameworks}")
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    
+                    response = analyze_general_documentation_compliance(document_text, frameworks)
+                    experts = ['security', 'audit']
+                    
+                    conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                    await db.compliance_chat_history.update_one(
+                        {"user_id": current_user.id, "session_id": session_id},
+                        {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                         "$set": {"last_updated": end_time}},
+                        upsert=True
+                    )
+                    logger.info(f"Completed general documentation analysis")
+                    return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+                
+                # Reject if it's truly unrelated (CV, personal docs, academic content, etc.)
+                elif doc_type == "other":
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    response = """I can only analyze the following types of documents:
+
+✅ **Privacy Policies** - For GDPR, CCPA, HIPAA compliance analysis
+✅ **Terms & Conditions** - For legal and compliance review
+✅ **System Documentation** - Architecture docs, API specs, technical designs, deployment guides, security documentation
+
+❌ I cannot analyze:
+- Academic content (quizzes, exams, assignments, lecture notes)
+- Personal documents (CVs, resumes)
+- General text documents unrelated to compliance or system documentation
+
+Please upload one of the supported document types."""
+                    experts = []
+                    conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                    await db.compliance_chat_history.update_one(
+                        {"user_id": current_user.id, "session_id": session_id},
+                        {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                         "$set": {"last_updated": end_time}},
+                        upsert=True
+                    )
+                    logger.info(f"Rejected non-compliance document: {doc_type}")
+                    return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+
+        # === REFINED INTENT ROUTING ===
+        # Route based on refined intent for better responses
+        intent = refined_intent.get("intent", "")
+        framework = refined_intent.get("framework", "general")
+        
+        # 0. NON_COMPLIANCE - Not compliance-related
+        if intent == "NON_COMPLIANCE":
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = generate_simple_non_compliance_response(query)
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=False)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": False}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info("Handled non-compliance query")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": False}
+        
+        # 0.5. DOC_ANALYSIS_NO_UPLOAD - User asking about document without uploading
+        if intent == "DOC_ANALYSIS_NO_UPLOAD":
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = "Please upload your document first. I don't see any file attached in this session."
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info("Handled doc analysis request without upload (via refined intent)")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 1. GENERAL_QA_SHORT - Short factual answers
+        if intent == "GENERAL_QA_SHORT":
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = short_qa_answer(query)
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info("Completed short QA response")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 2. DOC_SUMMARY - Concise document summary
+        if intent == "DOC_SUMMARY" and has_uploaded_doc:
+            document_text = await _get_or_extract_document_text(latest_doc, db)
+            if document_text and len(document_text.strip()) >= 100:
+                end_time = datetime.utcnow()
+                response_time = (end_time - start_time).total_seconds()
+                prompt = f"Summarize this document concisely (3-5 sentences):\n\n{document_text[:2500]}"
+                response = rate_limited_generate_content_optimized(prompt)
+                experts = []
+                conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                await db.compliance_chat_history.update_one(
+                    {"user_id": current_user.id, "session_id": session_id},
+                    {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                     "$set": {"last_updated": end_time}},
+                    upsert=True
+                )
+                logger.info("Completed document summary")
+                return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 3. DOC_ANALYSIS_CLARIFY - Ask for framework
+        if intent == "DOC_ANALYSIS_CLARIFY" and has_uploaded_doc:
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = "Which compliance framework should I use to analyze your document?\n\nOptions:\n- GDPR (EU data protection)\n- CCPA/CPRA (California privacy)\n- HIPAA (US healthcare)\n- ISO 27001 (Information security)\n- SOC 2 (Service organization controls)"
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info("Asked user to clarify framework")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 4. DOC_ANALYSIS_TARGETED - Run extractive expert
+        if intent == "DOC_ANALYSIS_TARGETED" and has_uploaded_doc:
+            document_text = await _get_or_extract_document_text(latest_doc, db)
+            if document_text and len(document_text.strip()) >= 200:
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                end_time = datetime.utcnow()
+                response_time = (end_time - start_time).total_seconds()
+                
+                if doc_type == "privacy_policy":
+                    analysis_result = privacy_policy_expert_extractive(document_text, framework)
+                    response = format_extractive_findings(analysis_result)
+                    experts = ['privacy']
+                elif doc_type == "terms_and_conditions":
+                    analysis_result = terms_expert_extractive(document_text, framework)
+                    response = format_extractive_findings(analysis_result)
+                    experts = ['terms']
+                else:
+                    response = f"Document type '{doc_type}' detected. I can only analyze privacy policies and terms & conditions with extractive analysis."
+                    experts = []
+                
+                conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                await db.compliance_chat_history.update_one(
+                    {"user_id": current_user.id, "session_id": session_id},
+                    {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                     "$set": {"last_updated": end_time}},
+                    upsert=True
+                )
+                logger.info(f"Completed extractive {doc_type} analysis for {framework}")
+                return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 5. SCENARIO_GUIDANCE - Compliance guidance
+        if intent == "SCENARIO_GUIDANCE":
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = scenario_guidance_expert(query, framework)
+            experts = ['guidance']
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info(f"Completed scenario guidance for {framework}")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # === FALLBACK TO LEGACY ROUTING ===
+        # Removed keyword-based document analysis shortcut; rely on explicit ANALYZE_UPLOADED intent with session-scoped docs
 
         # Handle different document intents
         if intent_analysis["intent"] == "ANALYZE_UPLOADED":
@@ -103,12 +501,61 @@ async def compliance_chat(
                 experts = []
             else:
                 # Extract text from the latest document
-                if latest_doc["file_path"].endswith('.pdf'):
-                    document_text = extract_text_from_pdf(latest_doc["file_path"])
-                elif latest_doc["file_path"].endswith('.docx'):
-                    document_text = extract_text_from_docx(latest_doc["file_path"])
-                else:
-                    document_text = "Unsupported file format"
+                # Validate file exists
+                # Prefer stored content; if not present, validate path and extract
+                document_text = (latest_doc or {}).get("content") or ""
+                if not document_text and not os.path.exists(latest_doc["file_path"]):
+                    response = "Uploaded file is no longer available on the server and no stored content was found. Please re-upload your document."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                if not document_text:
+                    if latest_doc["file_path"].endswith('.pdf'):
+                        document_text = extract_text_from_pdf(latest_doc["file_path"])
+                    elif latest_doc["file_path"].endswith('.docx'):
+                        document_text = extract_text_from_docx(latest_doc["file_path"])
+                    else:
+                        document_text = "Unsupported file format"
+                    if isinstance(document_text, str) and document_text.strip():
+                        try:
+                            await db.documents.update_one({"_id": latest_doc.get("_id")}, {"$set": {"content": document_text}})
+                        except Exception:
+                            pass
+                # If extraction failed or text too short, stop
+                if not document_text or len(document_text.strip()) < 200:
+                    response = "I couldn't read enough text from the uploaded document to analyze it. Please ensure the file isn't scanned-only, or upload a text-based PDF/DOCX."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                # Gate by document type: only privacy policy or terms & conditions allowed
+                doc_type = classify_document_type(document_text)
+                if doc_type not in ("privacy_policy", "terms_and_conditions"):
+                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                    experts = []
+                    # Short-circuit this intent branch
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
                 
                 # Generate comprehensive analysis
                 framework = intent_analysis.get("framework", "GDPR")
@@ -164,12 +611,57 @@ async def compliance_chat(
                 experts = []
             else:
                 # Extract and analyze document
-                if latest_doc["file_path"].endswith('.pdf'):
-                    document_text = extract_text_from_pdf(latest_doc["file_path"])
-                elif latest_doc["file_path"].endswith('.docx'):
-                    document_text = extract_text_from_docx(latest_doc["file_path"])
-                else:
-                    document_text = "Unsupported file format"
+                document_text = (latest_doc or {}).get("content") or ""
+                if not document_text and not os.path.exists(latest_doc["file_path"]):
+                    response = "Uploaded file is no longer available on the server and no stored content was found. Please re-upload your document."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                if not document_text:
+                    if latest_doc["file_path"].endswith('.pdf'):
+                        document_text = extract_text_from_pdf(latest_doc["file_path"])
+                    elif latest_doc["file_path"].endswith('.docx'):
+                        document_text = extract_text_from_docx(latest_doc["file_path"])
+                    else:
+                        document_text = "Unsupported file format"
+                    if isinstance(document_text, str) and document_text.strip():
+                        try:
+                            await db.documents.update_one({"_id": latest_doc.get("_id")}, {"$set": {"content": document_text}})
+                        except Exception:
+                            pass
+                if not document_text or len(document_text.strip()) < 200:
+                    response = "I couldn't read enough text from the uploaded document to compare it. Please upload a text-based PDF/DOCX."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                # Gate by document type
+                doc_type = classify_document_type(document_text)
+                if doc_type not in ("privacy_policy", "terms_and_conditions"):
+                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
                 
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "document")
@@ -185,12 +677,57 @@ async def compliance_chat(
                 experts = []
             else:
                 # Extract text from uploaded document
-                if latest_doc["file_path"].endswith('.pdf'):
-                    document_text = extract_text_from_pdf(latest_doc["file_path"])
-                elif latest_doc["file_path"].endswith('.docx'):
-                    document_text = extract_text_from_docx(latest_doc["file_path"])
-                else:
-                    document_text = "Unsupported file format"
+                document_text = (latest_doc or {}).get("content") or ""
+                if not document_text and not os.path.exists(latest_doc["file_path"]):
+                    response = "Uploaded file is no longer available on the server and no stored content was found. Please re-upload your document."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                if not document_text:
+                    if latest_doc["file_path"].endswith('.pdf'):
+                        document_text = extract_text_from_pdf(latest_doc["file_path"])
+                    elif latest_doc["file_path"].endswith('.docx'):
+                        document_text = extract_text_from_docx(latest_doc["file_path"])
+                    else:
+                        document_text = "Unsupported file format"
+                    if isinstance(document_text, str) and document_text.strip():
+                        try:
+                            await db.documents.update_one({"_id": latest_doc.get("_id")}, {"$set": {"content": document_text}})
+                        except Exception:
+                            pass
+                if not document_text or len(document_text.strip()) < 200:
+                    response = "I couldn't read enough text from the uploaded document to provide suggestions. Please upload a text-based PDF/DOCX."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                # Gate by document type
+                doc_type = classify_document_type(document_text)
+                if doc_type not in ("privacy_policy", "terms_and_conditions"):
+                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
                 
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "privacy_policy")
@@ -207,12 +744,57 @@ async def compliance_chat(
                 experts = []
             else:
                 # Extract text from uploaded document
-                if latest_doc["file_path"].endswith('.pdf'):
-                    document_text = extract_text_from_pdf(latest_doc["file_path"])
-                elif latest_doc["file_path"].endswith('.docx'):
-                    document_text = extract_text_from_docx(latest_doc["file_path"])
-                else:
-                    document_text = "Unsupported file format"
+                document_text = (latest_doc or {}).get("content") or ""
+                if not document_text and not os.path.exists(latest_doc["file_path"]):
+                    response = "Uploaded file is no longer available on the server and no stored content was found. Please re-upload your document."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                if not document_text:
+                    if latest_doc["file_path"].endswith('.pdf'):
+                        document_text = extract_text_from_pdf(latest_doc["file_path"])
+                    elif latest_doc["file_path"].endswith('.docx'):
+                        document_text = extract_text_from_docx(latest_doc["file_path"])
+                    else:
+                        document_text = "Unsupported file format"
+                    if isinstance(document_text, str) and document_text.strip():
+                        try:
+                            await db.documents.update_one({"_id": latest_doc.get("_id")}, {"$set": {"content": document_text}})
+                        except Exception:
+                            pass
+                if not document_text or len(document_text.strip()) < 200:
+                    response = "I couldn't read enough text from the uploaded document to improve it. Please upload a text-based PDF/DOCX."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
+                # Gate by document type
+                doc_type = classify_document_type(document_text)
+                if doc_type not in ("privacy_policy", "terms_and_conditions"):
+                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    return {
+                        "response": response,
+                        "session_id": session_id,
+                        "experts_consulted": experts,
+                        "response_time": response_time,
+                        "is_compliance": True
+                    }
                 
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "privacy_policy")
@@ -256,7 +838,8 @@ The improved document addresses all the compliance gaps identified in the analys
         elif any(phrase in query.lower() for phrase in [
             "what is in this document", "what's in this document", "what is in the document", 
             "what's in the document", "show me the document", "document content",
-            "document says", "in the uploaded document", "from the document"
+            "document says", "in the uploaded document", "from the document",
+            "analyze the uploaded document", "analyse the uploaded document", "review the uploaded document"
         ]):
             if has_uploaded_doc:
                 # Extract text from the document
@@ -508,6 +1091,7 @@ async def get_all_compliance_chat_history(
 async def upload_document(
     file: UploadFile = File(...),
     session_id: str = Form(...),
+    query: Optional[str] = Form(None),
     current_user: UserInDB = Depends(get_current_user),
     db = Depends(lambda: database.db)
 ):
@@ -556,6 +1140,13 @@ async def upload_document(
                 pass
             raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
+        # Classify document type using hybrid LLM-based classifier
+        try:
+            doc_type = classify_document_type(document_text, allow_general_docs=True)
+            logger.info(f"Upload-time document type: {doc_type}")
+        except Exception:
+            doc_type = "other"
+
         # Store document info in database
         try:
             document = {
@@ -566,7 +1157,9 @@ async def upload_document(
                 "upload_date": datetime.utcnow(),
                 "file_path": str(file_path),
                 "file_type": file.content_type,
-                "status": "processed"
+                "status": "processed",
+                "content": document_text,
+                "doc_type": doc_type
             }
             
             result = await db.documents.insert_one(document)
@@ -580,10 +1173,15 @@ async def upload_document(
                 pass
             raise HTTPException(status_code=500, detail=f"Error storing document info: {str(e)}")
 
+        # Return only attachment metadata to avoid injecting chat text in UI
         return {
-            "message": "Document uploaded and processed successfully",
+            "attachment": {
+                "document_id": str(document["_id"]),
             "filename": file.filename,
-            "document_id": str(document["_id"])
+                "doc_type": doc_type,
+                "session_id": session_id
+            },
+            "echoed_query": query
         }
 
     except HTTPException:
