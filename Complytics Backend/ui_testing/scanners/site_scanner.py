@@ -52,15 +52,27 @@ class SiteScanOrchestrator:
         self,
         url: str,
         page_num: int,
-        total_pages: int
+        total_pages: int,
+        credentials: Optional[Dict[str, str]] = None,
+        session_cookies: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Scan a single page"""
+        """Scan a single page
+        
+        Args:
+            url: URL to scan
+            page_num: Current page number
+            total_pages: Total number of pages
+            credentials: Optional credentials for authentication
+            session_cookies: Optional session cookies for authenticated scans
+        """
         progress_pct = (page_num / total_pages) * 100
         logger.info(f"\n{'='*70}")
         logger.info(f"📊 SCANNING PAGE [{page_num}/{total_pages}] ({progress_pct:.1f}%)")
         logger.info(f"{'='*70}")
         logger.info(f"URL: {url}")
         logger.info(f"Mode: {self.scan_mode}")
+        if credentials:
+            logger.info(f"Using authenticated scan (user: {credentials.get('username', 'N/A')})")
         
         result = {
             "url": url,
@@ -76,7 +88,7 @@ class SiteScanOrchestrator:
             if self.scan_mode in ["all", "accessibility"]:
                 try:
                     logger.info("  🔍 Running WCAG accessibility scan...")
-                    wcag_result = await run_wcag_scan(url)
+                    wcag_result = await run_wcag_scan(url, credentials=credentials, session_cookies=session_cookies)
                     result["wcag_results"] = wcag_result
                     violations_count = len(wcag_result.get("violations", []))
                     logger.info(f"  ✓ WCAG scan complete: {violations_count} violations found")
@@ -147,7 +159,9 @@ class SiteScanOrchestrator:
             logger.info(f"└─{'─'*68}┘")
             
             batch_tasks = [
-                self.scan_page(url, idx + i + 1, total_pages)
+                self.scan_page(url, idx + i + 1, total_pages, 
+                              credentials=getattr(self, 'credentials', None),
+                              session_cookies=getattr(self, 'session_cookies', None))
                 for idx, url in enumerate(batch)
             ]
             
@@ -339,7 +353,9 @@ class SiteScanOrchestrator:
             logger.info(f"└─{'─'*68}┘")
             
             batch_tasks = [
-                self.scan_page_accessibility_only(url, idx + i + 1, total_pages)
+                self.scan_page_accessibility_only(url, idx + i + 1, total_pages,
+                                                  credentials=getattr(self, 'credentials', None),
+                                                  session_cookies=getattr(self, 'session_cookies', None))
                 for idx, url in enumerate(batch)
             ]
             
@@ -366,13 +382,25 @@ class SiteScanOrchestrator:
         
         return results
     
-    async def scan_page_accessibility_only(self, url: str, page_num: int, total_pages: int) -> Dict[str, Any]:
-        """Scan a single page for accessibility only (no security)"""
+    async def scan_page_accessibility_only(self, url: str, page_num: int, total_pages: int, 
+                                           credentials: Optional[Dict[str, str]] = None,
+                                           session_cookies: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Scan a single page for accessibility only (no security)
+        
+        Args:
+            url: URL to scan
+            page_num: Current page number
+            total_pages: Total number of pages
+            credentials: Optional credentials for authentication
+            session_cookies: Optional session cookies for authenticated scans
+        """
         progress_pct = (page_num / total_pages) * 100
         logger.info(f"\n{'='*70}")
         logger.info(f"📊 ACCESSIBILITY SCAN [{page_num}/{total_pages}] ({progress_pct:.1f}%)")
         logger.info(f"{'='*70}")
         logger.info(f"URL: {url}")
+        if credentials:
+            logger.info(f"Using authenticated scan (user: {credentials.get('username', 'N/A')})")
         
         result = {
             "url": url,
@@ -383,7 +411,7 @@ class SiteScanOrchestrator:
         
         try:
             logger.info("  🔍 Running WCAG accessibility scan...")
-            wcag_result = await run_wcag_scan(url)
+            wcag_result = await run_wcag_scan(url, credentials=credentials, session_cookies=session_cookies)
             result["wcag_results"] = wcag_result
             violations_count = len(wcag_result.get("violations", []))
             logger.info(f"  ✓ WCAG scan complete: {violations_count} violations found")
@@ -416,20 +444,69 @@ class SiteScanOrchestrator:
         import math
         
         impact_counts = wcag_aggregate.get("impact_counts", {})
+        
+        # Ensure impact_counts is a dict with proper keys
+        if not isinstance(impact_counts, dict):
+            impact_counts = {}
+        
         critical = impact_counts.get("critical", 0)
         serious = impact_counts.get("serious", 0)
         moderate = impact_counts.get("moderate", 0)
         minor = impact_counts.get("minor", 0)
         
-        # Base deduction per violation (diminishing returns for many violations)
-        # Formula balances severity while preventing scores from hitting 0 too easily
-        critical_deduction = min(critical * 2.5, 40)  # Cap at 40 points
-        serious_deduction = min(serious * 1.5, 30)    # Cap at 30 points
-        moderate_deduction = min(moderate * 0.8, 25)  # Cap at 25 points
-        minor_deduction = min(minor * 0.3, 10)        # Cap at 10 points
+        # Log impact counts for debugging
+        logger.debug(f"Calculating accessibility score - Critical: {critical}, Serious: {serious}, Moderate: {moderate}, Minor: {minor}")
         
-        total_deduction = critical_deduction + serious_deduction + moderate_deduction + minor_deduction
-        score = max(0, min(100, 100 - total_deduction))
+        # Calculate accessibility score with improved formula
+        # Uses diminishing returns to handle high violation counts gracefully
+        import math
+        
+        # Calculate base deductions per violation type with diminishing returns
+        # Critical violations: Most severe, 2 points each (with diminishing returns)
+        if critical > 0:
+            critical_deduction = min(critical * 2.0, 40) + (max(0, critical - 20) * 1.0)  # Diminishing returns after 20
+            critical_deduction = min(critical_deduction, 50)
+        else:
+            critical_deduction = 0
+        
+        # Serious violations: 1.2 points each
+        if serious > 0:
+            serious_deduction = min(serious * 1.2, 30) + (max(0, serious - 25) * 0.5)
+            serious_deduction = min(serious_deduction, 35)
+        else:
+            serious_deduction = 0
+        
+        # Moderate violations: 0.3 points each (less weight)
+        moderate_deduction = min(moderate * 0.3, 20)
+        
+        # Minor violations: 0.05 points each (very little weight)
+        minor_deduction = min(minor * 0.05, 5)
+        
+        # Total raw deduction
+        raw_deduction = critical_deduction + serious_deduction + moderate_deduction + minor_deduction
+        
+        # Apply logarithmic scaling to prevent scores from going too low
+        # This ensures even sites with many violations get a meaningful score
+        if raw_deduction > 50:
+            # For high deductions, apply logarithmic compression
+            # This prevents the score from going below 10-15 even with many violations
+            # Use log scaling: factor decreases as raw_deduction increases
+            log_factor = 0.7 - (0.2 * math.log10(raw_deduction / 50))
+            effective_deduction = raw_deduction * max(0.5, log_factor)
+        else:
+            effective_deduction = raw_deduction
+        
+        # Cap maximum deduction at 90 to ensure minimum score of 10
+        effective_deduction = min(effective_deduction, 90)
+        
+        # Calculate final score
+        score = 100 - effective_deduction
+        
+        # Ensure score is between 10 and 100 (never goes below 10 for meaningful reporting)
+        score = max(10, min(100, round(score, 1)))
+        
+        # Log score calculation for debugging
+        logger.info(f"Score calculation - Raw deductions: Critical={critical_deduction:.1f}, Serious={serious_deduction:.1f}, Moderate={moderate_deduction:.1f}, Minor={minor_deduction:.1f}, Raw Total={raw_deduction:.1f}, Effective={effective_deduction:.1f}, Final Score={score}")
         
         return {
             "scan_timestamp": datetime.utcnow().isoformat(),
@@ -488,52 +565,75 @@ class SiteScanOrchestrator:
         logger.info(f"Use Selenium Crawler: {use_selenium_crawler}")
         logger.info(f"{'*'*70}\n")
         
-        # Step 1: Crawl website to discover pages (with caching)
-        logger.info(f"📡 PHASE 1: CRAWLING WEBSITE (WITH CACHE)")
-        logger.info(f"{'─'*70}\n")
-        
-        # Try to get cached crawl result
-        crawl_result = get_cached_crawl(start_url, self.max_pages, self.max_depth)
-        
-        # If not in memory cache, try database cache
-        if not crawl_result and self.db is not None and self.organization_id:
-            crawl_result = await get_crawl_from_db(self.db, start_url, self.organization_id)
-            if crawl_result:
-                # Store in memory cache for faster subsequent access
-                set_cached_crawl(start_url, self.max_pages, self.max_depth, crawl_result)
-        
-        # If still no cache, perform actual crawl
-        if not crawl_result:
-            logger.info("No cached crawl found, performing fresh crawl...")
-            crawl_result = await crawl_website(
-                start_url,
-                max_pages=self.max_pages,
-                max_depth=self.max_depth,
-                use_selenium=use_selenium_crawler
-            )
+        # Step 1: Mode-specific preprocessing
+        # For security-only mode, skip crawling entirely (security is domain-level)
+        if self.scan_mode == "security":
+            # Security-only: Skip crawling - security headers and SSL are domain-level
+            logger.info(f"🔒 SECURITY-ONLY MODE: Skipping page crawl (security is domain-level)")
+            logger.info(f"{'─'*70}\n")
             
-            # Cache the crawl result
-            set_cached_crawl(start_url, self.max_pages, self.max_depth, crawl_result)
-            
-            # Persist to database if available
-            if self.db is not None and self.organization_id:
-                await persist_crawl_to_db(self.db, crawl_result, start_url, self.organization_id)
-        
-        urls = crawl_result.get("urls", [])
-        if not urls:
-            logger.error(f"❌ No pages discovered during crawl")
-            return {
-                "error": "No pages discovered during crawl",
-                "crawl_result": crawl_result,
-                "duration_seconds": time.time() - start_time
+            # Create minimal crawl_result for consistency
+            crawl_result = {
+                "urls": [start_url],  # Only need the start URL for security scan
+                "stats": {
+                    "from_sitemap": 0,
+                    "from_crawl": 0,
+                    "duration_seconds": 0,
+                    "total_discovered": 1,
+                    "total_visited": 1
+                },
+                "start_url": start_url,
+                "note": "Crawl skipped - security scans are domain-level"
             }
-        
-        crawl_stats = crawl_result.get("stats", {})
-        logger.info(f"\n✅ CRAWLING COMPLETE")
-        logger.info(f"   Pages discovered: {len(urls)}")
-        logger.info(f"   From sitemap: {crawl_stats.get('from_sitemap', 0)}")
-        logger.info(f"   From crawling: {crawl_stats.get('from_crawl', 0)}")
-        logger.info(f"   Duration: {crawl_stats.get('duration_seconds', 0):.2f}s\n")
+            urls = [start_url]
+            crawl_stats = crawl_result.get("stats", {})
+        else:
+            # For accessibility and "all" modes, crawl to discover pages
+            logger.info(f"📡 PHASE 1: CRAWLING WEBSITE (WITH CACHE)")
+            logger.info(f"{'─'*70}\n")
+            
+            # Try to get cached crawl result
+            crawl_result = get_cached_crawl(start_url, self.max_pages, self.max_depth)
+            
+            # If not in memory cache, try database cache
+            if not crawl_result and self.db is not None and self.organization_id:
+                crawl_result = await get_crawl_from_db(self.db, start_url, self.organization_id)
+                if crawl_result:
+                    # Store in memory cache for faster subsequent access
+                    set_cached_crawl(start_url, self.max_pages, self.max_depth, crawl_result)
+            
+            # If still no cache, perform actual crawl
+            if not crawl_result:
+                logger.info("No cached crawl found, performing fresh crawl...")
+                crawl_result = await crawl_website(
+                    start_url,
+                    max_pages=self.max_pages,
+                    max_depth=self.max_depth,
+                    use_selenium=use_selenium_crawler
+                )
+                
+                # Cache the crawl result
+                set_cached_crawl(start_url, self.max_pages, self.max_depth, crawl_result)
+                
+                # Persist to database if available
+                if self.db is not None and self.organization_id:
+                    await persist_crawl_to_db(self.db, crawl_result, start_url, self.organization_id)
+            
+            urls = crawl_result.get("urls", [])
+            if not urls:
+                logger.error(f"❌ No pages discovered during crawl")
+                return {
+                    "error": "No pages discovered during crawl",
+                    "crawl_result": crawl_result,
+                    "duration_seconds": time.time() - start_time
+                }
+            
+            crawl_stats = crawl_result.get("stats", {})
+            logger.info(f"\n✅ CRAWLING COMPLETE")
+            logger.info(f"   Pages discovered: {len(urls)}")
+            logger.info(f"   From sitemap: {crawl_stats.get('from_sitemap', 0)}")
+            logger.info(f"   From crawling: {crawl_stats.get('from_crawl', 0)}")
+            logger.info(f"   Duration: {crawl_stats.get('duration_seconds', 0):.2f}s\n")
         
         # Step 2: Mode-specific scanning
         if self.scan_mode == "security":

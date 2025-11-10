@@ -8,14 +8,27 @@ const FormattedResponse = ({ content }) => {
   const preprocessContent = (text) => {
     if (!text) return '';
 
-    let processedText = text
+    // First, preserve code blocks before processing
+    // Match ```lang\ncode``` or ```code``` patterns
+    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+    const codeBlocks = [];
+    let codeBlockIndex = 0;
+    let processedText = text.replace(codeBlockRegex, (match, lang, code) => {
+      const placeholder = `__CODE_BLOCK_${codeBlockIndex}__`;
+      const cleanCode = code.trim();
+      codeBlocks.push({ placeholder, lang: (lang || 'text').toLowerCase(), code: cleanCode });
+      codeBlockIndex++;
+      return placeholder;
+    });
+
+    let processedText2 = processedText
       .replace(/(https?:\/\/[^\s#]+)#([^\s]+)/g, '$1%23$2')
       .replace(/(\d+)\s*\*\s*(\d+)/g, '$1×$2')
       .replace(/\*\.([a-zA-Z]+)/g, '*.$1')
       .replace(/\/\/\s*#/g, '//%23')
       .replace(/\/\*\s*#/g, '/*%23');
 
-    processedText = processedText
+    processedText2 = processedText2
       .replace(/^#+\s*$/gm, '')
       .replace(/\n\s*\n\s*\n+/g, '\n\n')
       .replace(/^#+\s*([^\n]*)\n#+\s*$/gm, '## $1')
@@ -24,7 +37,7 @@ const FormattedResponse = ({ content }) => {
       .replace(/^(#{1,3})\s*([🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯])\s*/gm, '$1 $2 ')
       .replace(/^#{1,3}\s*([🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯]*)\s*$/gm, '');
 
-    processedText = processedText
+    processedText2 = processedText2
       .replace(/###\s+/g, '\n### ')
       .replace(/##\s+/g, '\n## ')
       .replace(/#\s+/g, '\n# ')
@@ -40,18 +53,142 @@ const FormattedResponse = ({ content }) => {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    return processedText;
+    // Restore code blocks with metadata
+    codeBlocks.forEach(({ placeholder, lang, code }) => {
+      processedText2 = processedText2.replace(placeholder, `__CODE_BLOCK_${lang}__${code}__END_CODE_BLOCK__`);
+    });
+
+    return { text: processedText2, codeBlocks };
   };
 
-  const formatBulletPoints = (text) => {
+  const renderCodeBlock = (code, lang = 'text') => {
+    // Escape HTML in code
+    const escapedCode = code
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    return (
+      <Box
+        sx={{
+          my: 2,
+          borderRadius: 1,
+          overflow: 'hidden',
+          border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.02)'
+        }}
+      >
+        {lang !== 'text' && (
+          <Box
+            sx={{
+              px: 2,
+              py: 0.5,
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              color: theme.palette.text.secondary,
+              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+              borderBottom: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`
+            }}
+          >
+            {lang}
+          </Box>
+        )}
+        <Box
+          component="pre"
+          sx={{
+            m: 0,
+            p: 2,
+            fontSize: '0.875rem',
+            fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+            lineHeight: 1.6,
+            overflowX: 'auto',
+            color: theme.palette.text.primary,
+            backgroundColor: 'transparent'
+          }}
+        >
+          <code dangerouslySetInnerHTML={{ __html: escapedCode }} />
+        </Box>
+      </Box>
+    );
+  };
+
+  const formatBulletPoints = (text, codeBlocks = []) => {
     if (!text || !text.trim()) return null;
-    const paragraphs = text
+    
+    // Replace code block placeholders with actual components
+    let processedText = text;
+    codeBlocks.forEach((block, idx) => {
+      const placeholder = `__CODE_BLOCK_${block.lang}__${block.code}__END_CODE_BLOCK__`;
+      const componentId = `code-block-${idx}`;
+      processedText = processedText.replace(placeholder, `__CODE_COMPONENT_${componentId}__`);
+    });
+
+    const paragraphs = processedText
       .split(/\n\n+/)
       .map(p => p.trim())
       .filter(p => p && p.length > 0 && p !== '#' && p !== '##' && p !== '###');
 
     return paragraphs.map((paragraph, index) => {
       if (!paragraph || /^[#\s]*$/.test(paragraph)) return null;
+      
+      // Check for code block placeholders
+      const codeBlockMatch = paragraph.match(/__CODE_COMPONENT_(code-block-\d+)__/);
+      if (codeBlockMatch) {
+        const blockId = codeBlockMatch[1];
+        const blockIndex = parseInt(blockId.replace('code-block-', ''));
+        const block = codeBlocks[blockIndex];
+        if (block) {
+          return (
+            <Box key={index}>
+              {renderCodeBlock(block.code, block.lang)}
+            </Box>
+          );
+        }
+      }
+
+      // Check if paragraph contains code blocks
+      const parts = paragraph.split(/(__CODE_COMPONENT_code-block-\d+__)/);
+      if (parts.length > 1) {
+        return (
+          <Box key={index} sx={{ mb: 2 }}>
+            {parts.map((part, partIndex) => {
+              const codeMatch = part.match(/__CODE_COMPONENT_(code-block-\d+)__/);
+              if (codeMatch) {
+                const blockId = codeMatch[1];
+                const blockIndex = parseInt(blockId.replace('code-block-', ''));
+                const block = codeBlocks[blockIndex];
+                if (block) {
+                  return <Box key={partIndex}>{renderCodeBlock(block.code, block.lang)}</Box>;
+                }
+              }
+              if (part.trim()) {
+                return (
+                  <Typography
+                    key={partIndex}
+                    variant="body1"
+                    component="span"
+                    sx={{
+                      fontFamily: 'Inter, sans-serif',
+                      lineHeight: 1.6,
+                      fontSize: '0.95rem',
+                      display: 'inline',
+                      '& strong': { fontWeight: 600, color: theme.palette.text.primary },
+                      '& em': { fontStyle: 'italic', color: theme.palette.text.secondary },
+                      '& a': { cursor: 'pointer', '&:hover': { opacity: 0.8 } }
+                    }}
+                    dangerouslySetInnerHTML={{ __html: part }}
+                  />
+                );
+              }
+              return null;
+            })}
+          </Box>
+        );
+      }
+
       if (paragraph.includes('* ') || paragraph.includes('- ')) {
         const points = paragraph
           .split(/\n/)
@@ -108,7 +245,7 @@ const FormattedResponse = ({ content }) => {
 
   const formatContent = (text) => {
     if (!text) return null;
-    const processedText = preprocessContent(text);
+    const { text: processedText, codeBlocks } = preprocessContent(text);
     const sections = processedText
       .split(/(?=#{1,3}\s[^#\s]|^[*-]\s|<hr\/>)/m)
       .filter(section => section.trim() && section.trim() !== '#' && section.trim() !== '##' && section.trim() !== '###')
@@ -145,7 +282,7 @@ const FormattedResponse = ({ content }) => {
               </Typography>
               {content && (
                 <Box sx={{ pl: 2 }}>
-                  {formatBulletPoints(content)}
+                  {formatBulletPoints(content, codeBlocks)}
                 </Box>
               )}
             </Box>
@@ -156,7 +293,7 @@ const FormattedResponse = ({ content }) => {
       if (section.trim()) {
         return (
           <Box key={index} sx={{ mb: 2 }}>
-            {formatBulletPoints(section)}
+            {formatBulletPoints(section, codeBlocks)}
           </Box>
         );
       }

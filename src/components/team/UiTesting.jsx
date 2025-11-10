@@ -18,6 +18,14 @@ const UiTesting = () => {
   const [openSSL, setOpenSSL] = useState(false);
   const [openFindings, setOpenFindings] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  
+  // Authentication state
+  const [useAuthentication, setUseAuthentication] = useState(false);
+  const [credentials, setCredentials] = useState({
+    username: '',
+    password: ''
+  });
+  const [authRequired, setAuthRequired] = useState(false);
 
   const apiBase = 'http://localhost:8000/api';
 
@@ -27,11 +35,24 @@ const UiTesting = () => {
       setError('Please enter a valid URL (e.g., https://example.com)');
       return;
     }
+    
+    // Validate credentials if authentication is enabled (skip for security-only mode)
+    if (mode !== 'security' && useAuthentication && (!credentials.username || !credentials.password)) {
+      setError('Please provide both username and password for authenticated scanning');
+      return;
+    }
+    
+    // Disable authentication for security-only mode (security scans are domain-level)
+    if (mode === 'security' && useAuthentication) {
+      setUseAuthentication(false);
+    }
+    
     setError(null);
     setLoading(true);
     setResult(null);
     setProgress(0);
     setShowProgress(true);
+    
     // Increment progress smoothly up to 90% while waiting (slower)
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     progressTimerRef.current = setInterval(() => {
@@ -41,33 +62,62 @@ const UiTesting = () => {
         return Math.min(90, p + increment);
       });
     }, 900);
+    
     try {
-      // Use whole-site scanning endpoint for comprehensive testing
-      const resp = await fetch(`${apiBase}/ui/scan-site`, {
+      let endpoint, requestBody;
+      
+      // Always use the main scan-site endpoint, with optional credentials
+      endpoint = `${apiBase}/ui/scan-site`;
+      requestBody = {
+        url: normalized,
+        scan_mode: mode,
+        max_pages: 50,
+        max_depth: 3,
+        parallel_scans: 3,
+        use_selenium_crawler: false
+      };
+      
+      // Add credentials if authentication is enabled (skip for security-only mode)
+      if (mode !== 'security' && useAuthentication) {
+        requestBody.credentials = {
+          username: credentials.username,
+          password: credentials.password
+        };
+      }
+      
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ 
-          url: normalized, 
-          scan_mode: mode,
-          max_pages: 50,
-          max_depth: 3,
-          parallel_scans: 3,
-          use_selenium_crawler: false
-        }),
+        body: JSON.stringify(requestBody),
       });
+      
       if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(t || 'Scan failed');
+        const errorData = await resp.json().catch(() => ({ detail: 'Scan failed' }));
+        throw new Error(errorData.detail || 'Scan failed');
       }
+      
       const data = await resp.json();
       setResult(data);
+      
+      // Check if authentication was required and successful
+      if (data.authentication_required !== undefined) {
+        setAuthRequired(data.authentication_required);
+      }
+      
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 2500);
+      
       try {
-        localStorage.setItem('uiTesting:lastResult', JSON.stringify({ url: normalized, mode, result: data, ts: Date.now() }));
+        localStorage.setItem('uiTesting:lastResult', JSON.stringify({ 
+          url: normalized, 
+          mode, 
+          result: data, 
+          ts: Date.now(),
+          authenticated: useAuthentication 
+        }));
       } catch (e) {}
     } catch (e) {
       setError(e.message);
@@ -214,12 +264,96 @@ const UiTesting = () => {
             className="md:col-span-3 w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
             aria-invalid={!!error}
           />
-          <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full px-4 py-3 border border-border rounded-lg bg-background">
+          <select 
+            value={mode} 
+            onChange={(e) => {
+              const newMode = e.target.value;
+              setMode(newMode);
+              // Disable authentication when switching to security mode
+              if (newMode === 'security') {
+                setUseAuthentication(false);
+              }
+            }} 
+            className="w-full px-4 py-3 border border-border rounded-lg bg-background"
+          >
             <option value="all">All</option>
             <option value="accessibility">Accessibility</option>
             <option value="security">Security</option>
           </select>
         </div>
+        {mode === 'security' && (
+          <p className="text-xs text-muted-foreground -mt-2">
+            ℹ️ Security scans are domain-level and don't require authentication
+          </p>
+        )}
+        
+        {/* Authentication Section - Only show for accessibility and "all" modes */}
+        {mode !== 'security' && (
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="useAuthentication"
+                checked={useAuthentication}
+                onChange={(e) => setUseAuthentication(e.target.checked)}
+                className="rounded border-border"
+              />
+              <label htmlFor="useAuthentication" className="text-sm font-medium text-foreground">
+                Enable authentication for login-protected pages
+              </label>
+            </div>
+            
+            {useAuthentication && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3"
+            >
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <h4 className="font-semibold text-yellow-800 dark:text-yellow-200">
+                  Authentication Required
+                </h4>
+              </div>
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                The website requires login credentials to access protected areas. 
+                Provide your credentials below to scan authenticated pages.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Username/Email
+                  </label>
+                  <input
+                    type="text"
+                    value={credentials.username}
+                    onChange={(e) => setCredentials({...credentials, username: e.target.value})}
+                    placeholder="Enter your username or email"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={credentials.password}
+                    onChange={(e) => setCredentials({...credentials, password: e.target.value})}
+                    placeholder="Enter your password"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-yellow-600 dark:text-yellow-400">
+                <strong>Note:</strong> Credentials are only used during the scan and are not stored. 
+                The system will automatically detect login pages and authenticate as needed.
+              </div>
+            </motion.div>
+            )}
+          </div>
+        )}
         {showProgress && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -259,6 +393,45 @@ const UiTesting = () => {
 
       {result && (
         <div className="space-y-6">
+          {/* Authentication status banner */}
+          {(result.authentication_required !== undefined || authRequired) && (
+            <div className={`p-4 rounded-lg border ${
+              result.authentication_successful 
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+            }`}>
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  result.authentication_successful ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <h4 className={`font-semibold ${
+                  result.authentication_successful 
+                    ? 'text-green-900 dark:text-green-100' 
+                    : 'text-red-900 dark:text-red-100'
+                }`}>
+                  {result.authentication_required ? 'Authentication Required' : 'No Authentication Required'}
+                </h4>
+              </div>
+              <p className={`text-sm mt-1 ${
+                result.authentication_successful 
+                  ? 'text-green-700 dark:text-green-300' 
+                  : 'text-red-700 dark:text-red-300'
+              }`}>
+                {result.authentication_required 
+                  ? (result.authentication_successful 
+                      ? 'Successfully authenticated and scanned protected pages' 
+                      : 'Authentication failed - please check your credentials')
+                  : 'Website does not require authentication for scanning'
+                }
+              </p>
+              {result.session_used && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  Session cookies were used to maintain authentication during the scan
+                </p>
+              )}
+            </div>
+          )}
+          
           {/* Site scan summary banner */}
           {isSiteScan && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">

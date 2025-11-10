@@ -1,0 +1,74 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test.js
+*.test.tsx
+*.spec.js
+*.spec.tsx
+test/
+tests/
+__tests__/
+
+# Documentation
+*.md
+!README.md
+
+# Data files
+*.csv
+*.json
+!package.json
+!package-lock.json
+
+# Cache and temporary files
+.cache/
+*.log
+*.tmp
+
+
+# Downloads and uploads
+downloads/
+uploads/
+
+# Images (except necessary ones)
+*.png
+*.jpg
+*.jpeg
+*.gif
+!public/**/*.png
+!public/**/*.jpg
+
+# Azure test folder
+Test Azure/
+
+# UI Testing folder (if not needed in production)
+UI Testing/
+

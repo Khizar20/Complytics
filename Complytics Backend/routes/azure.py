@@ -1,16 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from utils.security import get_current_user
 from schemas.users import UserInDB
 
 import msal
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from db import database
 import base64
 import os
 import json
+import csv
+import io
+from bson import ObjectId
 
 
 router = APIRouter()
@@ -713,9 +717,32 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
             }
 
         print("Successfully completed Azure config fetch")
+        
+        # Log the configuration fetch
+        await _log_azure_config_fetch(
+            user_id=current_user.id,
+            user_email=current_user.email,
+            organization_id=current_user.organization_id,
+            change_type="config_fetch",
+            status="success"
+        )
+        
         return config_data
         
     except Exception as e:
+        # Log the failed fetch
+        try:
+            await _log_azure_config_fetch(
+                user_id=current_user.id,
+                user_email=current_user.email,
+                organization_id=current_user.organization_id,
+                change_type="config_fetch",
+                status="failed",
+                error_message=str(e)
+            )
+        except:
+            pass  # Don't fail if logging fails
+        
         print(f"=== UNEXPECTED ERROR ===")
         print(f"Error: {str(e)}")
         print(f"Error type: {type(e).__name__}")
@@ -724,6 +751,316 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch Azure AD configuration: {str(e)}",
+        )
+
+
+async def _log_azure_config_fetch(
+    user_id: str,
+    user_email: str,
+    organization_id: str,
+    change_type: str,
+    status: str,
+    error_message: Optional[str] = None,
+    details: Optional[dict] = None
+):
+    """Log Azure AD configuration fetch or change."""
+    log_entry = {
+        "user_id": user_id,
+        "user_email": user_email,
+        "organization_id": organization_id,
+        "change_type": change_type,  # "config_fetch", "config_update", "connection", etc.
+        "status": status,  # "success", "failed"
+        "timestamp": datetime.utcnow(),
+        "error_message": error_message,
+        "details": details or {}
+    }
+    
+    try:
+        await database.db.azure_config_logs.insert_one(log_entry)
+    except Exception as e:
+        print(f"Failed to log Azure config change: {str(e)}")
+
+
+@router.get("/logs")
+async def get_azure_config_logs(
+    current_user: UserInDB = Depends(get_current_user),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    user_email: Optional[str] = Query(None, description="Filter by user email"),
+    change_type: Optional[str] = Query(None, description="Filter by change type"),
+    status_filter: Optional[str] = Query(None, description="Filter by status"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of logs to return"),
+    skip: int = Query(0, ge=0, description="Number of logs to skip")
+):
+    """Retrieve Azure AD configuration change logs with filtering."""
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization",
+        )
+    
+    # Build query filter
+    query = {"organization_id": current_user.organization_id}
+    
+    # Date filtering
+    if start_date or end_date:
+        date_filter = {}
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                date_filter["$gte"] = start_dt
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                date_filter["$lt"] = end_dt
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+        if date_filter:
+            query["timestamp"] = date_filter
+    
+    # User filtering
+    if user_email:
+        query["user_email"] = {"$regex": user_email, "$options": "i"}
+    
+    # Change type filtering
+    if change_type:
+        query["change_type"] = change_type
+    
+    # Status filtering
+    if status_filter:
+        query["status"] = status_filter
+    
+    try:
+        # Fetch logs
+        cursor = database.db.azure_config_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit)
+        logs = await cursor.to_list(length=limit)
+        
+        # Get total count
+        total_count = await database.db.azure_config_logs.count_documents(query)
+        
+        # Convert ObjectId to string
+        for log in logs:
+            log["_id"] = str(log["_id"])
+            log["timestamp"] = log["timestamp"].isoformat() if isinstance(log["timestamp"], datetime) else log["timestamp"]
+        
+        return {
+            "logs": logs,
+            "total": total_count,
+            "skip": skip,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve logs: {str(e)}"
+        )
+
+
+@router.get("/logs/export/csv")
+async def export_azure_config_logs_csv(
+    current_user: UserInDB = Depends(get_current_user),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    user_email: Optional[str] = Query(None, description="Filter by user email"),
+    change_type: Optional[str] = Query(None, description="Filter by change type"),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Export Azure AD configuration change logs as CSV."""
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization",
+        )
+    
+    # Build query filter (same as get_azure_config_logs)
+    query = {"organization_id": current_user.organization_id}
+    
+    if start_date or end_date:
+        date_filter = {}
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            date_filter["$gte"] = start_dt
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            date_filter["$lt"] = end_dt
+        if date_filter:
+            query["timestamp"] = date_filter
+    
+    if user_email:
+        query["user_email"] = {"$regex": user_email, "$options": "i"}
+    if change_type:
+        query["change_type"] = change_type
+    if status_filter:
+        query["status"] = status_filter
+    
+    try:
+        cursor = database.db.azure_config_logs.find(query).sort("timestamp", -1)
+        logs = await cursor.to_list(length=None)
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            "Timestamp", "User Email", "Change Type", "Status", 
+            "Error Message", "Details"
+        ])
+        
+        # Write data
+        for log in logs:
+            timestamp = log["timestamp"]
+            if isinstance(timestamp, datetime):
+                timestamp = timestamp.isoformat()
+            
+            writer.writerow([
+                timestamp,
+                log.get("user_email", ""),
+                log.get("change_type", ""),
+                log.get("status", ""),
+                log.get("error_message", ""),
+                json.dumps(log.get("details", {}))
+            ])
+        
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=azure_config_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export logs: {str(e)}"
+        )
+
+
+@router.get("/logs/export/pdf")
+async def export_azure_config_logs_pdf(
+    current_user: UserInDB = Depends(get_current_user),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    user_email: Optional[str] = Query(None, description="Filter by user email"),
+    change_type: Optional[str] = Query(None, description="Filter by change type"),
+    status_filter: Optional[str] = Query(None, description="Filter by status")
+):
+    """Export Azure AD configuration change logs as PDF."""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import inch
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PDF export requires reportlab. Install with: pip install reportlab"
+        )
+    
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization",
+        )
+    
+    # Build query filter (same as get_azure_config_logs)
+    query = {"organization_id": current_user.organization_id}
+    
+    if start_date or end_date:
+        date_filter = {}
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            date_filter["$gte"] = start_dt
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            date_filter["$lt"] = end_dt
+        if date_filter:
+            query["timestamp"] = date_filter
+    
+    if user_email:
+        query["user_email"] = {"$regex": user_email, "$options": "i"}
+    if change_type:
+        query["change_type"] = change_type
+    if status_filter:
+        query["status"] = status_filter
+    
+    try:
+        cursor = database.db.azure_config_logs.find(query).sort("timestamp", -1)
+        logs = await cursor.to_list(length=None)
+        
+        # Create PDF
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Title
+        title = Paragraph("Azure AD Configuration Change Logs", styles['Title'])
+        story.append(title)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Summary
+        summary_text = f"Total Logs: {len(logs)}<br/>Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        summary = Paragraph(summary_text, styles['Normal'])
+        story.append(summary)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Table data
+        table_data = [["Timestamp", "User", "Change Type", "Status", "Error"]]
+        
+        for log in logs:
+            timestamp = log["timestamp"]
+            if isinstance(timestamp, datetime):
+                timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            
+            table_data.append([
+                timestamp,
+                log.get("user_email", ""),
+                log.get("change_type", ""),
+                log.get("status", ""),
+                log.get("error_message", "")[:50] if log.get("error_message") else ""
+            ])
+        
+        # Create table
+        table = Table(table_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+        ]))
+        
+        story.append(table)
+        doc.build(story)
+        
+        buffer.seek(0)
+        return Response(
+            content=buffer.read(),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=azure_config_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export logs as PDF: {str(e)}"
         )
 
 

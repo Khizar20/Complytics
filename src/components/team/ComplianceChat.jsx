@@ -879,12 +879,32 @@ const ComplianceChat = () => {
     }
 
     try {
-      const response = await fetchWithRetry('http://localhost:8000/api/compliance/upload-document', {
+      const response = await fetch('http://localhost:8000/api/compliance/upload-document', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
         body: formData
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        // Handle document type rejection
+        if (data.detail && data.detail.type === 'INVALID_DOCUMENT_TYPE') {
+          // Display user-friendly error in chat
+          const errorMessage = {
+            type: 'response',
+            content: data.detail.message || 'This document type is not supported.',
+            timestamp: new Date(),
+            isTyping: false
+          };
+          setMessages(prev => [...prev, errorMessage]);
+          scrollToBottom();
+          return;
+        }
+        throw new Error(data.detail?.message || 'Upload failed');
+      }
 
       // Store pending attachment to be sent with the next user message
       if (data && data.attachment) {
@@ -892,7 +912,7 @@ const ComplianceChat = () => {
       }
     } catch (error) {
       console.error('Error uploading document:', error);
-      alert('Error uploading document. Please try again.');
+      alert(error.message || 'Error uploading document. Please try again.');
     } finally {
       setUploading(false);
     }

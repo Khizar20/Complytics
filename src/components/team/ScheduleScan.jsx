@@ -17,6 +17,11 @@ const ScheduleScan = () => {
   const [modalError, setModalError] = useState(null);
   const [modalSubmitting, setModalSubmitting] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  
+  // New state for URL selection
+  const [usePreviousUrl, setUsePreviousUrl] = useState(true);
+  const [scheduleUrl, setScheduleUrl] = useState('');
+  const [previousUrl, setPreviousUrl] = useState('');
 
   const fetchSchedules = async () => {
     try {
@@ -40,6 +45,22 @@ const ScheduleScan = () => {
     if (authToken) fetchSchedules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
+
+  // Load previous URL from localStorage on mount
+  useEffect(() => {
+    try {
+      const lastResult = localStorage.getItem('uiTesting:lastResult');
+      if (lastResult) {
+        const parsed = JSON.parse(lastResult);
+        if (parsed.url) {
+          setPreviousUrl(parsed.url);
+          setScheduleUrl(parsed.url); // Set as default if using previous URL
+        }
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, []);
 
   const toIsoUtc = (localValue) => {
     // localValue like '2025-10-01T14:30'
@@ -65,6 +86,16 @@ const ScheduleScan = () => {
       setError('Please select a date and time');
       return;
     }
+    
+    // Validate URL if not using previous URL
+    if (!usePreviousUrl) {
+      const normalized = normalizeUrl(scheduleUrl);
+      if (!normalized) {
+        setError('Please enter a valid URL (e.g., https://example.com)');
+        return;
+      }
+    }
+    
     // Prevent scheduling in the past on the client as well
     try {
       const selected = new Date(runAt).getTime();
@@ -81,18 +112,31 @@ const ScheduleScan = () => {
     setLoading(true);
     try {
       const run_at_iso = toIsoUtc(runAt);
+      const requestBody = { run_at_iso };
+      
+      // Include URL if not using previous URL
+      if (!usePreviousUrl && scheduleUrl) {
+        const normalized = normalizeUrl(scheduleUrl);
+        if (normalized) {
+          requestBody.url = normalized;
+        }
+      }
+      
       const resp = await fetch(`${apiBase}/ui/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ run_at_iso }),
+        body: JSON.stringify(requestBody),
       });
       if (!resp.ok) throw new Error(await resp.text() || 'Failed to schedule scan');
       await resp.json();
       setSuccess('Whole-site scan scheduled successfully. You will receive an email after it completes.');
       setRunAt('');
+      if (!usePreviousUrl) {
+        setScheduleUrl('');
+      }
       fetchSchedules();
     } catch (e) {
       setError(e.message);
@@ -229,7 +273,7 @@ const ScheduleScan = () => {
           <FaCalendarAlt className="text-2xl text-primary" />
           <div>
             <h3 className="text-lg font-semibold">Schedule a One-Time Whole-Site Scan</h3>
-            <p className="text-muted-foreground">Runs comprehensive website testing on the selected date/time (uses last scanned URL)</p>
+            <p className="text-muted-foreground">Runs comprehensive website testing on the selected date/time</p>
           </div>
         </div>
 
@@ -239,6 +283,57 @@ const ScheduleScan = () => {
         {success && (
           <div className="mb-3 p-3 rounded bg-green-50 text-green-700 text-sm">{success}</div>
         )}
+
+        {/* URL Selection Section */}
+        <div className="mb-4 space-y-3">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="usePreviousUrl"
+              checked={usePreviousUrl}
+              onChange={(e) => {
+                setUsePreviousUrl(e.target.checked);
+                if (e.target.checked && previousUrl) {
+                  setScheduleUrl(previousUrl);
+                } else if (!e.target.checked) {
+                  setScheduleUrl('');
+                }
+              }}
+              className="rounded border-border"
+            />
+            <label htmlFor="usePreviousUrl" className="text-sm font-medium text-foreground">
+              Use previously scanned website
+            </label>
+          </div>
+          
+          {usePreviousUrl ? (
+            previousUrl ? (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">Previous Website:</p>
+                <p className="text-sm text-blue-800 dark:text-blue-200 break-all">{previousUrl}</p>
+              </div>
+            ) : (
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  No previous website found. Please uncheck the option above and enter a URL manually.
+                </p>
+              </div>
+            )
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Website URL
+              </label>
+              <input
+                type="text"
+                value={scheduleUrl}
+                onChange={(e) => setScheduleUrl(e.target.value)}
+                placeholder="https://example.com"
+                className="w-full px-3 py-2 border border-border rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div className="md:col-span-2">
@@ -285,9 +380,14 @@ const ScheduleScan = () => {
           )}
           {schedules.map((s) => (
             <div key={s._id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-              <div>
+              <div className="flex-1">
                 <div className="text-sm font-medium">{formatUtc(s.scheduled_for)}</div>
                 <div className="text-xs text-muted-foreground">Status: {s.status}</div>
+                {s.url && (
+                  <div className="text-xs text-muted-foreground mt-1 break-all">
+                    URL: {s.url}
+                  </div>
+                )}
               </div>
               {s.status === 'scheduled' && (
                 <button

@@ -14,7 +14,7 @@ def analyze_refined_intent(query: str, conversation_context: str = "", has_uploa
     
     Returns:
         {
-            "intent": str,  # GENERAL_QA_SHORT, DOC_SUMMARY, DOC_ANALYSIS_TARGETED, etc.
+            "intent": str,  # USE_MAIN_EXPERTS, GENERAL_QA_SHORT, DOC_SUMMARY, etc.
             "sub_intent": str,
             "framework": str,  # Detected framework or "general"
             "requires_framework": bool,
@@ -33,39 +33,49 @@ Context: "{conversation_context}"
 Has Document: {has_uploaded_doc}
 
 CRITICAL RULES:
-1. If the core question is about personal life, food, games, entertainment, accidents, weather, etc. → classify as NON_COMPLIANCE even if compliance keywords are mentioned superficially
-2. "accident" in personal context (car accident, personal injury) → NON_COMPLIANCE
-3. "what game should I play" even with "according to GDPR" → NON_COMPLIANCE (user trying to game the system)
-4. "what should I eat" even with compliance words → NON_COMPLIANCE
-5. Only classify as SCENARIO_GUIDANCE if it's genuinely about organizational/business compliance scenarios
+1. DEFAULT to USE_MAIN_EXPERTS for most compliance questions (regulations, requirements, controls, standards)
+2. Questions about SPECIFIC regulations/requirements/articles → USE_MAIN_EXPERTS (NOT scenario guidance)
+3. "What are the [framework] requirements for [X]?" → USE_MAIN_EXPERTS
+4. "Explain [specific regulation/control/article]" → USE_MAIN_EXPERTS
+5. Only use SCENARIO_GUIDANCE for step-by-step implementation guides or "how to achieve compliance"
 
-INTENTS:
-1. GENERAL_QA_SHORT - Brief factual questions ("what is GDPR", "tell shortly", "explain briefly")
-2. DOC_SUMMARY - Summarize/overview uploaded document ("tell me about this", "summarize this doc") - ONLY if Has Document: True
-3. DOC_ANALYSIS_TARGETED - Analyze document WITH framework ("analyze for GDPR", "check CCPA compliance") - ONLY if Has Document: True
-4. DOC_ANALYSIS_CLARIFY - Analyze but NO framework ("analyze this", "review my policy") - ONLY if Has Document: True
-5. DOC_ANALYSIS_NO_UPLOAD - User asks to analyze a document but Has Document: False ("check the doc i gave you", "analyze this document", "review this file") → tell user to upload first
-6. DOC_GENERATION - Generate new document ("create privacy policy", "make terms for GDPR")
-7. SCENARIO_GUIDANCE - ONLY for business/organizational compliance scenarios ("how to become HIPAA compliant as a company", "guide our organization through SOC 2")
-8. NON_COMPLIANCE - Personal questions, life advice, entertainment, food, games, personal accidents, etc.
+INTENTS (in priority order):
+1. USE_MAIN_EXPERTS - Default for compliance questions about regulations, requirements, controls, articles, standards
+   Examples:
+   - "What are GDPR breach notification requirements?" → USE_MAIN_EXPERTS
+   - "Explain SOC 2 audit requirements" → USE_MAIN_EXPERTS
+   - "What does GDPR Article 33 say?" → USE_MAIN_EXPERTS
+   - "What are PCI DSS firewall requirements?" → USE_MAIN_EXPERTS
+   - "How do I configure Azure AD MFA?" → USE_MAIN_EXPERTS
+   - "What is ISO 27001?" → USE_MAIN_EXPERTS
 
-EXAMPLES OF DOC_ANALYSIS_NO_UPLOAD (when Has Document: False):
-- "check the doc that i just gave you" → DOC_ANALYSIS_NO_UPLOAD
-- "analyze this document" → DOC_ANALYSIS_NO_UPLOAD
-- "review this file" → DOC_ANALYSIS_NO_UPLOAD
-- "tell me about the document i uploaded" → DOC_ANALYSIS_NO_UPLOAD
-- "check this" → DOC_ANALYSIS_NO_UPLOAD (if referring to a document)
+2. GENERAL_QA_SHORT - ONLY if explicitly asking for brief/short answers ("tell briefly", "in short", "quick answer")
 
-EXAMPLES OF NON_COMPLIANCE:
-- "I got in an accident today what should I do" → NON_COMPLIANCE (personal accident, not data breach)
-- "what video game should I play according to GDPR" → NON_COMPLIANCE (personal entertainment with fake compliance framing)
-- "what should I eat today" → NON_COMPLIANCE
-- "tell me a joke about GDPR" → NON_COMPLIANCE
+3. DOC_SUMMARY - Summarize uploaded document - ONLY if Has Document: True
 
-EXAMPLES OF SCENARIO_GUIDANCE:
-- "How should our company handle a data breach under GDPR?" → SCENARIO_GUIDANCE
-- "Guide us through HIPAA compliance for our healthcare app" → SCENARIO_GUIDANCE
-- "What steps should we take to achieve SOC 2 certification?" → SCENARIO_GUIDANCE
+4. DOC_ANALYSIS_TARGETED - Analyze document WITH framework - ONLY if Has Document: True
+
+5. DOC_ANALYSIS_CLARIFY - Analyze but NO framework - ONLY if Has Document: True
+
+6. DOC_ANALYSIS_NO_UPLOAD - User asks to analyze document but Has Document: False
+
+7. DOC_GENERATION - Generate new document ("create privacy policy", "generate terms")
+
+8. SCENARIO_GUIDANCE - ONLY for step-by-step implementation guides or certification paths
+   Examples:
+   - "How should we achieve SOC 2 certification?" → SCENARIO_GUIDANCE
+   - "Guide us through implementing HIPAA compliance" → SCENARIO_GUIDANCE
+   - "What steps to become ISO 27001 certified?" → SCENARIO_GUIDANCE
+   - "What compliance framework should I choose?" → SCENARIO_GUIDANCE
+
+9. NON_COMPLIANCE - Personal questions, entertainment, food, games, etc.
+
+EXAMPLES THAT SHOULD BE USE_MAIN_EXPERTS (NOT SCENARIO_GUIDANCE):
+- "What are the GDPR data breach notification requirements?" → USE_MAIN_EXPERTS
+- "Explain CCPA consumer rights" → USE_MAIN_EXPERTS
+- "What are SOC 2 control requirements?" → USE_MAIN_EXPERTS
+- "What does NIST 800-53 say about MFA?" → USE_MAIN_EXPERTS
+- "What are PCI DSS requirements?" → USE_MAIN_EXPERTS
 
 FRAMEWORK DETECTION:
 Extract if mentioned: GDPR, CCPA, HIPAA, ISO 27001, SOC 2, NIST, PCI DSS
@@ -132,6 +142,12 @@ def privacy_policy_expert_extractive(document_text: str, framework: str = "GDPR"
             "framework": str
         }
     """
+    print("\n" + "="*80)
+    print(f"📋 PRIVACY POLICY EXTRACTIVE EXPERT TRIGGERED (Framework: {framework})")
+    print(f"Document length: {len(document_text)} characters")
+    print("="*80 + "\n")
+    logger.info(f"📋 PRIVACY POLICY EXTRACTIVE EXPERT triggered for framework: {framework}")
+    
     from compliance_rag import rate_limited_generate_content_optimized
     
     try:
@@ -203,6 +219,12 @@ def terms_expert_extractive(document_text: str, framework: str = "general") -> D
     """
     Extractive terms & conditions expert - outputs structured findings.
     """
+    print("\n" + "="*80)
+    print(f"📜 TERMS & CONDITIONS EXTRACTIVE EXPERT TRIGGERED (Framework: {framework})")
+    print(f"Document length: {len(document_text)} characters")
+    print("="*80 + "\n")
+    logger.info(f"📜 TERMS EXTRACTIVE EXPERT triggered for framework: {framework}")
+    
     from compliance_rag import rate_limited_generate_content_optimized
     
     try:
@@ -271,6 +293,12 @@ def scenario_guidance_expert(scenario: str, framework: str = "GDPR") -> str:
     """
     Scenario guidance expert - provides step-by-step compliance guidance.
     """
+    print("\n" + "="*80)
+    print(f"🎯 SCENARIO GUIDANCE EXPERT TRIGGERED (Framework: {framework})")
+    print(f"Scenario: {scenario[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"🎯 SCENARIO GUIDANCE EXPERT triggered for framework: {framework}")
+    
     from compliance_rag import rate_limited_generate_content_optimized
     
     try:
@@ -307,6 +335,12 @@ def short_qa_answer(question: str) -> str:
     """
     Short QA mode - 2-4 sentence answers for general compliance questions.
     """
+    print("\n" + "="*80)
+    print("💬 SHORT QA EXPERT TRIGGERED")
+    print(f"Question: {question[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"💬 SHORT QA EXPERT triggered for question: {question[:100]}")
+    
     from compliance_rag import rate_limited_generate_content
     
     try:
@@ -366,4 +400,265 @@ def format_extractive_findings(analysis_result: Dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Format findings failed: {e}")
         return "Error formatting analysis results."
+
+
+def document_compliance_expert(document_text: str, document_type: str, framework: str = "GDPR") -> Dict[str, Any]:
+    """
+    Specialized expert for comprehensive document analysis and generation.
+    Analyzes a document against a compliance framework, identifies gaps, and can generate corrected version.
+    
+    Args:
+        document_text: The document content to analyze
+        document_type: Type of document (privacy_policy, terms_and_conditions, general_documentation)
+        framework: Compliance framework to analyze against (GDPR, CCPA, HIPAA, etc.)
+    
+    Returns:
+        Dict with analysis results, issues, and corrected document
+    """
+    from compliance_rag import rate_limited_generate_content_optimized
+    
+    print("\n" + "="*80)
+    print(f"📋 DOCUMENT COMPLIANCE EXPERT TRIGGERED")
+    print(f"Document Type: {document_type}")
+    print(f"Framework: {framework}")
+    print(f"Document Length: {len(document_text)} characters")
+    print("="*80 + "\n")
+    logger.info(f"📋 DOCUMENT COMPLIANCE EXPERT triggered for {document_type} against {framework}")
+    
+    try:
+        # Step 1: Comprehensive Analysis
+        analysis_prompt = f"""
+You are an expert compliance analyst specializing in {framework} compliance for {document_type.replace('_', ' ')} documents.
+
+**DOCUMENT TO ANALYZE:**
+{document_text[:4000]}
+
+**YOUR TASK:**
+Perform a comprehensive {framework} compliance analysis of this {document_type.replace('_', ' ')} document.
+
+**ANALYSIS REQUIREMENTS:**
+
+1. **Identify ALL Compliance Gaps:**
+   - Missing clauses required by {framework}
+   - Incomplete or vague language
+   - Non-compliant statements
+   - Missing legal disclosures
+   - Inadequate user rights descriptions
+
+2. **For EACH Issue Found:**
+   - Quote the exact problematic text (or note "MISSING" if clause doesn't exist)
+   - Cite the specific {framework} requirement violated
+   - Explain why it's non-compliant
+   - Rate severity: CRITICAL, HIGH, MEDIUM, or LOW
+   - Provide specific correction needed
+
+3. **Identify Compliant Sections:**
+   - List what the document does well
+   - Which {framework} requirements are properly addressed
+
+**FORMAT YOUR RESPONSE AS JSON:**
+{{
+  "overall_compliance_score": 0-100,
+  "summary": "Brief overview of compliance status",
+  "critical_issues": [
+    {{
+      "issue": "Description",
+      "missing_or_incorrect": "Quote or 'MISSING'",
+      "framework_requirement": "{framework} Article/Section",
+      "explanation": "Why non-compliant",
+      "severity": "CRITICAL",
+      "correction_needed": "Specific text/clause needed"
+    }}
+  ],
+  "high_issues": [...same structure...],
+  "medium_issues": [...same structure...],
+  "low_issues": [...same structure...],
+  "compliant_areas": ["Area 1", "Area 2", ...],
+  "recommendations": ["Recommendation 1", "Recommendation 2", ...]
+}}
+
+Provide thorough, actionable analysis. Be specific with citations and corrections.
+"""
+        
+        analysis_response = rate_limited_generate_content_optimized(analysis_prompt, temperature=0.1, max_tokens=4000)
+        
+        # Parse analysis
+        analysis_data = {}
+        try:
+            cleaned = analysis_response.strip()
+            if cleaned.startswith('```'):
+                lines = cleaned.split('\n')
+                cleaned = '\n'.join([l for l in lines if not l.strip().startswith('```')])
+            analysis_data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse analysis JSON, using raw response")
+            analysis_data = {
+                "overall_compliance_score": 50,
+                "summary": analysis_response[:500],
+                "critical_issues": [],
+                "high_issues": [],
+                "medium_issues": [],
+                "low_issues": [],
+                "compliant_areas": [],
+                "recommendations": []
+            }
+        
+        # Step 2: Generate Corrected Document
+        correction_prompt = f"""
+You are an expert legal compliance writer specializing in {framework}-compliant {document_type.replace('_', ' ')} documents.
+
+**ORIGINAL DOCUMENT:**
+{document_text[:3000]}
+
+**IDENTIFIED ISSUES:**
+{json.dumps(analysis_data.get('critical_issues', []), indent=2)[:1000]}
+{json.dumps(analysis_data.get('high_issues', []), indent=2)[:1000]}
+
+**YOUR TASK:**
+Generate a FULLY COMPLIANT {framework} {document_type.replace('_', ' ')} document that:
+
+1. **Fixes ALL identified issues**
+2. **Includes ALL required {framework} clauses:**
+   - For Privacy Policies: Data collection, usage, sharing, retention, user rights, security measures, cookies, international transfers, contact information
+   - For Terms & Conditions: Service description, user obligations, liability limitations, dispute resolution, termination, governing law
+   - For Documentation: Security controls, data handling, compliance measures, audit trails
+
+3. **Uses Professional Legal Language:**
+   - Clear and precise
+   - Legally enforceable
+   - User-friendly yet comprehensive
+
+4. **Maintains Original Document Structure** (if reasonable) but enhance content
+
+5. **Add Proper Sections and Headings**
+
+**IMPORTANT:**
+- Generate the COMPLETE document, not just snippets
+- Include placeholder text like [Company Name], [Date], [Contact Email] where specific details are needed
+- Make it production-ready
+- Ensure FULL {framework} compliance
+
+Generate the corrected document now:
+"""
+        
+        corrected_document = rate_limited_generate_content_optimized(correction_prompt, temperature=0.2, max_tokens=4000)
+        
+        logger.info(f"Document compliance analysis completed. Score: {analysis_data.get('overall_compliance_score', 'N/A')}")
+        
+        return {
+            "analysis": analysis_data,
+            "corrected_document": corrected_document,
+            "framework": framework,
+            "document_type": document_type,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Document compliance expert failed: {e}", exc_info=True)
+        return {
+            "analysis": {
+                "overall_compliance_score": 0,
+                "summary": f"Analysis failed: {str(e)}",
+                "critical_issues": [],
+                "high_issues": [],
+                "medium_issues": [],
+                "low_issues": [],
+                "compliant_areas": [],
+                "recommendations": []
+            },
+            "corrected_document": "Error generating corrected document.",
+            "framework": framework,
+            "document_type": document_type,
+            "error": str(e)
+        }
+
+
+def format_document_compliance_response(result: Dict[str, Any]) -> str:
+    """
+    Format the document compliance analysis and corrected document into a user-friendly response.
+    """
+    try:
+        analysis = result.get("analysis", {})
+        corrected_doc = result.get("corrected_document", "")
+        framework = result.get("framework", "")
+        doc_type = result.get("document_type", "").replace('_', ' ').title()
+        
+        # Build response
+        response = f"# {framework} Compliance Analysis: {doc_type}\n\n"
+        
+        # Compliance score
+        score = analysis.get("overall_compliance_score", 0)
+        score_emoji = "🔴" if score < 40 else "🟡" if score < 70 else "🟢"
+        response += f"## {score_emoji} Overall Compliance Score: {score}/100\n\n"
+        
+        # Summary
+        response += f"**Summary:** {analysis.get('summary', 'No summary available.')}\n\n"
+        
+        # Critical Issues
+        critical = analysis.get("critical_issues", [])
+        if critical:
+            response += f"## 🔴 Critical Issues ({len(critical)})\n\n"
+            for i, issue in enumerate(critical, 1):
+                response += f"### {i}. {issue.get('issue', 'Issue')}\n"
+                response += f"- **Current Text:** {issue.get('missing_or_incorrect', 'N/A')}\n"
+                response += f"- **{framework} Requirement:** {issue.get('framework_requirement', 'N/A')}\n"
+                response += f"- **Why Non-Compliant:** {issue.get('explanation', 'N/A')}\n"
+                response += f"- **Fix Needed:** {issue.get('correction_needed', 'N/A')}\n\n"
+        
+        # High Issues
+        high = analysis.get("high_issues", [])
+        if high:
+            response += f"## 🟠 High Priority Issues ({len(high)})\n\n"
+            for i, issue in enumerate(high, 1):
+                response += f"### {i}. {issue.get('issue', 'Issue')}\n"
+                response += f"- **{framework} Requirement:** {issue.get('framework_requirement', 'N/A')}\n"
+                response += f"- **Fix Needed:** {issue.get('correction_needed', 'N/A')}\n\n"
+        
+        # Medium and Low Issues (summarized)
+        medium = analysis.get("medium_issues", [])
+        low = analysis.get("low_issues", [])
+        if medium or low:
+            response += f"## 🟡 Other Issues\n"
+            response += f"- **Medium Priority:** {len(medium)} issues\n"
+            response += f"- **Low Priority:** {len(low)} issues\n\n"
+        
+        # Compliant Areas
+        compliant = analysis.get("compliant_areas", [])
+        if compliant:
+            response += f"## ✅ Compliant Areas\n\n"
+            for area in compliant[:5]:  # Show top 5
+                response += f"- {area}\n"
+            if len(compliant) > 5:
+                response += f"- ...and {len(compliant) - 5} more\n"
+            response += "\n"
+        
+        # Recommendations
+        recommendations = analysis.get("recommendations", [])
+        if recommendations:
+            response += f"## 💡 Recommendations\n\n"
+            for rec in recommendations[:3]:  # Show top 3
+                response += f"- {rec}\n"
+            response += "\n"
+        
+        # Divider before corrected document
+        response += "\n" + "="*80 + "\n\n"
+        
+        # Corrected Document Section
+        response += f"# ✅ Corrected {framework}-Compliant {doc_type}\n\n"
+        response += f"I've generated a fully compliant version that addresses all the issues identified above.\n\n"
+        response += f"## 📄 Corrected Document:\n\n"
+        response += "```\n"
+        response += corrected_doc[:3000]  # Limit for display
+        if len(corrected_doc) > 3000:
+            response += "\n\n[... Document continues ...]\n"
+        response += "\n```\n\n"
+        
+        response += f"**Note:** Replace placeholders like [Company Name], [Date], [Contact Email] with your actual information.\n\n"
+        response += f"**Ready for Use:** This document is production-ready and fully compliant with {framework} requirements.\n"
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Format document compliance response failed: {e}")
+        return f"Analysis completed but formatting failed: {str(e)}"
 

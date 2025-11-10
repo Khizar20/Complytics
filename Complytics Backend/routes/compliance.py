@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from typing import Optional, List
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 from pathlib import Path
 import logging
@@ -41,7 +41,9 @@ from compliance_rag_refined import (
     terms_expert_extractive,
     scenario_guidance_expert,
     short_qa_answer,
-    format_extractive_findings
+    format_extractive_findings,
+    document_compliance_expert,
+    format_document_compliance_response
 )
 from routes.auth import get_current_user  # Add this import for authentication
 from fastapi.responses import FileResponse
@@ -218,6 +220,44 @@ async def compliance_chat(
                 # Check with allow_general_docs=True to detect system documentation
                 doc_type = classify_document_type(document_text, allow_general_docs=True)
                 logger.info(f"Early document type check: {doc_type}")
+                
+                # Reject documents that are not allowed types
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "## ❌ Document Type Not Supported\n\n"
+                        f"The uploaded document appears to be a **{doc_type.replace('_', ' ').title()}** document, "
+                        "which I cannot analyze.\n\n"
+                        "### 📋 Supported Document Types:\n\n"
+                        "I can only analyze the following document types:\n\n"
+                        "🔒 **Privacy Policies**\n"
+                        "- GDPR, CCPA, PIPEDA, or other privacy policy documents\n"
+                        "- Documents describing how you collect, use, and protect personal data\n\n"
+                        "📜 **Terms and Conditions**\n"
+                        "- Terms of Service, User Agreements, Acceptable Use Policies\n"
+                        "- Documents defining the rules for using your service/platform\n\n"
+                        "📋 **System/Software Documentation**\n"
+                        "- Technical design documents, API specifications\n"
+                        "- Architecture documents, deployment guides\n"
+                        "- Software development and infrastructure documentation\n\n"
+                        "### ⚠️ Not Supported:\n"
+                        "- ISO compliance standards (ISO 27001, ISO 27002, etc.)\n"
+                        "- Regulatory framework documents (NIST, SOC 2 controls, PCI DSS standards)\n"
+                        "- Academic content (exams, assignments, research papers)\n"
+                        "- Personal documents (CVs, resumes)\n\n"
+                        "**Please upload one of the supported document types to continue with the analysis.**"
+                    )
+                    experts = []
+                    end_time = datetime.utcnow()
+                    response_time = (end_time - start_time).total_seconds()
+                    conversation_histories[session_id].add_exchange(query, response, is_compliance=False)
+                    await db.compliance_chat_history.update_one(
+                        {"user_id": current_user.id, "session_id": session_id},
+                        {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": False}},
+                         "$set": {"last_updated": end_time}},
+                        upsert=True
+                    )
+                    logger.info(f"Rejected document type: {doc_type}")
+                    return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": False}
                 
                 # If it's a privacy policy or terms doc, smart-route before generic flows
                 if doc_type in ("privacy_policy", "terms_and_conditions"):
@@ -411,7 +451,7 @@ Please upload one of the supported document types."""
             return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
         # 2. DOC_SUMMARY - Concise document summary
-        if intent == "DOC_SUMMARY" and has_uploaded_doc:
+        elif intent == "DOC_SUMMARY" and has_uploaded_doc:
             document_text = await _get_or_extract_document_text(latest_doc, db)
             if document_text and len(document_text.strip()) >= 100:
                 end_time = datetime.utcnow()
@@ -430,7 +470,7 @@ Please upload one of the supported document types."""
                 return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
         # 3. DOC_ANALYSIS_CLARIFY - Ask for framework
-        if intent == "DOC_ANALYSIS_CLARIFY" and has_uploaded_doc:
+        elif intent == "DOC_ANALYSIS_CLARIFY" and has_uploaded_doc:
             end_time = datetime.utcnow()
             response_time = (end_time - start_time).total_seconds()
             response = "Which compliance framework should I use to analyze your document?\n\nOptions:\n- GDPR (EU data protection)\n- CCPA/CPRA (California privacy)\n- HIPAA (US healthcare)\n- ISO 27001 (Information security)\n- SOC 2 (Service organization controls)"
@@ -446,24 +486,35 @@ Please upload one of the supported document types."""
             return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
         # 4. DOC_ANALYSIS_TARGETED - Run extractive expert
-        if intent == "DOC_ANALYSIS_TARGETED" and has_uploaded_doc:
+        elif intent == "DOC_ANALYSIS_TARGETED" and has_uploaded_doc:
             document_text = await _get_or_extract_document_text(latest_doc, db)
             if document_text and len(document_text.strip()) >= 200:
                 doc_type = classify_document_type(document_text, allow_general_docs=True)
                 end_time = datetime.utcnow()
                 response_time = (end_time - start_time).total_seconds()
                 
-                if doc_type == "privacy_policy":
-                    analysis_result = privacy_policy_expert_extractive(document_text, framework)
-                    response = format_extractive_findings(analysis_result)
-                    experts = ['privacy']
-                elif doc_type == "terms_and_conditions":
-                    analysis_result = terms_expert_extractive(document_text, framework)
-                    response = format_extractive_findings(analysis_result)
-                    experts = ['terms']
-                else:
-                    response = f"Document type '{doc_type}' detected. I can only analyze privacy policies and terms & conditions with extractive analysis."
+                # Only allow privacy policy, terms & conditions, and system documentation
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "## ❌ Cannot Analyze This Document Type\n\n"
+                        f"The uploaded document is classified as: **{doc_type.replace('_', ' ').title()}**\n\n"
+                        "### ✅ Documents I Can Analyze:\n\n"
+                        "🔒 **Privacy Policies** - GDPR, CCPA, privacy notices\n\n"
+                        "📜 **Terms and Conditions** - Terms of Service, User Agreements\n\n"
+                        "📋 **System/Software Documentation** - Technical and architecture docs\n\n"
+                        "### ❌ Documents I Cannot Analyze:\n\n"
+                        "- ISO/Compliance Standards (ISO 27001, SOC 2, NIST frameworks)\n"
+                        "- Regulatory Documents (PCI DSS, HIPAA regulations)\n"
+                        "- Academic Content (exams, assignments)\n"
+                        "- Personal Documents (CVs, resumes)\n\n"
+                        "💡 **Tip:** Please upload a Privacy Policy, Terms and Conditions, or System Documentation document for analysis."
+                    )
                     experts = []
+                else:
+                    # Use the specialized document compliance expert for all document types
+                    result = document_compliance_expert(document_text, doc_type, framework)
+                    response = format_document_compliance_response(result)
+                    experts = ['document_compliance']
                 
                 conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
                 await db.compliance_chat_history.update_one(
@@ -475,8 +526,115 @@ Please upload one of the supported document types."""
                 logger.info(f"Completed extractive {doc_type} analysis for {framework}")
                 return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
-        # 5. SCENARIO_GUIDANCE - Compliance guidance
-        if intent == "SCENARIO_GUIDANCE":
+        # 5. DOC_GENERATION - Generate or improve a compliant document
+        elif intent == "DOC_GENERATION":
+            logger.info(f"Document generation requested: {refined_intent}")
+            
+            # Determine if we're generating from scratch or improving an existing document
+            if has_uploaded_doc:
+                # User uploaded a document and wants it improved/made compliant
+                document_text = await _get_or_extract_document_text(latest_doc, db)
+                if document_text and len(document_text.strip()) >= 200:
+                    doc_type = classify_document_type(document_text, allow_general_docs=True)
+                    
+                    # Only process allowed document types
+                    if doc_type in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                        end_time = datetime.utcnow()
+                        response_time = (end_time - start_time).total_seconds()
+                        
+                        # Use the document compliance expert for comprehensive analysis and correction
+                        result = document_compliance_expert(document_text, doc_type, framework)
+                        corrected_doc = result.get("corrected_document", "")
+                        
+                        # Create DOCX file from corrected document
+                        file_path, download_url = create_docx_with_download_link(
+                            corrected_doc, f"improved_{doc_type}", framework, str(current_user.id)
+                        )
+                        
+                        # Format the response with analysis and download link
+                        response = format_document_compliance_response(result)
+                        
+                        if download_url:
+                            response += f"\n\n### 📥 Download Your Corrected Document\n\n"
+                            response += f"[Click here to download your compliant {doc_type.replace('_', ' ')}]({download_url})\n"
+                            
+                            # Store generation record
+                            await db.document_generations.insert_one({
+                                "user_id": current_user.id,
+                                "session_id": session_id,
+                                "document_type": doc_type,
+                                "framework": framework,
+                                "file_path": file_path,
+                                "download_url": download_url,
+                                "timestamp": datetime.utcnow(),
+                                "improvement": True
+                            })
+                        
+                        experts = ['document_compliance']
+                        conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                        await db.compliance_chat_history.update_one(
+                            {"user_id": current_user.id, "session_id": session_id},
+                            {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                             "$set": {"last_updated": end_time}},
+                            upsert=True
+                        )
+                        logger.info("Completed document improvement generation with document_compliance_expert")
+                        return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+            else:
+                # Generate from scratch (no uploaded document)
+                end_time = datetime.utcnow()
+                response_time = (end_time - start_time).total_seconds()
+                
+                document_type = refined_intent.get("document_type", "privacy_policy")
+                organization_context = f"User session context: {conversation_context[:500]}"
+                
+                # Generate the document content
+                document_content = generate_intelligent_compliant_document(
+                    document_type, framework, organization_context
+                )
+                
+                # Create DOCX file with download link
+                file_path, download_url = create_docx_with_download_link(
+                    document_content, document_type, framework, str(current_user.id)
+                )
+                
+                if download_url:
+                    response = format_document_response_with_download(
+                        document_content, download_url, document_type, framework
+                    )
+                    
+                    # Store generation record in database
+                    await db.document_generations.insert_one({
+                        "user_id": current_user.id,
+                        "session_id": session_id,
+                        "document_type": document_type,
+                        "framework": framework,
+                        "file_path": file_path,
+                        "download_url": download_url,
+                        "timestamp": datetime.utcnow()
+                    })
+                else:
+                    response = f"I've generated a {framework}-compliant {document_type.replace('_', ' ')} document for you:\n\n{document_content}\n\nNote: There was an issue creating the download file, but you can copy the content above."
+                
+                experts = ['privacy', 'audit']
+                conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+                await db.compliance_chat_history.update_one(
+                    {"user_id": current_user.id, "session_id": session_id},
+                    {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                     "$set": {"last_updated": end_time}},
+                    upsert=True
+                )
+                logger.info("Completed document generation from scratch")
+                return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        
+        # 6. USE_MAIN_EXPERTS - Route to main expert system (Audit, Security, Privacy, Financial)
+        elif intent == "USE_MAIN_EXPERTS":
+            logger.info(f"Routing to main expert system for query: {query[:100]}")
+            # Continue to main expert processing below (don't return early)
+            pass  # Fall through to main expert system
+        
+        # 7. SCENARIO_GUIDANCE - Compliance guidance (only for step-by-step implementation guides)
+        elif intent == "SCENARIO_GUIDANCE":
             end_time = datetime.utcnow()
             response_time = (end_time - start_time).total_seconds()
             response = scenario_guidance_expert(query, framework)
@@ -541,10 +699,19 @@ Please upload one of the supported document types."""
                         "response_time": response_time,
                         "is_compliance": True
                     }
-                # Gate by document type: only privacy policy or terms & conditions allowed
-                doc_type = classify_document_type(document_text)
-                if doc_type not in ("privacy_policy", "terms_and_conditions"):
-                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                # Gate by document type: only privacy policy, terms & conditions, or system documentation allowed
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "## 🚫 Unsupported Document Type\n\n"
+                        f"**Detected:** {doc_type.replace('_', ' ').title()}\n\n"
+                        "I specialize in analyzing user-facing policies and technical documentation.\n\n"
+                        "### ✅ What I Can Analyze:\n\n"
+                        "🔒 **Privacy Policies** - Data protection and privacy notices\n\n"
+                        "📜 **Terms and Conditions** - Service terms and user agreements\n\n"
+                        "📋 **Technical Documentation** - System and software docs\n\n"
+                        "Please upload one of these document types for compliance analysis."
+                    )
                     experts = []
                     # Short-circuit this intent branch
                     end_time = datetime.utcnow()
@@ -649,9 +816,15 @@ Please upload one of the supported document types."""
                         "is_compliance": True
                     }
                 # Gate by document type
-                doc_type = classify_document_type(document_text)
-                if doc_type not in ("privacy_policy", "terms_and_conditions"):
-                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "❌ **Document Type Not Supported**\n\n"
+                        "I can only analyze:\n"
+                        "✅ Privacy Policies\n"
+                        "✅ Terms and Conditions\n"
+                        "✅ System/Software Documentation\n"
+                    )
                     experts = []
                     end_time = datetime.utcnow()
                     response_time = (end_time - start_time).total_seconds()
@@ -715,9 +888,15 @@ Please upload one of the supported document types."""
                         "is_compliance": True
                     }
                 # Gate by document type
-                doc_type = classify_document_type(document_text)
-                if doc_type not in ("privacy_policy", "terms_and_conditions"):
-                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "❌ **Document Type Not Supported**\n\n"
+                        "I can only analyze:\n"
+                        "✅ Privacy Policies\n"
+                        "✅ Terms and Conditions\n"
+                        "✅ System/Software Documentation\n"
+                    )
                     experts = []
                     end_time = datetime.utcnow()
                     response_time = (end_time - start_time).total_seconds()
@@ -782,9 +961,15 @@ Please upload one of the supported document types."""
                         "is_compliance": True
                     }
                 # Gate by document type
-                doc_type = classify_document_type(document_text)
-                if doc_type not in ("privacy_policy", "terms_and_conditions"):
-                    response = "The uploaded document does not appear to be a Privacy Policy or Terms & Conditions. Please upload a relevant document to proceed."
+                doc_type = classify_document_type(document_text, allow_general_docs=True)
+                if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+                    response = (
+                        "❌ **Document Type Not Supported**\n\n"
+                        "I can only analyze:\n"
+                        "✅ Privacy Policies\n"
+                        "✅ Terms and Conditions\n"
+                        "✅ System/Software Documentation\n"
+                    )
                     experts = []
                     end_time = datetime.utcnow()
                     response_time = (end_time - start_time).total_seconds()
@@ -1009,10 +1194,37 @@ async def get_chatbot_analytics(
     db = Depends(lambda: database.db)
 ):
     try:
-        # Get all chat sessions for the user
-        sessions = await db.compliance_chat_history.find(
-            {"user_id": current_user.id}
-        ).to_list(length=None)
+        # For management_team, get combined analytics from compliance_team and it_team members
+        # For other roles, get only their own analytics
+        if current_user.role == 'management_team':
+            # Get all users with compliance_team or it_team role in the same organization
+            target_users = await db.users.find({
+                "role": {"$in": ["compliance_team", "it_team"]},
+                "organization_id": current_user.organization_id,
+                "is_active": True
+            }).to_list(length=None)
+            
+            if not target_users:
+                # No compliance or IT team members found, return empty stats
+                return {
+                    "totalQueries": 0,
+                    "averageResponseTime": 0,
+                    "successRate": 0,
+                    "mostCommonTopics": []
+                }
+            
+            # Get user IDs (convert ObjectId to string to match format in compliance_chat_history)
+            user_ids = [str(user["_id"]) for user in target_users]
+            
+            # Get all chat sessions from compliance and IT team members
+            sessions = await db.compliance_chat_history.find(
+                {"user_id": {"$in": user_ids}}
+            ).to_list(length=None)
+        else:
+            # Get all chat sessions for the current user only
+            sessions = await db.compliance_chat_history.find(
+                {"user_id": current_user.id}
+            ).to_list(length=None)
         
         # Calculate total queries from all messages in all sessions
         total_queries = sum(len(session.get('messages', [])) for session in sessions)
@@ -1146,6 +1358,57 @@ async def upload_document(
             logger.info(f"Upload-time document type: {doc_type}")
         except Exception:
             doc_type = "other"
+        
+        # Reject non-allowed document types immediately
+        if doc_type not in ("privacy_policy", "terms_and_conditions", "general_documentation"):
+            # Delete the uploaded file since it's not allowed
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted rejected document: {filename}")
+            except Exception as e:
+                logger.error(f"Error deleting rejected file: {e}")
+            
+            # User-friendly error response for frontend dialog/popup
+            error_detail = {
+                "type": "INVALID_DOCUMENT_TYPE",
+                "title": "Document Type Not Supported",
+                "detected_type": doc_type.replace('_', ' ').title(),
+                "message": (
+                    f"The uploaded document appears to be a **{doc_type.replace('_', ' ').title()}** document, "
+                    "which cannot be analyzed by this system.\n\n"
+                    "**I can only analyze these document types:**\n\n"
+                    "✅ **Privacy Policies** - GDPR, CCPA, or other privacy policy documents\n\n"
+                    "✅ **Terms and Conditions** - Terms of Service, User Agreements\n\n"
+                    "✅ **System/Software Documentation** - Technical design docs, API specifications, architecture documents\n\n"
+                    "**Please upload one of the supported document types to continue.**"
+                ),
+                "allowed_types": [
+                    {
+                        "name": "Privacy Policy",
+                        "description": "GDPR, CCPA, or other privacy policy documents",
+                        "icon": "🔒"
+                    },
+                    {
+                        "name": "Terms and Conditions",
+                        "description": "Terms of Service, User Agreements",
+                        "icon": "📜"
+                    },
+                    {
+                        "name": "System/Software Documentation",
+                        "description": "Technical design docs, API specs, architecture docs",
+                        "icon": "📋"
+                    }
+                ],
+                "rejected_reason": (
+                    "ISO compliance standards, regulatory framework documents, academic content, "
+                    "and personal documents (CVs, resumes) are not supported for analysis."
+                )
+            }
+            
+            raise HTTPException(
+                status_code=400,
+                detail=error_detail
+            )
 
         # Store document info in database
         try:
@@ -1560,4 +1823,240 @@ async def get_classification_accuracy(
         raise
     except Exception as e:
         logger.error(f"Error fetching classification accuracy: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/management-logs")
+async def get_management_logs(
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(lambda: database.db),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    activity_type: Optional[str] = None,
+    team_member: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    """
+    Get activity logs for management team dashboard.
+    Aggregates logs from Azure compliance, UI testing, document uploads, and reports.
+    """
+    try:
+        # Only allow management_team to access this endpoint
+        if current_user.role != 'management_team':
+            raise HTTPException(
+                status_code=403,
+                detail="Only management team can access activity logs"
+            )
+        
+        # Get all users in the same organization (compliance_team and it_team)
+        target_users = await db.users.find({
+            "role": {"$in": ["compliance_team", "it_team"]},
+            "organization_id": current_user.organization_id,
+            "is_active": True
+        }).to_list(length=None)
+        
+        if not target_users:
+            return {
+                "logs": [],
+                "summary": {
+                    "today": {"scans": 0, "analyses": 0, "reports": 0, "uploads": 0},
+                    "this_week": {"scans": 0, "analyses": 0, "reports": 0, "uploads": 0}
+                },
+                "total": 0
+            }
+        
+        user_ids = [str(user["_id"]) for user in target_users]
+        user_emails = {str(user["_id"]): user.get("email", "Unknown") for user in target_users}
+        user_roles = {str(user["_id"]): user.get("role", "Unknown") for user in target_users}
+        
+        # If team_member is provided, look up user by email to get their user_id
+        team_member_user_id = None
+        if team_member:
+            # Try to find user by email
+            user_by_email = await db.users.find_one({
+                "email": team_member,
+                "organization_id": current_user.organization_id,
+                "is_active": True
+            })
+            if user_by_email:
+                team_member_user_id = str(user_by_email["_id"])
+            # If user not found by email, we'll filter logs by email later
+        
+        # Build date filter
+        date_filter = {}
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                date_filter["$gte"] = start_dt
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                date_filter["$lt"] = end_dt
+            except ValueError:
+                pass
+        
+        all_logs = []
+        
+        # 1. Azure Compliance Analyses
+        azure_query = {"user_id": {"$in": user_ids}}
+        if date_filter:
+            azure_query["created_at"] = date_filter
+        if team_member_user_id:
+            azure_query["user_id"] = team_member_user_id
+        if status:
+            if status == "success":
+                azure_query["overall_status"] = {"$in": ["Compliant", "Partial"]}
+            elif status == "failed":
+                azure_query["overall_status"] = "Non-Compliant"
+        
+        azure_results = await db.azure_compliance_results.find(azure_query).sort("created_at", -1).limit(limit).to_list(length=None)
+        for result in azure_results:
+            all_logs.append({
+                "id": str(result["_id"]),
+                "timestamp": result.get("created_at", result.get("analyzed_at", datetime.utcnow())),
+                "user_id": result.get("user_id"),
+                "user_email": result.get("user_email", user_emails.get(result.get("user_id"), "Unknown")),
+                "user_role": user_roles.get(result.get("user_id"), "Unknown"),
+                "activity_type": "azure_analysis",
+                "activity_label": "Azure Compliance Analysis",
+                "description": f"Analyzed document: {result.get('document_name', 'Unknown')}",
+                "status": "success" if result.get("overall_status") in ["Compliant", "Partial"] else "warning",
+                "details": {
+                    "document_name": result.get("document_name"),
+                    "score": result.get("overall_score", result.get("score", 0)),
+                    "status": result.get("overall_status"),
+                    "frameworks": result.get("frameworks_analyzed", [])
+                },
+                "icon": "📊"
+            })
+        
+        # 2. UI Testing Scans
+        ui_query = {"organization_id": current_user.organization_id}
+        if date_filter:
+            ui_query["created_at"] = date_filter
+        if team_member_user_id:
+            ui_query["user_id"] = team_member_user_id
+        
+        ui_results = await db.ui_testing_site_results.find(ui_query).sort("created_at", -1).limit(limit).to_list(length=None)
+        for result in ui_results:
+            user_id = result.get("user_id")
+            scan_result = result.get("result", {})
+            summary = scan_result.get("summary", {})
+            all_logs.append({
+                "id": str(result["_id"]),
+                "timestamp": datetime.fromtimestamp(result.get("created_at", 0)) if isinstance(result.get("created_at"), int) else result.get("created_at", datetime.utcnow()),
+                "user_id": user_id,
+                "user_email": user_emails.get(user_id, "Unknown") if user_id else "System",
+                "user_role": user_roles.get(user_id, "Unknown") if user_id else "System",
+                "activity_type": "ui_scan",
+                "activity_label": "UI Testing Scan",
+                "description": f"Scanned website: {result.get('url', 'Unknown')}",
+                "status": "success",
+                "details": {
+                    "url": result.get("url"),
+                    "pages_scanned": summary.get("pages_scanned", 0),
+                    "accessibility_score": summary.get("accessibility_score", 0),
+                    "mode": result.get("mode", "all")
+                },
+                "icon": "🔍"
+            })
+        
+        # 3. Document Uploads
+        doc_query = {"user_id": {"$in": user_ids}}
+        if date_filter:
+            doc_query["upload_date"] = date_filter
+        if team_member_user_id:
+            doc_query["user_id"] = team_member_user_id
+        
+        doc_results = await db.documents.find(doc_query).sort("upload_date", -1).limit(limit).to_list(length=None)
+        for result in doc_results:
+            all_logs.append({
+                "id": str(result["_id"]),
+                "timestamp": result.get("upload_date", datetime.utcnow()),
+                "user_id": result.get("user_id"),
+                "user_email": user_emails.get(result.get("user_id"), "Unknown"),
+                "user_role": user_roles.get(result.get("user_id"), "Unknown"),
+                "activity_type": "document_upload",
+                "activity_label": "Document Upload",
+                "description": f"Uploaded document: {result.get('original_name', result.get('filename', 'Unknown'))}",
+                "status": result.get("status", "processed") == "processed" and "success" or "warning",
+                "details": {
+                    "filename": result.get("original_name", result.get("filename")),
+                    "doc_type": result.get("doc_type", "unknown"),
+                    "file_type": result.get("file_type")
+                },
+                "icon": "📄"
+            })
+        
+        # 4. Report Downloads (from Azure compliance results - we'll track report generation as downloads)
+        # Reports are generated on-demand, so we'll use the generate-report endpoint calls
+        # For now, we'll note that reports can be generated from existing analyses
+        
+        # Filter by activity_type if specified
+        if activity_type:
+            all_logs = [log for log in all_logs if log["activity_type"] == activity_type]
+        
+        # Filter by email if team_member was provided but user_id wasn't found (or filter by email for exact match)
+        if team_member and not team_member_user_id:
+            # Filter logs by email (case-insensitive partial match)
+            all_logs = [log for log in all_logs if team_member.lower() in log.get("user_email", "").lower()]
+        elif team_member and team_member_user_id:
+            # Double-check by email for exact match
+            all_logs = [log for log in all_logs if log.get("user_email", "").lower() == team_member.lower()]
+        
+        # Filter by status if specified
+        if status:
+            all_logs = [log for log in all_logs if log["status"] == status]
+        
+        # Sort all logs by timestamp (most recent first)
+        all_logs.sort(key=lambda x: x["timestamp"] if isinstance(x["timestamp"], datetime) else datetime.fromisoformat(str(x["timestamp"])), reverse=True)
+        
+        # Store total count before pagination
+        total_count = len(all_logs)
+        
+        # Calculate summary statistics BEFORE pagination (to get accurate counts)
+        now = datetime.utcnow()
+        today_start = datetime(now.year, now.month, now.day)
+        week_start = today_start - timedelta(days=now.weekday())
+        
+        today_logs = [log for log in all_logs if isinstance(log["timestamp"], datetime) and log["timestamp"] >= today_start]
+        week_logs = [log for log in all_logs if isinstance(log["timestamp"], datetime) and log["timestamp"] >= week_start]
+        
+        # Apply pagination (skip and limit) AFTER calculating summary
+        all_logs = all_logs[skip:skip + limit]
+        
+        summary = {
+            "today": {
+                "scans": len([l for l in today_logs if l["activity_type"] == "ui_scan"]),
+                "analyses": len([l for l in today_logs if l["activity_type"] == "azure_analysis"]),
+                "reports": 0,  # Reports are generated on-demand, not stored
+                "uploads": len([l for l in today_logs if l["activity_type"] == "document_upload"])
+            },
+            "this_week": {
+                "scans": len([l for l in week_logs if l["activity_type"] == "ui_scan"]),
+                "analyses": len([l for l in week_logs if l["activity_type"] == "azure_analysis"]),
+                "reports": 0,
+                "uploads": len([l for l in week_logs if l["activity_type"] == "document_upload"])
+            }
+        }
+        
+        # Convert timestamps to ISO format strings
+        for log in all_logs:
+            if isinstance(log["timestamp"], datetime):
+                log["timestamp"] = log["timestamp"].isoformat()
+        
+        return {
+            "logs": all_logs,
+            "summary": summary,
+            "total": total_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching management logs: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) 

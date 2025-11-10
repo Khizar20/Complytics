@@ -36,13 +36,18 @@ import {
   FaSpinner,
   FaLock,
   FaUsers,
-  FaClipboardList
+  FaClipboardList,
+  FaChevronLeft,
+  FaChevronRight,
+  FaSearch
 } from 'react-icons/fa';
 import { FaFilePdf, FaFileWord } from 'react-icons/fa';
 import Profile from '../auth/Profile';
 import ComplianceChat from './ComplianceChat';
 import UiTesting from './UiTesting';
 import ScheduleScan from './ScheduleScan';
+import AzureComplianceChecker from './AzureComplianceChecker';
+import AzureComplianceLatestResult from './AzureComplianceLatestResult';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import autoTable from 'jspdf-autotable';
@@ -741,24 +746,81 @@ const AzureADConfiguration = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [configData, setConfigData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Checking connection status...');
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState(null);
 
+  // Progress messages for different stages of fetching
+  const progressMessages = [
+    { message: 'Checking connection status...', progress: 5 },
+    { message: 'Verifying Azure AD credentials...', progress: 10 },
+    { message: 'Fetching Conditional Access Policies...', progress: 15 },
+    { message: 'Fetching Authentication Methods...', progress: 25 },
+    { message: 'Fetching User Information...', progress: 35 },
+    { message: 'Fetching Organization Settings...', progress: 45 },
+    { message: 'Fetching Authorization Policies...', progress: 55 },
+    { message: 'Fetching Application Registrations...', progress: 65 },
+    { message: 'Fetching Groups and Directory Roles...', progress: 75 },
+    { message: 'Fetching Security Settings...', progress: 85 },
+    { message: 'Analyzing Compliance Status...', progress: 95 },
+    { message: 'Finalizing configuration data...', progress: 100 }
+  ];
+
   useEffect(() => {
+    let progressInterval = null;
+    let isMounted = true;
+    
     const fetchStatusAndConfig = async () => {
       try {
+        if (!isMounted) return;
+        
         setLoading(true);
+        setLoadingProgress(0);
+        setError(null);
+        
+        // Simulate progress while fetching
+        let currentMessageIndex = 0;
+        progressInterval = setInterval(() => {
+          if (!isMounted) {
+            if (progressInterval) {
+              clearInterval(progressInterval);
+            }
+            return;
+          }
+          
+          if (currentMessageIndex < progressMessages.length - 1) {
+            currentMessageIndex++;
+            setLoadingMessage(progressMessages[currentMessageIndex].message);
+            setLoadingProgress(progressMessages[currentMessageIndex].progress);
+          } else {
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+          }
+        }, 800); // Update message every 800ms
+        
         // First check connection status
+        setLoadingMessage(progressMessages[0].message);
+        setLoadingProgress(progressMessages[0].progress);
+        
         const statusResponse = await fetch('http://localhost:8000/api/azure/status', {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
         });
         
+        if (!isMounted) return;
+        
         if (statusResponse.ok) {
           const statusData = await statusResponse.json();
           setIsConnected(!!statusData.connected);
           
           if (statusData.connected) {
+            // Update message for config fetch
+            setLoadingMessage('Fetching Azure AD configuration...');
+            setLoadingProgress(20);
+            
             // Fetch Azure AD configuration
             const configResponse = await fetch('http://localhost:8000/api/azure/config', {
               headers: {
@@ -766,27 +828,68 @@ const AzureADConfiguration = () => {
               }
             });
             
+            if (!isMounted) return;
+            
             if (configResponse.ok) {
               const data = await configResponse.json();
               setConfigData(data);
+              setLoadingMessage('Configuration loaded successfully!');
+              setLoadingProgress(100);
+              // Small delay to show completion message
+              await new Promise(resolve => setTimeout(resolve, 500));
             } else {
+              if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+              }
               setError('Failed to fetch Azure AD configuration');
+            }
+          } else {
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
             }
           }
         } else {
+          if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+          }
           setIsConnected(false);
         }
+        
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
       } catch (e) {
+        if (!isMounted) return;
+        
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+        }
         setError('Failed to check Azure AD status');
         setIsConnected(false);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+          setLoadingProgress(100);
+        }
       }
     };
     
     if (authToken) {
       fetchStatusAndConfig();
     }
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
   }, [authToken]);
 
   const handleConnectClick = () => {
@@ -796,9 +899,78 @@ const AzureADConfiguration = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <FaSpinner className="animate-spin text-2xl text-primary" />
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="space-y-6"
+      >
+        <div className="flex items-center space-x-4 mb-6">
+          <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+            <FaCloud className="text-2xl text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Azure AD Configuration</h2>
+            <p className="text-muted-foreground">Loading your Azure Active Directory settings</p>
+          </div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="p-8 bg-card rounded-xl shadow-lg border border-border"
+        >
+          <div className="flex flex-col items-center justify-center space-y-6">
+            {/* Animated Spinner */}
+            <div className="relative">
+              <div className="w-20 h-20 border-4 border-primary/20 rounded-full"></div>
+              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-t-primary rounded-full animate-spin"></div>
+              <FaCloud className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-2xl text-primary" />
+            </div>
+
+            {/* Loading Message */}
+            <div className="text-center space-y-2">
+              <motion.p
+                key={loadingMessage}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="text-lg font-semibold text-foreground"
+              >
+                {loadingMessage}
+              </motion.p>
+              <p className="text-sm text-muted-foreground">
+                This may take a few moments...
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                <span>Progress</span>
+                <span>{loadingProgress}%</span>
+              </div>
+              <div className="w-full bg-secondary rounded-full h-2.5 overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${loadingProgress}%` }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                />
+              </div>
+            </div>
+
+            {/* Loading Steps Indicator */}
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex items-center justify-center space-x-2 text-xs text-muted-foreground">
+                <FaSpinner className="animate-spin text-primary" />
+                <span>Fetching settings from Microsoft Graph API</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
@@ -1647,6 +1819,367 @@ const AzureADConfiguration = () => {
           </motion.div>
         </motion.div>
       )}
+
+    </motion.div>
+  );
+};
+
+// Azure AD Change Logs Component
+const AzureADChangeLogs = () => {
+  const { authToken } = useAuth();
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({
+    date: '',
+    userEmail: '',
+    changeType: '',
+    statusFilter: ''
+  });
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+  const logsPerPage = 20;
+
+  useEffect(() => {
+    fetchLogs();
+  }, [authToken, filters, currentPage]);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const params = new URLSearchParams({
+        limit: logsPerPage.toString(),
+        skip: (currentPage * logsPerPage).toString()
+      });
+      
+      if (filters.date) {
+        params.append('start_date', filters.date);
+        // Add end_date as the same date + 1 day to get all logs for that day
+        const nextDay = new Date(filters.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        params.append('end_date', nextDay.toISOString().split('T')[0]);
+      }
+      if (filters.userEmail) params.append('user_email', filters.userEmail);
+      if (filters.changeType) params.append('change_type', filters.changeType);
+      if (filters.statusFilter) params.append('status_filter', filters.statusFilter);
+      
+      const response = await fetch(`http://localhost:8000/api/azure/logs?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      setLogs(data.logs || []);
+      setTotalLogs(data.total || 0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFilterChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setCurrentPage(0); // Reset to first page when filters change
+  };
+
+  const handleExport = async (format) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.date) {
+        params.append('start_date', filters.date);
+        const nextDay = new Date(filters.date);
+        nextDay.setDate(nextDay.getDate() + 1);
+        params.append('end_date', nextDay.toISOString().split('T')[0]);
+      }
+      if (filters.userEmail) params.append('user_email', filters.userEmail);
+      if (filters.changeType) params.append('change_type', filters.changeType);
+      if (filters.statusFilter) params.append('status_filter', filters.statusFilter);
+      
+      const url = `http://localhost:8000/api/azure/logs/export/${format}?${params}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to export ${format.toUpperCase()}`);
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `azure_config_logs_${new Date().toISOString().split('T')[0]}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const formatTimestamp = (timestamp) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const isSuccess = status === 'success';
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+        isSuccess 
+          ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+          : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+      }`}>
+        {status?.toUpperCase() || 'UNKNOWN'}
+      </span>
+    );
+  };
+
+  const totalPages = Math.ceil(totalLogs / logsPerPage);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-4">
+          <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
+            <FaClipboardList className="text-2xl text-purple-600 dark:text-purple-400" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Change Logs</h2>
+            <p className="text-muted-foreground">View and manage Azure AD configuration change history</p>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleExport('csv')}
+            className="px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors flex items-center space-x-2"
+          >
+            <FaFileAlt />
+            <span>Export CSV</span>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleExport('pdf')}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2"
+          >
+            <FaFilePdf />
+            <span>Export PDF</span>
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <motion.div
+        whileHover={{ scale: 1.01 }}
+        className="p-6 bg-card rounded-xl shadow-lg border border-border mb-6"
+      >
+        <h3 className="text-lg font-semibold mb-4">Filters</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Date Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Date</label>
+            <input
+              type="date"
+              value={filters.date}
+              onChange={(e) => handleFilterChange('date', e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background transition-all duration-200 shadow-sm hover:shadow-md"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">User Email</label>
+            <input
+              type="text"
+              value={filters.userEmail}
+              onChange={(e) => handleFilterChange('userEmail', e.target.value)}
+              placeholder="Filter by user email"
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background transition-all duration-200 shadow-sm hover:shadow-md"
+            />
+          </div>
+          <div className="space-y-2 relative">
+            <label className="text-sm font-medium text-foreground">Change Type</label>
+            <div className="relative">
+              <select
+                value={filters.changeType}
+                onChange={(e) => handleFilterChange('changeType', e.target.value)}
+                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background appearance-none cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md pr-10"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                  backgroundPosition: 'right 0.5rem center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '1.5em 1.5em'
+                }}
+              >
+                <option value="">All Types</option>
+                <option value="config_fetch">Config Fetch</option>
+                <option value="config_update">Config Update</option>
+                <option value="connection">Connection</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-2 relative">
+            <label className="text-sm font-medium text-foreground">Status</label>
+            <div className="relative">
+              <select
+                value={filters.statusFilter}
+                onChange={(e) => handleFilterChange('statusFilter', e.target.value)}
+                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background appearance-none cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md pr-10"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                  backgroundPosition: 'right 0.5rem center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '1.5em 1.5em'
+                }}
+              >
+                <option value="">All Statuses</option>
+                <option value="success">Success</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setFilters({
+                date: '',
+                userEmail: '',
+                changeType: '',
+                statusFilter: ''
+              });
+              setCurrentPage(0);
+            }}
+            className="px-6 py-2 border border-border rounded-lg hover:bg-secondary transition-all duration-200 shadow-sm hover:shadow-md"
+          >
+            Clear Filters
+          </motion.button>
+        </div>
+      </motion.div>
+
+      {/* Logs Table */}
+      <motion.div
+        whileHover={{ scale: 1.01 }}
+        className="p-6 bg-card rounded-xl shadow-lg border border-border"
+      >
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <FaSpinner className="animate-spin text-2xl text-primary" />
+          </div>
+        ) : error ? (
+          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <FaExclamationTriangle className="text-destructive" />
+              <span className="text-destructive">{error}</span>
+            </div>
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="text-center p-8 text-muted-foreground">
+            <FaClipboardList className="text-4xl mx-auto mb-4 opacity-50" />
+            <p>No logs found matching your filters</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left p-3 text-sm font-semibold">Timestamp</th>
+                    <th className="text-left p-3 text-sm font-semibold">User</th>
+                    <th className="text-left p-3 text-sm font-semibold">Change Type</th>
+                    <th className="text-left p-3 text-sm font-semibold">Status</th>
+                    <th className="text-left p-3 text-sm font-semibold">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log, index) => (
+                    <motion.tr
+                      key={log._id || index}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="border-b border-border hover:bg-secondary/50 transition-colors"
+                    >
+                      <td className="p-3 text-sm">{formatTimestamp(log.timestamp)}</td>
+                      <td className="p-3 text-sm">{log.user_email || 'N/A'}</td>
+                      <td className="p-3 text-sm">
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 rounded text-xs">
+                          {log.change_type || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="p-3">{getStatusBadge(log.status)}</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {log.error_message ? (
+                          <span className="text-red-600 dark:text-red-400" title={log.error_message}>
+                            {log.error_message.length > 50 ? `${log.error_message.substring(0, 50)}...` : log.error_message}
+                          </span>
+                        ) : (
+                          <span className="text-green-600 dark:text-green-400">—</span>
+                        )}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                <div className="text-sm text-muted-foreground">
+                  Showing {currentPage * logsPerPage + 1} to {Math.min((currentPage + 1) * logsPerPage, totalLogs)} of {totalLogs} logs
+                </div>
+                <div className="flex items-center space-x-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                    disabled={currentPage === 0}
+                    className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </motion.button>
+                  <span className="px-4 py-2 text-sm">
+                    Page {currentPage + 1} of {totalPages}
+                  </span>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+                    disabled={currentPage >= totalPages - 1}
+                    className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </motion.button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </motion.div>
     </motion.div>
   );
 };
@@ -2024,6 +2557,686 @@ const AzureADConnection = () => {
   );
 };
 
+const AzureComplianceReportsList = () => {
+  const { authToken } = useAuth();
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const reportsPerPage = 5;
+
+  // Fetch reports
+  useEffect(() => {
+    const fetchReports = async () => {
+      try {
+        setLoading(true);
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        const response = await fetch('http://localhost:8000/api/azure-checker/results', { headers });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch reports');
+        }
+        
+        const data = await response.json();
+        if (data.status === 'success' && data.results) {
+          setReports(data.results);
+        } else {
+          setReports([]);
+        }
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching Azure compliance reports:', err);
+        setError(err.message);
+        setReports([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (authToken) {
+      fetchReports();
+    }
+  }, [authToken]);
+  
+  // Calculate total pages for pagination reset check
+  const totalPagesForReset = Math.ceil(reports.length / reportsPerPage);
+  
+  // Reset to page 1 if current page is out of bounds
+  useEffect(() => {
+    if (currentPage > totalPagesForReset && totalPagesForReset > 0) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPagesForReset]);
+
+  const handleDownloadReport = async (resultId) => {
+    try {
+      const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+      const reportResp = await fetch(`http://localhost:8000/api/azure-checker/generate-report/${resultId}`, {
+        headers,
+        method: 'GET'
+      });
+      
+      if (!reportResp.ok) {
+        throw new Error('Failed to generate report');
+      }
+      
+      // Download the PDF
+      const blob = await reportResp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const report = reports.find(r => r._id === resultId || r.id === resultId);
+      const dateStr = report?.created_at 
+        ? new Date(report.created_at).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
+      a.download = `Azure_Compliance_Report_${dateStr}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      alert(`Error downloading report: ${error.message}`);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Unknown';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'Unknown';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'compliant':
+        return 'text-green-600 bg-green-50 border-green-200';
+      case 'partial':
+        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'non-compliant':
+        return 'text-red-600 bg-red-50 border-red-200';
+      default:
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mb-6 p-4 bg-card rounded-lg border">
+        <div className="flex items-center justify-center py-4">
+          <FaSpinner className="animate-spin text-primary mr-2" />
+          <span className="text-muted-foreground">Loading Azure compliance reports...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mb-6 p-4 bg-card rounded-lg border border-destructive">
+        <p className="text-destructive">Error loading reports: {error}</p>
+      </div>
+    );
+  }
+
+  if (reports.length === 0) {
+    return (
+      <div className="mb-6 p-4 bg-card rounded-lg border">
+        <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Azure Compliance Reports</h4>
+        <p className="text-sm text-muted-foreground">No Azure compliance reports available. Analyze a document in the Azure Compliance Checker to generate reports.</p>
+      </div>
+    );
+  }
+
+  // Calculate pagination (moved after hooks)
+  const totalPages = Math.ceil(reports.length / reportsPerPage);
+  const startIndex = (currentPage - 1) * reportsPerPage;
+  const endIndex = startIndex + reportsPerPage;
+  const currentReports = reports.slice(startIndex, endIndex);
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePageClick = (page) => {
+    setCurrentPage(page);
+  };
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-foreground">Azure Compliance Reports</h4>
+        <span className="text-xs text-muted-foreground">
+          Showing {startIndex + 1}-{Math.min(endIndex, reports.length)} of {reports.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {currentReports.map((report) => (
+          <div
+            key={report._id || report.id}
+            className="flex items-center justify-between p-3 bg-card rounded-lg border hover:shadow-md transition-shadow"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <FaCloud className="text-blue-500" />
+                <span className="font-medium text-sm truncate">{report.document_name || 'Unknown Document'}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>Score: {report.score || report.overall_score || 0}/100</span>
+                <span className={`px-2 py-0.5 rounded-full border text-xs font-medium ${getStatusColor(report.overall_status)}`}>
+                  {report.overall_status || 'Unknown'}
+                </span>
+                <span>{formatDate(report.created_at || report.analyzed_at)}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => handleDownloadReport(report._id || report.id)}
+              className="ml-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm"
+            >
+              <FaFilePdf />
+              <span>Download</span>
+            </button>
+          </div>
+        ))}
+      </div>
+      
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-4">
+          <button
+            onClick={handlePreviousPage}
+            disabled={currentPage === 1}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              currentPage === 1
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <FaChevronLeft />
+            <span>Previous</span>
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+              // Show first page, last page, current page, and pages around current
+              if (
+                page === 1 ||
+                page === totalPages ||
+                (page >= currentPage - 1 && page <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={page}
+                    onClick={() => handlePageClick(page)}
+                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      currentPage === page
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              } else if (page === currentPage - 2 || page === currentPage + 2) {
+                return <span key={page} className="px-2 text-gray-400">...</span>;
+              }
+              return null;
+            })}
+          </div>
+          
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              currentPage === totalPages
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <span>Next</span>
+            <FaChevronRight />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ManagementLogs = () => {
+  const { authToken } = useAuth();
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [summary, setSummary] = useState({
+    today: { scans: 0, analyses: 0, reports: 0, uploads: 0 },
+    this_week: { scans: 0, analyses: 0, reports: 0, uploads: 0 }
+  });
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    activityType: '',
+    teamMember: '',
+    status: ''
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const logsPerPage = 20;
+
+  useEffect(() => {
+    fetchLogs();
+  }, [authToken, filters, currentPage]);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const params = new URLSearchParams({
+        limit: logsPerPage.toString(),
+        skip: ((currentPage - 1) * logsPerPage).toString()
+      });
+      
+      if (filters.startDate) params.append('start_date', filters.startDate);
+      if (filters.endDate) params.append('end_date', filters.endDate);
+      if (filters.activityType) params.append('activity_type', filters.activityType);
+      if (filters.teamMember) params.append('team_member', filters.teamMember);
+      if (filters.status) params.append('status', filters.status);
+      
+      const response = await fetch(`http://localhost:8000/api/compliance/management-logs?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      setLogs(data.logs || []);
+      setSummary(data.summary || summary);
+      setTotalLogs(data.total || 0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFilterChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setCurrentPage(1);
+  };
+
+  const formatTimestamp = (timestamp) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      success: { bg: 'bg-green-100 dark:bg-green-900/20', text: 'text-green-800 dark:text-green-400', icon: <FaCheckCircle /> },
+      warning: { bg: 'bg-yellow-100 dark:bg-yellow-900/20', text: 'text-yellow-800 dark:text-yellow-400', icon: <FaExclamationTriangle /> },
+      failed: { bg: 'bg-red-100 dark:bg-red-900/20', text: 'text-red-800 dark:text-red-400', icon: <FaExclamationTriangle /> }
+    };
+    const config = statusConfig[status] || statusConfig.success;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+        {config.icon}
+        {status?.toUpperCase() || 'SUCCESS'}
+      </span>
+    );
+  };
+
+  const getActivityIcon = (icon) => {
+    return <span className="text-2xl">{icon || '📋'}</span>;
+  };
+
+  const getRoleBadge = (role) => {
+    const roleConfig = {
+      compliance_team: { bg: 'bg-blue-100 dark:bg-blue-900/20', text: 'text-blue-800 dark:text-blue-400' },
+      it_team: { bg: 'bg-purple-100 dark:bg-purple-900/20', text: 'text-purple-800 dark:text-purple-400' }
+    };
+    const config = roleConfig[role] || { bg: 'bg-gray-100 dark:bg-gray-900/20', text: 'text-gray-800 dark:text-gray-400' };
+    return (
+      <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.bg} ${config.text}`}>
+        {role?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
+      </span>
+    );
+  };
+
+  const totalPages = Math.ceil(totalLogs / logsPerPage);
+  const startIndex = (currentPage - 1) * logsPerPage;
+  const endIndex = Math.min(startIndex + logsPerPage, totalLogs);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-4">
+          <motion.div
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg"
+          >
+            <FaClipboardList className="text-2xl text-white" />
+          </motion.div>
+          <div>
+            <h2 className="text-3xl font-bold text-foreground">Activity Logs</h2>
+            <p className="text-muted-foreground">Monitor compliance and IT team activities across your organization</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Scans</span>
+            <FaDesktop className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.scans}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.scans}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Analyses</span>
+            <FaCloud className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.analyses}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.analyses}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Uploads</span>
+            <FaFileAlt className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.uploads}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.uploads}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Total Activities</span>
+            <FaChartBar className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.scans + summary.today.analyses + summary.today.uploads}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.scans + summary.this_week.analyses + summary.this_week.uploads}</p>
+        </motion.div>
+      </div>
+
+      {/* Filters */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="p-6 bg-card rounded-xl shadow-lg border border-border"
+      >
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <FaSearch className="text-primary" />
+          Filters
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Start Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => handleFilterChange('startDate', e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background transition-all duration-200"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">End Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => handleFilterChange('endDate', e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background transition-all duration-200"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Activity Type</label>
+            <select
+              value={filters.activityType}
+              onChange={(e) => handleFilterChange('activityType', e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background appearance-none cursor-pointer transition-all duration-200"
+            >
+              <option value="">All Activities</option>
+              <option value="azure_analysis">Azure Analysis</option>
+              <option value="ui_scan">UI Scan</option>
+              <option value="document_upload">Document Upload</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Status</label>
+            <select
+              value={filters.status}
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background appearance-none cursor-pointer transition-all duration-200"
+            >
+              <option value="">All Statuses</option>
+              <option value="success">Success</option>
+              <option value="warning">Warning</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Team Member</label>
+            <input
+              type="email"
+              value={filters.teamMember}
+              onChange={(e) => handleFilterChange('teamMember', e.target.value)}
+              placeholder="Filter by email address"
+              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-primary/30 focus:border-primary bg-background transition-all duration-200"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setFilters({
+                startDate: '',
+                endDate: '',
+                activityType: '',
+                teamMember: '',
+                status: ''
+              });
+              setCurrentPage(1);
+            }}
+            className="px-6 py-2 border border-border rounded-lg hover:bg-secondary transition-all duration-200"
+          >
+            Clear Filters
+          </motion.button>
+        </div>
+      </motion.div>
+
+      {/* Logs Timeline */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="p-6 bg-card rounded-xl shadow-lg border border-border"
+      >
+        {loading ? (
+          <div className="flex items-center justify-center p-12">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            >
+              <FaSpinner className="text-4xl text-primary" />
+            </motion.div>
+          </div>
+        ) : error ? (
+          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <FaExclamationTriangle className="text-destructive" />
+              <span className="text-destructive">{error}</span>
+            </div>
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="text-center p-12 text-muted-foreground">
+            <motion.div
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              <FaClipboardList className="text-6xl mx-auto mb-4 opacity-30" />
+            </motion.div>
+            <p className="text-lg font-medium">No activity logs found</p>
+            <p className="text-sm mt-2">Activity logs will appear here as team members perform actions</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4">
+              {logs.map((log, index) => (
+                <motion.div
+                  key={log.id || index}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  whileHover={{ scale: 1.01, x: 4 }}
+                  className="p-4 bg-background rounded-lg border border-border hover:shadow-md transition-all duration-200"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 mt-1">
+                      {getActivityIcon(log.icon)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-foreground">{log.activity_label}</span>
+                            {getStatusBadge(log.status)}
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">{log.description}</p>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                            <span className="flex items-center gap-1">
+                              <FaUser className="text-primary" />
+                              {log.user_email}
+                            </span>
+                            {getRoleBadge(log.user_role)}
+                            <span className="flex items-center gap-1">
+                              <FaClock className="text-primary" />
+                              {formatTimestamp(log.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {log.details && (
+                        <div className="mt-3 p-3 bg-secondary/50 rounded-lg border border-border">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                            {Object.entries(log.details).map(([key, value]) => (
+                              <div key={key}>
+                                <span className="font-medium text-foreground">{key.replace('_', ' ').toUpperCase()}:</span>{' '}
+                                <span className="text-muted-foreground">{String(value)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6 pt-6 border-t border-border">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startIndex + 1} to {endIndex} of {totalLogs} logs
+                </div>
+                <div className="flex items-center space-x-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <FaChevronLeft />
+                  </motion.button>
+                  <span className="px-4 py-2 text-sm">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <FaChevronRight />
+                  </motion.button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+};
+
 const UserDashboard = () => {
   const { user, authToken, logout } = useAuth();
   const navigate = useNavigate();
@@ -2093,13 +3306,17 @@ const UserDashboard = () => {
       'it_team': [
         { id: 'azure', icon: <FaCloud />, label: 'Connect to Azure' },
         { id: 'azure-config', icon: <FaCog />, label: 'Azure AD Config' },
+        { id: 'logs', icon: <FaClipboardList />, label: 'Logs' },
         { id: 'chatbot', icon: <FaRobot />, label: 'Compliance Chatbot' },
       ],
-      'management_team': [],
+      'management_team': [
+        { id: 'logs', icon: <FaClipboardList />, label: 'Activity Logs' },
+      ],
       'compliance_team': [
         { id: 'chatbot', icon: <FaRobot />, label: 'Compliance Chatbot' },
         { id: 'testing', icon: <FaDesktop />, label: 'UI Testing' },
         { id: 'scan', icon: <FaCalendarAlt />, label: 'Schedule Scan' },
+        { id: 'azure-checker', icon: <FaCloud />, label: 'Azure Compliance Checker' },
       ],
     };
 
@@ -2174,6 +3391,14 @@ const UserDashboard = () => {
               {/* UI Testing summary cards (consistent for all roles) */}
               <UiTestingSummaryCards />
 
+              {/* Azure Compliance Checker Latest Result */}
+              {(userData.role === 'compliance_team' || userData.role === 'management_team' || userData.role === 'it_team') && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold mb-4">Latest Azure Compliance Analysis</h3>
+                  <AzureComplianceLatestResult />
+                </div>
+              )}
+
               <div className="mb-6">
                 <h3 className="text-lg font-semibold mb-4">Integrations</h3>
                 <div className="grid grid-cols-1">
@@ -2185,18 +3410,156 @@ const UserDashboard = () => {
             {/* Reports - actions placed at end of dashboard */}
             <div className="mt-8">
               <h3 className="text-lg font-semibold mb-3">Reports</h3>
-              <div className="flex items-center justify-start gap-3 no-export">
+              
+              {/* Azure Compliance Reports List - Only for compliance_team and management_team, NOT for it_team */}
+              {(userData?.role === 'compliance_team' || userData?.role === 'management_team') && <AzureComplianceReportsList />}
+              
+              <div className="flex items-center justify-start gap-3 flex-wrap no-export">
                 <button
                   onClick={async () => {
                   // Fetch structured data
                   const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-                  const [analyticsResp, uiResp] = await Promise.all([
+                  
+                  // Fetch all data including Azure compliance (if compliance_team, management_team, or it_team)
+                  const fetchPromises = [
                     fetch('http://localhost:8000/api/compliance/analytics', { headers }),
                     fetch('http://localhost:8000/api/ui/site/latest', { headers })
-                  ]);
+                  ];
+                  
+                  // Add Azure compliance fetch for compliance_team, management_team, and it_team
+                  if (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') {
+                    fetchPromises.push(fetch('http://localhost:8000/api/azure-checker/latest-result', { headers }));
+                  }
+                  
+                  const [analyticsResp, uiResp, azureResp] = await Promise.all(fetchPromises);
                   const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
                   const uiLatest = uiResp.ok ? await uiResp.json() : {};
                   const ui = uiLatest?.result || {};
+                  
+                  // Get Azure compliance data
+                  let azureData = null;
+                  if ((userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') && azureResp && azureResp.ok) {
+                    const azureLatest = await azureResp.json();
+                    if (azureLatest.status === 'success' && azureLatest.result) {
+                      azureData = azureLatest.result;
+                    }
+                  }
+                  
+                  // Helper function to parse markdown recommendations with better structure
+                  const parseMarkdownRecommendations = (text) => {
+                    if (!text) return [];
+                    const lines = text.split('\n');
+                    const recommendations = [];
+                    let currentRec = null;
+                    let inCodeBlock = false;
+                    let codeBlockContent = [];
+                    let codeBlockLanguage = '';
+                    
+                    lines.forEach((line, idx) => {
+                      const trimmed = line.trim();
+                      
+                      // Check for code block start/end
+                      if (trimmed.startsWith('```')) {
+                        if (inCodeBlock) {
+                          // End of code block
+                          if (currentRec) {
+                            currentRec.items.push({
+                              type: 'code',
+                              language: codeBlockLanguage,
+                              content: codeBlockContent.join('\n')
+                            });
+                          }
+                          codeBlockContent = [];
+                          codeBlockLanguage = '';
+                          inCodeBlock = false;
+                        } else {
+                          // Start of code block
+                          inCodeBlock = true;
+                          codeBlockLanguage = trimmed.replace(/```/, '').trim();
+                        }
+                        return;
+                      }
+                      
+                      if (inCodeBlock) {
+                        codeBlockContent.push(line);
+                        return;
+                      }
+                      
+                      // Check for recommendation header [Critical], [Major], [Minor], etc.
+                      if (trimmed.match(/^\[(Critical|Major|Minor|Low|Info)\]/)) {
+                        if (currentRec) recommendations.push(currentRec);
+                        const severity = trimmed.match(/^\[(Critical|Major|Minor|Low|Info)\]/)?.[1] || 'Info';
+                        const title = trimmed.replace(/^\[(Critical|Major|Minor|Low|Info)\]\s*/, '');
+                        currentRec = {
+                          title: title,
+                          severity: severity,
+                          items: []
+                        };
+                      }
+                      // Check for section headers (Impact, How to Fix, Verification)
+                      else if (trimmed.match(/^(Impact|How to Fix|Verification):/i)) {
+                        if (currentRec) {
+                          const sectionType = trimmed.match(/^(Impact|How to Fix|Verification):/i)?.[1]?.toLowerCase() || '';
+                          currentRec.items.push({
+                            type: 'section',
+                            sectionType: sectionType,
+                            content: trimmed.replace(/^(Impact|How to Fix|Verification):\s*/i, '')
+                          });
+                        }
+                      }
+                      // Check for separators (---)
+                      else if (trimmed === '---' || trimmed === '***') {
+                        if (currentRec) {
+                          recommendations.push(currentRec);
+                          currentRec = null;
+                        }
+                      }
+                      // Check for bullet points (- or *)
+                      else if (trimmed.match(/^[-*•]\s+/)) {
+                        if (!currentRec) {
+                          currentRec = { title: 'Recommendation', severity: 'Info', items: [] };
+                        }
+                        const content = trimmed.replace(/^[-*•]\s+/, '');
+                        // Check if it's a bold item (starts with **)
+                        if (content.startsWith('**') && content.endsWith('**')) {
+                          currentRec.items.push({
+                            type: 'bold',
+                            content: content.replace(/\*\*/g, '')
+                          });
+                        } else {
+                          currentRec.items.push({
+                            type: 'text',
+                            content: content
+                          });
+                        }
+                      }
+                      // Check for numbered lists
+                      else if (trimmed.match(/^\d+\.\s+/)) {
+                        if (!currentRec) {
+                          currentRec = { title: 'Recommendation', severity: 'Info', items: [] };
+                        }
+                        currentRec.items.push({
+                          type: 'text',
+                          content: trimmed.replace(/^\d+\.\s+/, '')
+                        });
+                      }
+                      // Regular text
+                      else if (trimmed && currentRec) {
+                        // Check if previous item was a section, append to it
+                        if (currentRec.items.length > 0 && currentRec.items[currentRec.items.length - 1].type === 'section') {
+                          currentRec.items[currentRec.items.length - 1].content += ' ' + trimmed;
+                        } else {
+                          currentRec.items.push({
+                            type: 'text',
+                            content: trimmed
+                          });
+                        }
+                      }
+                    });
+                    
+                    if (currentRec) recommendations.push(currentRec);
+                    return recommendations.length > 0 ? recommendations : [{ title: 'Recommendations', severity: 'Info', items: [{ type: 'text', content: text }] }];
+                  };
 
                   // Handle both whole-site scan structure (wcag_aggregate) and single-page structure (wcag_results)
                   const isWholeSiteScan = ui?.wcag_aggregate && ui?.summary;
@@ -2250,20 +3613,72 @@ const UserDashboard = () => {
                   // Build PDF with headings and tables
                   const pdf = new jsPDF('p', 'mm', 'a4');
                   const pageWidth = pdf.internal.pageSize.getWidth();
+                  const pageHeight = pdf.internal.pageSize.getHeight();
                   let y = 18;
 
-                  // Title + Date
-                  pdf.setFontSize(18);
-                  pdf.text('Complytics Dashboard Report', 14, y);
-                  y += 8;
-                  pdf.setFontSize(10);
-                  pdf.text(new Date().toLocaleString(), 14, y);
-                  y += 10;
+                  // Helper function to draw section divider
+                  const drawSectionDivider = (yPos) => {
+                    pdf.setDrawColor(100, 100, 100);
+                    pdf.setLineWidth(0.3);
+                    // Draw a decorative line with some spacing
+                    pdf.line(14, yPos, pageWidth - 14, yPos);
+                    // Add a subtle shadow effect
+                    pdf.setDrawColor(220, 220, 220);
+                    pdf.setLineWidth(0.2);
+                    pdf.line(14, yPos + 0.3, pageWidth - 14, yPos + 0.3);
+                    pdf.setDrawColor(100, 100, 100);
+                  };
 
-                  // Chatbot Analytics
-                  pdf.setFontSize(14);
+                  // Helper function to add page numbers
+                  const addPageNumber = () => {
+                    const pageCount = pdf.internal.getNumberOfPages();
+                    for (let i = 1; i <= pageCount; i++) {
+                      pdf.setPage(i);
+                      pdf.setFontSize(8);
+                      pdf.setTextColor(150, 150, 150);
+                      pdf.text(
+                        `Page ${i} of ${pageCount}`,
+                        pageWidth / 2,
+                        pageHeight - 10,
+                        { align: 'center' }
+                      );
+                      pdf.setTextColor(0, 0, 0);
+                    }
+                  };
+
+                  // Enhanced Title Section with background
+                  pdf.setFillColor(66, 139, 202);
+                  pdf.roundedRect(14, y - 5, pageWidth - 28, 25, 3, 3, 'F');
+                  
+                  pdf.setTextColor(255, 255, 255);
+                  pdf.setFontSize(20);
+                  pdf.setFont(undefined, 'bold');
+                  pdf.text('Complytics Dashboard Report', pageWidth / 2, y + 3, { align: 'center' });
+                  
+                  pdf.setFontSize(10);
+                  pdf.setFont(undefined, 'normal');
+                  pdf.text(new Date().toLocaleString(), pageWidth / 2, y + 10, { align: 'center' });
+                  
+                  pdf.setTextColor(0, 0, 0);
+                  y += 25;
+                  
+                  // Add decorative line after title
+                  drawSectionDivider(y);
+                  y += 8;
+
+                  // Chatbot Analytics Section
+                  pdf.setFontSize(16);
+                  pdf.setFont(undefined, 'bold');
+                  pdf.setTextColor(66, 139, 202);
                   pdf.text('Chatbot Analytics', 14, y);
-                  y += 4;
+                  y += 6;
+                  
+                  // Add underline accent
+                  pdf.setDrawColor(66, 139, 202);
+                  pdf.setLineWidth(2);
+                  pdf.line(14, y - 2, 70, y - 2);
+                  pdf.setTextColor(0, 0, 0);
+                  y += 2;
                   autoTable(pdf, {
                     startY: y,
                     head: [['Metric', 'Value']],
@@ -2279,18 +3694,37 @@ const UserDashboard = () => {
                       cellPadding: 3
                     },
                     columnStyles: {
-                      0: { cellWidth: 80, halign: 'left' },
-                      1: { cellWidth: 40, halign: 'right' }
+                      0: { cellWidth: 100, halign: 'left' },
+                      1: { cellWidth: 60, halign: 'right' }
+                    },
+                    headStyles: {
+                      fillColor: [66, 139, 202],
+                      textColor: 255,
+                      fontSize: 10,
+                      fontStyle: 'bold'
                     },
                     theme: 'striped',
                     margin: { left: 14, right: 14 }
                   });
                   y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+                  
+                  // Section divider
+                  drawSectionDivider(y);
+                  y += 10;
 
-                  // UI Testing Summary
-                  pdf.setFontSize(14);
+                  // UI Testing Summary Section
+                  pdf.setFontSize(16);
+                  pdf.setFont(undefined, 'bold');
+                  pdf.setTextColor(66, 139, 202);
                   pdf.text(isWholeSiteScan ? 'Whole-Site Scan Summary' : 'UI Testing Summary', 14, y);
-                  y += 4;
+                  y += 6;
+                  
+                  // Add underline accent
+                  pdf.setDrawColor(66, 139, 202);
+                  pdf.setLineWidth(2);
+                  pdf.line(14, y - 2, 90, y - 2);
+                  pdf.setTextColor(0, 0, 0);
+                  y += 2;
                   
                   // Add whole-site scan metrics if available
                   if (isWholeSiteScan) {
@@ -2311,8 +3745,14 @@ const UserDashboard = () => {
                         cellPadding: 3
                       },
                       columnStyles: {
-                        0: { cellWidth: 80, halign: 'left' },
-                        1: { cellWidth: 40, halign: 'right' }
+                        0: { cellWidth: 100, halign: 'left' },
+                        1: { cellWidth: 60, halign: 'right' }
+                      },
+                      headStyles: {
+                        fillColor: [66, 139, 202],
+                        textColor: 255,
+                        fontSize: 10,
+                        fontStyle: 'bold'
                       },
                       theme: 'striped',
                       margin: { left: 14, right: 14 }
@@ -2336,13 +3776,19 @@ const UserDashboard = () => {
                       cellPadding: 3
                     },
                     columnStyles: {
-                      0: { cellWidth: 80, halign: 'left' },
-                      1: { cellWidth: 40, halign: 'right' }
+                      0: { cellWidth: 100, halign: 'left' },
+                      1: { cellWidth: 60, halign: 'right' }
+                    },
+                    headStyles: {
+                      fillColor: [66, 139, 202],
+                      textColor: 255,
+                      fontSize: 10,
+                      fontStyle: 'bold'
                     },
                     theme: 'striped',
                     margin: { left: 14, right: 14 }
                   });
-                  y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 4;
+                  y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 6;
 
                   autoTable(pdf, {
                     startY: y,
@@ -2360,18 +3806,37 @@ const UserDashboard = () => {
                       cellPadding: 3
                     },
                     columnStyles: {
-                      0: { cellWidth: 80, halign: 'left' },
-                      1: { cellWidth: 40, halign: 'right' }
+                      0: { cellWidth: 100, halign: 'left' },
+                      1: { cellWidth: 60, halign: 'right' }
                     },
-                    theme: 'grid',
+                    headStyles: {
+                      fillColor: [66, 139, 202],
+                      textColor: 255,
+                      fontSize: 10,
+                      fontStyle: 'bold'
+                    },
+                    theme: 'striped',
                     margin: { left: 14, right: 14 }
                   });
                   y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+                  
+                  // Section divider
+                  drawSectionDivider(y);
+                  y += 10;
 
-                  // Recommendations
-                  pdf.setFontSize(14);
+                  // Recommendations Section
+                  pdf.setFontSize(16);
+                  pdf.setFont(undefined, 'bold');
+                  pdf.setTextColor(66, 139, 202);
                   pdf.text('Recommendations', 14, y);
-                  y += 4;
+                  y += 6;
+                  
+                  // Add underline accent
+                  pdf.setDrawColor(66, 139, 202);
+                  pdf.setLineWidth(2);
+                  pdf.line(14, y - 2, 60, y - 2);
+                  pdf.setTextColor(0, 0, 0);
+                  y += 2;
                   const recRows = (nonCompliant || []).slice(0, 30).map((r) => [
                     String(r.title || '—'),
                     String(r.severity || '—').toUpperCase(),
@@ -2409,17 +3874,399 @@ const UserDashboard = () => {
                     });
                     y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 6;
                   }
+                  
+                  // Section divider
                   if (aiRecs) {
-                    pdf.setFontSize(12);
+                    drawSectionDivider(y);
+                    y += 10;
+                  }
+                  
+                  // AI Recommendations with better formatting
+                  if (aiRecs) {
+                    if (y > pdf.internal.pageSize.getHeight() - 30) { pdf.addPage(); y = 20; }
+                    
+                    pdf.setFontSize(16);
+                    pdf.setFont(undefined, 'bold');
+                    pdf.setTextColor(66, 139, 202);
                     pdf.text('AI Recommendations', 14, y);
                     y += 6;
+                    
+                    // Add underline accent
+                    pdf.setDrawColor(66, 139, 202);
+                    pdf.setLineWidth(2);
+                    pdf.line(14, y - 2, 75, y - 2);
+                    pdf.setTextColor(0, 0, 0);
+                    y += 4;
+                    
+                    const parsedRecs = parseMarkdownRecommendations(aiRecs);
+                    parsedRecs.forEach((rec, idx) => {
+                      if (y > pdf.internal.pageSize.getHeight() - 50) { pdf.addPage(); y = 20; }
+                      
+                      // Recommendation header with severity badge
+                      const severityColors = {
+                        'Critical': [220, 38, 38],  // Red
+                        'Major': [245, 158, 11],     // Orange
+                        'Minor': [234, 179, 8],      // Yellow
+                        'Low': [59, 130, 246],        // Blue
+                        'Info': [107, 114, 128]       // Gray
+                      };
+                      const severityColor = severityColors[rec.severity] || [107, 114, 128];
+                      
+                      // Draw severity badge background
+                      pdf.setFillColor(...severityColor);
+                      pdf.roundedRect(14, y - 3, 20, 6, 2, 2, 'F');
+                      pdf.setTextColor(255, 255, 255);
+                      pdf.setFontSize(8);
+                      pdf.setFont(undefined, 'bold');
+                      pdf.text((rec.severity || 'Info').toUpperCase(), 16, y + 1);
+                      
+                      // Recommendation title
+                      pdf.setTextColor(0, 0, 0);
+                      pdf.setFontSize(11);
+                      pdf.setFont(undefined, 'bold');
+                      const titleX = 38;
+                      const titleLines = pdf.splitTextToSize(rec.title, pageWidth - titleX - 14);
+                      titleLines.forEach((line, lineIdx) => {
+                        if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                        pdf.text(line, titleX, y + (lineIdx * 4));
+                      });
+                      y += Math.max(6, titleLines.length * 4) + 4;
+                      
+                      // Items with proper formatting
+                      pdf.setFontSize(9);
+                      pdf.setFont(undefined, 'normal');
+                      
+                      rec.items.forEach((item) => {
+                        if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                        
+                        if (item.type === 'section') {
+                          // Section header (Impact, How to Fix, Verification)
+                          y += 2;
                     pdf.setFontSize(10);
-                    const lines = pdf.splitTextToSize(aiRecs, pageWidth - 28);
+                          pdf.setFont(undefined, 'bold');
+                          const sectionTitle = item.sectionType.charAt(0).toUpperCase() + item.sectionType.slice(1) + ':';
+                          pdf.text(sectionTitle, 18, y);
+                          y += 5;
+                          
+                          // Section content
+                          pdf.setFontSize(9);
+                          pdf.setFont(undefined, 'normal');
+                          const contentLines = pdf.splitTextToSize(item.content, pageWidth - 32);
+                          contentLines.forEach((line) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            pdf.text(line, 22, y);
+                            y += 4;
+                          });
+                          y += 2;
+                        }
+                        else if (item.type === 'code') {
+                          // Code block with background
+                          y += 3;
+                          const codeLines = item.content.split('\n');
+                          const codeHeight = codeLines.length * 4 + 4;
+                          
+                          if (y + codeHeight > pdf.internal.pageSize.getHeight() - 20) { 
+                            pdf.addPage(); 
+                            y = 20; 
+                          }
+                          
+                          // Draw code block background
+                          pdf.setFillColor(245, 247, 250);
+                          pdf.roundedRect(18, y - 2, pageWidth - 36, codeHeight, 2, 2, 'F');
+                          
+                          // Draw border
+                          pdf.setDrawColor(200, 200, 200);
+                          pdf.setLineWidth(0.5);
+                          pdf.roundedRect(18, y - 2, pageWidth - 36, codeHeight, 2, 2, 'S');
+                          
+                          // Code language label (if specified)
+                          if (item.language) {
+                            pdf.setFontSize(7);
+                            pdf.setFont(undefined, 'italic');
+                            pdf.setTextColor(100, 100, 100);
+                            pdf.text(item.language, 20, y + 1);
+                            pdf.setTextColor(0, 0, 0);
+                            y += 4;
+                          }
+                          
+                          // Code content
+                          pdf.setFontSize(8);
+                          pdf.setFont('courier', 'normal');
+                          codeLines.forEach((codeLine) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { 
+                              pdf.addPage(); 
+                              y = 20;
+                              pdf.setFillColor(245, 247, 250);
+                              pdf.roundedRect(18, y - 2, pageWidth - 36, codeHeight, 2, 2, 'F');
+                            }
+                            // Handle long code lines
+                            const maxCodeWidth = pageWidth - 40;
+                            const codeLineParts = pdf.splitTextToSize(codeLine, maxCodeWidth);
+                            codeLineParts.forEach((part) => {
+                              if (y > pdf.internal.pageSize.getHeight() - 20) { 
+                                pdf.addPage(); 
+                                y = 20;
+                              }
+                              pdf.text(part, 22, y);
+                              y += 4;
+                            });
+                          });
+                          
+                          pdf.setFont('helvetica', 'normal');
+                          y += 3;
+                        }
+                        else if (item.type === 'bold') {
+                          // Bold text
+                          pdf.setFont(undefined, 'bold');
+                          const boldLines = pdf.splitTextToSize(item.content, pageWidth - 32);
+                          boldLines.forEach((line) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            pdf.text(line, 22, y);
+                            y += 4;
+                          });
+                          pdf.setFont(undefined, 'normal');
+                        }
+                        else {
+                          // Regular text with bullet
+                          const textContent = item.content || String(item);
+                          const lines = pdf.splitTextToSize(`• ${textContent}`, pageWidth - 32);
                     lines.forEach((line) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            pdf.text(line, 22, y);
+                            y += 4;
+                          });
+                        }
+                      });
+                      
+                      // Add separator between recommendations
+                      if (idx < parsedRecs.length - 1) {
+                        y += 4;
+                        pdf.setDrawColor(200, 200, 200);
+                        pdf.setLineWidth(0.5);
+                        pdf.line(14, y, pageWidth - 14, y);
+                        y += 6;
+                      }
+                    });
+                    
+                    // Section divider after AI Recommendations
+                    drawSectionDivider(y);
+                    y += 10;
+                  }
+                  
+                  // Azure Compliance Analysis Section
+                  if (azureData && (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team')) {
+                    if (y > pdf.internal.pageSize.getHeight() - 40) { pdf.addPage(); y = 20; }
+                    
+                    pdf.setFontSize(16);
+                    pdf.setFont(undefined, 'bold');
+                    pdf.setTextColor(66, 139, 202);
+                    pdf.text('Azure Compliance Analysis', 14, y);
+                    y += 6;
+                    
+                    // Add underline accent
+                    pdf.setDrawColor(66, 139, 202);
+                    pdf.setLineWidth(2);
+                    pdf.line(14, y - 2, 95, y - 2);
+                    pdf.setTextColor(0, 0, 0);
+                    y += 4;
+                    
+                    // Document info
+                    autoTable(pdf, {
+                      startY: y,
+                      head: [['Metric', 'Value']],
+                      body: [
+                        ['Document Name', azureData.document_name || 'N/A'],
+                        ['Overall Score', `${azureData.overall_score || azureData.score || 0}/100`],
+                        ['Overall Status', azureData.overall_status || 'Unknown'],
+                        ['Frameworks Analyzed', String(azureData.frameworks_analyzed || 0)],
+                        ['Analysis Date', azureData.analyzed_at ? new Date(azureData.analyzed_at).toLocaleDateString() : 'N/A']
+                      ],
+                      styles: { 
+                        fontSize: 9, 
+                        cellWidth: 'wrap',
+                        overflow: 'linebreak',
+                        cellPadding: 3
+                      },
+                      columnStyles: {
+                        0: { cellWidth: 100, halign: 'left' },
+                        1: { cellWidth: 60, halign: 'left' }
+                      },
+                      headStyles: {
+                        fillColor: [66, 139, 202],
+                        textColor: 255,
+                        fontSize: 10,
+                        fontStyle: 'bold'
+                      },
+                      theme: 'striped',
+                      margin: { left: 14, right: 14 }
+                    });
+                    y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+                    
+                    // Framework Scores
+                    if (azureData.framework_scores && Object.keys(azureData.framework_scores).length > 0) {
+                      pdf.setFontSize(13);
+                      pdf.setFont(undefined, 'bold');
+                      pdf.setTextColor(50, 50, 50);
+                      pdf.text('Framework Compliance Scores', 14, y);
+                      y += 6;
+                      pdf.setTextColor(0, 0, 0);
+                      
+                      const frameworkData = [['Framework', 'Score', 'Status']];
+                      Object.entries(azureData.framework_scores).forEach(([framework, score]) => {
+                        const status = score >= 80 ? 'Compliant' : score >= 60 ? 'Partial' : 'Non-Compliant';
+                        const frameworkName = {
+                          'gdpr': 'GDPR',
+                          'iso27001': 'ISO 27001',
+                          'iso27017': 'ISO 27017',
+                          'iso27018': 'ISO 27018',
+                          'azure': 'Azure Best Practices'
+                        }[framework] || framework.toUpperCase();
+                        frameworkData.push([frameworkName, `${score}/100`, status]);
+                      });
+                      
+                      autoTable(pdf, {
+                        startY: y,
+                        head: frameworkData.slice(0, 1),
+                        body: frameworkData.slice(1),
+                        styles: { 
+                          fontSize: 9, 
+                          cellWidth: 'wrap',
+                          overflow: 'linebreak',
+                          cellPadding: 3
+                        },
+                        columnStyles: {
+                          0: { cellWidth: 60, halign: 'left' },
+                          1: { cellWidth: 30, halign: 'center' },
+                          2: { cellWidth: 30, halign: 'center' }
+                        },
+                        headStyles: {
+                          fillColor: [66, 139, 202],
+                          textColor: 255,
+                          fontSize: 10,
+                          fontStyle: 'bold'
+                        },
+                        theme: 'striped',
+                        margin: { left: 14, right: 14 }
+                      });
+                      y = (pdf.lastAutoTable && pdf.lastAutoTable.finalY ? pdf.lastAutoTable.finalY : y) + 8;
+                    }
+                    
+                    // Summary
+                    if (azureData.summary) {
+                      pdf.setFontSize(13);
+                      pdf.setFont(undefined, 'bold');
+                      pdf.setTextColor(50, 50, 50);
+                      pdf.text('Executive Summary', 14, y);
+                      y += 6;
+                      pdf.setTextColor(0, 0, 0);
+                      pdf.setFontSize(10);
+                      pdf.setFont(undefined, 'normal');
+                      const summaryLines = pdf.splitTextToSize(azureData.summary, pageWidth - 28);
+                      summaryLines.forEach((line) => {
                       if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
                       pdf.text(line, 14, y);
                       y += 5;
                     });
+                      y += 4;
+                    }
+                    
+                    // Framework-specific recommendations
+                    if (azureData.frameworks && Object.keys(azureData.frameworks).length > 0) {
+                      pdf.setFontSize(13);
+                      pdf.setFont(undefined, 'bold');
+                      pdf.setTextColor(50, 50, 50);
+                      pdf.text('Framework-Specific Recommendations', 14, y);
+                      y += 6;
+                      pdf.setTextColor(0, 0, 0);
+                      
+                      const frameworkEntries = Object.entries(azureData.frameworks);
+                      frameworkEntries.forEach(([frameworkName, frameworkData], frameworkIdx) => {
+                        if (y > pdf.internal.pageSize.getHeight() - 40) { pdf.addPage(); y = 20; }
+                        
+                        // Add divider before each framework (except the first one)
+                        if (frameworkIdx > 0) {
+                          y += 4;
+                          drawSectionDivider(y);
+                          y += 8;
+                        }
+                        
+                        const frameworkDisplayName = {
+                          'gdpr': 'GDPR',
+                          'iso27001': 'ISO 27001',
+                          'iso27017': 'ISO 27017',
+                          'iso27018': 'ISO 27018',
+                          'azure': 'Azure Best Practices'
+                        }[frameworkName] || frameworkName.toUpperCase();
+                        
+                        // Framework header with background
+                        pdf.setFillColor(240, 248, 255);
+                        pdf.roundedRect(14, y - 2, pageWidth - 28, 8, 2, 2, 'F');
+                        
+                        pdf.setFontSize(12);
+                        pdf.setFont(undefined, 'bold');
+                        pdf.setTextColor(66, 139, 202);
+                        pdf.text(frameworkDisplayName, 18, y + 3);
+                        pdf.setTextColor(0, 0, 0);
+                        y += 10;
+                        
+                        pdf.setFontSize(9);
+                        pdf.setFont(undefined, 'normal');
+                        
+                        // Recommendation
+                        if (frameworkData.recommendation) {
+                          pdf.setFont(undefined, 'bold');
+                          pdf.text('Recommendation:', 14, y);
+                          y += 5;
+                          pdf.setFont(undefined, 'normal');
+                          const recLines = pdf.splitTextToSize(frameworkData.recommendation, pageWidth - 28);
+                          recLines.forEach((line) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            pdf.text(line, 18, y);
+                            y += 4;
+                          });
+                          y += 2;
+                        }
+                        
+                        // Gaps
+                        if (frameworkData.gaps && frameworkData.gaps.length > 0) {
+                          pdf.setFont(undefined, 'bold');
+                          pdf.text('Gaps Identified:', 14, y);
+                          y += 5;
+                          pdf.setFont(undefined, 'normal');
+                          frameworkData.gaps.forEach((gap) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            const gapLines = pdf.splitTextToSize(`• ${gap}`, pageWidth - 28);
+                            gapLines.forEach((line) => {
+                              if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                              pdf.text(line, 18, y);
+                              y += 4;
+                            });
+                          });
+                          y += 2;
+                        }
+                        
+                        // Priority Actions
+                        if (frameworkData.priority_actions && frameworkData.priority_actions.length > 0) {
+                          pdf.setFont(undefined, 'bold');
+                          pdf.text('Priority Actions:', 14, y);
+                          y += 5;
+                          pdf.setFont(undefined, 'normal');
+                          frameworkData.priority_actions.forEach((action, idx) => {
+                            if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                            const actionLines = pdf.splitTextToSize(`${idx + 1}. ${action}`, pageWidth - 28);
+                            actionLines.forEach((line) => {
+                              if (y > pdf.internal.pageSize.getHeight() - 20) { pdf.addPage(); y = 20; }
+                              pdf.text(line, 18, y);
+                              y += 4;
+                            });
+                          });
+                          y += 2;
+                        }
+                        
+                        // Add spacing after each framework
+                        y += 4;
+                      });
+                    }
                   }
 
                   // Visual summary (append as image pages)
@@ -2450,24 +4297,162 @@ const UserDashboard = () => {
                     }
                   }
 
+                  // Add page numbers to all pages
+                  addPageNumber();
+
                     pdf.save('Complytics-Dashboard-Report.pdf');
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <FaFilePdf />
-                  <span>Download PDF</span>
+                  <span>Download Full Report (PDF)</span>
                 </button>
+                
                 <button
                   onClick={async () => {
                   // Fetch structured data
                   const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-                  const [analyticsResp, uiResp] = await Promise.all([
+                        
+                  // Fetch all data including Azure compliance (if compliance_team, management_team, or it_team)
+                  const fetchPromises = [
                     fetch('http://localhost:8000/api/compliance/analytics', { headers }),
                     fetch('http://localhost:8000/api/ui/site/latest', { headers })
-                  ]);
+                  ];
+                  
+                  // Add Azure compliance fetch for compliance_team, management_team, and it_team
+                  if (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') {
+                    fetchPromises.push(fetch('http://localhost:8000/api/azure-checker/latest-result', { headers }));
+                  }
+                  
+                  const [analyticsResp, uiResp, azureResp] = await Promise.all(fetchPromises);
                   const analytics = analyticsResp.ok ? await analyticsResp.json() : {};
                   const uiLatest = uiResp.ok ? await uiResp.json() : {};
                   const ui = uiLatest?.result || {};
+                  
+                  // Get Azure compliance data
+                  let azureData = null;
+                  if ((userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') && azureResp && azureResp.ok) {
+                    const azureLatest = await azureResp.json();
+                    if (azureLatest.status === 'success' && azureLatest.result) {
+                      azureData = azureLatest.result;
+                    }
+                  }
+                  
+                  // Helper function to parse markdown recommendations with better structure
+                  const parseMarkdownRecommendations = (text) => {
+                    if (!text) return [];
+                    const lines = text.split('\n');
+                    const recommendations = [];
+                    let currentRec = null;
+                    let inCodeBlock = false;
+                    let codeBlockContent = [];
+                    let codeBlockLanguage = '';
+                    
+                    lines.forEach((line, idx) => {
+                      const trimmed = line.trim();
+                      
+                      // Check for code block start/end
+                      if (trimmed.startsWith('```')) {
+                        if (inCodeBlock) {
+                          // End of code block
+                          if (currentRec) {
+                            currentRec.items.push({
+                              type: 'code',
+                              language: codeBlockLanguage,
+                              content: codeBlockContent.join('\n')
+                            });
+                          }
+                          codeBlockContent = [];
+                          codeBlockLanguage = '';
+                          inCodeBlock = false;
+                        } else {
+                          // Start of code block
+                          inCodeBlock = true;
+                          codeBlockLanguage = trimmed.replace(/```/, '').trim();
+                        }
+                        return;
+                      }
+                      
+                      if (inCodeBlock) {
+                        codeBlockContent.push(line);
+                        return;
+                      }
+                      
+                      // Check for recommendation header [Critical], [Major], [Minor], etc.
+                      if (trimmed.match(/^\[(Critical|Major|Minor|Low|Info)\]/)) {
+                        if (currentRec) recommendations.push(currentRec);
+                        const severity = trimmed.match(/^\[(Critical|Major|Minor|Low|Info)\]/)?.[1] || 'Info';
+                        const title = trimmed.replace(/^\[(Critical|Major|Minor|Low|Info)\]\s*/, '');
+                        currentRec = {
+                          title: title,
+                          severity: severity,
+                          items: []
+                        };
+                      }
+                      // Check for section headers (Impact, How to Fix, Verification)
+                      else if (trimmed.match(/^(Impact|How to Fix|Verification):/i)) {
+                        if (currentRec) {
+                          const sectionType = trimmed.match(/^(Impact|How to Fix|Verification):/i)?.[1]?.toLowerCase() || '';
+                          currentRec.items.push({
+                            type: 'section',
+                            sectionType: sectionType,
+                            content: trimmed.replace(/^(Impact|How to Fix|Verification):\s*/i, '')
+                          });
+                        }
+                      }
+                      // Check for separators (---)
+                      else if (trimmed === '---' || trimmed === '***') {
+                        if (currentRec) {
+                          recommendations.push(currentRec);
+                          currentRec = null;
+                        }
+                      }
+                      // Check for bullet points (- or *)
+                      else if (trimmed.match(/^[-*•]\s+/)) {
+                        if (!currentRec) {
+                          currentRec = { title: 'Recommendation', severity: 'Info', items: [] };
+                        }
+                        const content = trimmed.replace(/^[-*•]\s+/, '');
+                        // Check if it's a bold item (starts with **)
+                        if (content.startsWith('**') && content.endsWith('**')) {
+                          currentRec.items.push({
+                            type: 'bold',
+                            content: content.replace(/\*\*/g, '')
+                          });
+                        } else {
+                          currentRec.items.push({
+                            type: 'text',
+                            content: content
+                          });
+                        }
+                      }
+                      // Check for numbered lists
+                      else if (trimmed.match(/^\d+\.\s+/)) {
+                        if (!currentRec) {
+                          currentRec = { title: 'Recommendation', severity: 'Info', items: [] };
+                        }
+                        currentRec.items.push({
+                          type: 'text',
+                          content: trimmed.replace(/^\d+\.\s+/, '')
+                        });
+                      }
+                      // Regular text
+                      else if (trimmed && currentRec) {
+                        // Check if previous item was a section, append to it
+                        if (currentRec.items.length > 0 && currentRec.items[currentRec.items.length - 1].type === 'section') {
+                          currentRec.items[currentRec.items.length - 1].content += ' ' + trimmed;
+                        } else {
+                          currentRec.items.push({
+                            type: 'text',
+                            content: trimmed
+                          });
+                        }
+                      }
+                    });
+                    
+                    if (currentRec) recommendations.push(currentRec);
+                    return recommendations.length > 0 ? recommendations : [{ title: 'Recommendations', severity: 'Info', items: [{ type: 'text', content: text }] }];
+                  };
 
                   // Handle both whole-site scan structure (wcag_aggregate) and single-page structure (wcag_results)
                   const isWholeSiteScan = ui?.wcag_aggregate && ui?.summary;
@@ -2565,11 +4550,8 @@ const UserDashboard = () => {
                   ]));
                   const recsTable = new Table({ rows: [ makeHeader(['Title', 'Severity', 'Action']), ...recRows ] });
 
-                  const doc = new DocxDocument({
-                    sections: [
-                      {
-                        properties: {},
-                        children: [
+                  // Build document children array
+                  const docChildren = [
                           new Paragraph({ text: 'Complytics Dashboard Report', heading: HeadingLevel.TITLE }),
                           new Paragraph({ children: [new TextRun({ text: new Date().toLocaleString(), italics: true })] }),
                           new Paragraph({ text: 'Chatbot Analytics', heading: HeadingLevel.HEADING_1 }),
@@ -2578,10 +4560,156 @@ const UserDashboard = () => {
                           severityTable,
                           securityTable,
                           new Paragraph({ text: 'Recommendations', heading: HeadingLevel.HEADING_1 }),
-                          ...(recRows.length > 0 ? [recsTable] : [new Paragraph('No specific recommendations available')]),
-                          ...(aiRecs ? [new Paragraph({ text: 'AI Recommendations', heading: HeadingLevel.HEADING_2 }), new Paragraph(aiRecs)] : []),
-                          ...(imageRun ? [new Paragraph({ text: 'Visual Summary', heading: HeadingLevel.HEADING_1 }), new Paragraph({ children: [imageRun] })] : [])
-                        ]
+                    ...(recRows.length > 0 ? [recsTable] : [new Paragraph('No specific recommendations available')])
+                  ];
+                  
+                  // Add formatted AI Recommendations
+                  if (aiRecs) {
+                    const parsedRecs = parseMarkdownRecommendations(aiRecs);
+                    docChildren.push(new Paragraph({ text: 'AI Recommendations', heading: HeadingLevel.HEADING_2 }));
+                    parsedRecs.forEach((rec) => {
+                      // Add recommendation title with severity
+                      const titleText = rec.severity ? `[${rec.severity.toUpperCase()}] ${rec.title}` : rec.title;
+                      docChildren.push(new Paragraph({ text: titleText, heading: HeadingLevel.HEADING_3 }));
+                      
+                      rec.items.forEach((item) => {
+                        if (typeof item === 'string') {
+                          // Legacy format - just text
+                          docChildren.push(new Paragraph({ 
+                            text: item,
+                            bullet: { level: 0 }
+                          }));
+                        } else if (item.type === 'section') {
+                          // Section header (Impact, How to Fix, Verification)
+                          const sectionTitle = item.sectionType.charAt(0).toUpperCase() + item.sectionType.slice(1) + ':';
+                          docChildren.push(new Paragraph({ 
+                            text: sectionTitle,
+                            heading: HeadingLevel.HEADING_4
+                          }));
+                          docChildren.push(new Paragraph({ text: item.content }));
+                        } else if (item.type === 'code') {
+                          // Code block
+                          docChildren.push(new Paragraph({ 
+                            text: item.language ? `Code (${item.language}):` : 'Code:',
+                            heading: HeadingLevel.HEADING_4
+                          }));
+                          docChildren.push(new Paragraph({ 
+                            text: item.content,
+                            style: 'Code'
+                          }));
+                        } else if (item.type === 'bold') {
+                          docChildren.push(new Paragraph({ 
+                            children: [new TextRun({ text: item.content, bold: true })],
+                            bullet: { level: 0 }
+                          }));
+                        } else if (item.type === 'text') {
+                          docChildren.push(new Paragraph({ 
+                            text: item.content,
+                            bullet: { level: 0 }
+                          }));
+                        }
+                      });
+                    });
+                  }
+                  
+                  // Add Azure Compliance Analysis Section
+                  if (azureData && (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team')) {
+                    docChildren.push(new Paragraph({ text: 'Azure Compliance Analysis', heading: HeadingLevel.HEADING_1 }));
+                    
+                    // Document info table
+                    const azureInfoTable = new Table({ rows: [
+                      makeHeader(['Metric', 'Value']),
+                      makeRow(['Document Name', azureData.document_name || 'N/A']),
+                      makeRow(['Overall Score', `${azureData.overall_score || azureData.score || 0}/100`]),
+                      makeRow(['Overall Status', azureData.overall_status || 'Unknown']),
+                      makeRow(['Frameworks Analyzed', String(azureData.frameworks_analyzed || 0)]),
+                      makeRow(['Analysis Date', azureData.analyzed_at ? new Date(azureData.analyzed_at).toLocaleDateString() : 'N/A'])
+                    ] });
+                    docChildren.push(azureInfoTable);
+                    
+                    // Framework Scores Table
+                    if (azureData.framework_scores && Object.keys(azureData.framework_scores).length > 0) {
+                      docChildren.push(new Paragraph({ text: 'Framework Compliance Scores', heading: HeadingLevel.HEADING_2 }));
+                      const frameworkRows = [makeHeader(['Framework', 'Score', 'Status'])];
+                      Object.entries(azureData.framework_scores).forEach(([framework, score]) => {
+                        const status = score >= 80 ? 'Compliant' : score >= 60 ? 'Partial' : 'Non-Compliant';
+                        const frameworkName = {
+                          'gdpr': 'GDPR',
+                          'iso27001': 'ISO 27001',
+                          'iso27017': 'ISO 27017',
+                          'iso27018': 'ISO 27018',
+                          'azure': 'Azure Best Practices'
+                        }[framework] || framework.toUpperCase();
+                        frameworkRows.push(makeRow([frameworkName, `${score}/100`, status]));
+                      });
+                      docChildren.push(new Table({ rows: frameworkRows }));
+                    }
+                    
+                    // Executive Summary
+                    if (azureData.summary) {
+                      docChildren.push(new Paragraph({ text: 'Executive Summary', heading: HeadingLevel.HEADING_2 }));
+                      docChildren.push(new Paragraph(azureData.summary));
+                    }
+                    
+                    // Framework-specific recommendations
+                    if (azureData.frameworks && Object.keys(azureData.frameworks).length > 0) {
+                      docChildren.push(new Paragraph({ text: 'Framework-Specific Recommendations', heading: HeadingLevel.HEADING_2 }));
+                      
+                      Object.entries(azureData.frameworks).forEach(([frameworkName, frameworkData]) => {
+                        const frameworkDisplayName = {
+                          'gdpr': 'GDPR',
+                          'iso27001': 'ISO 27001',
+                          'iso27017': 'ISO 27017',
+                          'iso27018': 'ISO 27018',
+                          'azure': 'Azure Best Practices'
+                        }[frameworkName] || frameworkName.toUpperCase();
+                        
+                        docChildren.push(new Paragraph({ text: frameworkDisplayName, heading: HeadingLevel.HEADING_3 }));
+                        
+                        // Recommendation
+                        if (frameworkData.recommendation) {
+                          docChildren.push(new Paragraph({ 
+                            children: [new TextRun({ text: 'Recommendation: ', bold: true }), new TextRun(frameworkData.recommendation)]
+                          }));
+                        }
+                        
+                        // Gaps
+                        if (frameworkData.gaps && frameworkData.gaps.length > 0) {
+                          docChildren.push(new Paragraph({ 
+                            children: [new TextRun({ text: 'Gaps Identified:', bold: true })]
+                          }));
+                          frameworkData.gaps.forEach((gap) => {
+                            docChildren.push(new Paragraph({ 
+                              text: gap,
+                              bullet: { level: 0 }
+                            }));
+                          });
+                        }
+                        
+                        // Priority Actions
+                        if (frameworkData.priority_actions && frameworkData.priority_actions.length > 0) {
+                          docChildren.push(new Paragraph({ 
+                            children: [new TextRun({ text: 'Priority Actions:', bold: true })]
+                          }));
+                          frameworkData.priority_actions.forEach((action, idx) => {
+                            docChildren.push(new Paragraph(`${idx + 1}. ${action}`));
+                          });
+                        }
+                      });
+                    }
+                  }
+                  
+                  // Add visual summary if available
+                  if (imageRun) {
+                    docChildren.push(new Paragraph({ text: 'Visual Summary', heading: HeadingLevel.HEADING_1 }));
+                    docChildren.push(new Paragraph({ children: [imageRun] }));
+                  }
+
+                  const doc = new DocxDocument({
+                    sections: [
+                      {
+                        properties: {},
+                        children: docChildren
                       }
                     ]
                   });
@@ -2598,7 +4726,7 @@ const UserDashboard = () => {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-secondary"
                 >
                   <FaFileWord />
-                  <span>Download Word</span>
+                  <span>Download Full Report (Word)</span>
                 </button>
               </div>
             </div>
@@ -2610,12 +4738,21 @@ const UserDashboard = () => {
         return <AzureADConnection />;
       case 'azure-config':
         return <AzureADConfiguration />;
+      case 'logs':
+        // Show different logs component based on role
+        if (userData?.role === 'management_team') {
+          return <ManagementLogs />;
+        } else {
+          return <AzureADChangeLogs />;
+        }
       case 'chatbot':
         return <ComplianceChat />;
       case 'testing':
         return <UiTesting />;
       case 'scan':
         return <ScheduleScan />;
+      case 'azure-checker':
+        return <AzureComplianceChecker />;
       default:
         return null;
     }
@@ -2658,14 +4795,14 @@ const UserDashboard = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
+                className={`w-full flex items-center justify-start space-x-3 p-3 rounded-lg transition-colors text-left ${
                   activeTab === item.id
                     ? 'bg-primary text-primary-foreground'
                     : 'hover:bg-secondary'
                 }`}
               >
                 <span className="text-lg">{item.icon}</span>
-                <span>{item.label}</span>
+                <span className="text-left">{item.label}</span>
               </motion.button>
             ))}
           </nav>
@@ -2675,10 +4812,10 @@ const UserDashboard = () => {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleLogout}
-              className="w-full flex items-center space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10"
+              className="w-full flex items-center justify-start space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10 text-left"
             >
               <FaSignOutAlt />
-              <span>Logout</span>
+              <span className="text-left">Logout</span>
             </motion.button>
           </div>
         </div>

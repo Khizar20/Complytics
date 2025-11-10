@@ -96,10 +96,45 @@ def classify_document_type(text: str, allow_general_docs: bool = False) -> str:
     except Exception:
         pass
 
-    # Direct phrase shortcuts for high precision before any heuristics
+    # ISO/Compliance Framework documents (CHECK FIRST - highest priority rejection)
+    # These are the actual compliance standards/frameworks themselves, not user policies
+    compliance_framework_indicators = [
+        "iso/iec 27001", "iso 27001", "iso27001", "iso 27002", "iso27002", "iso/iec", 
+        "information technology  — security",  # Exact match from upload preview
+        "information security management systems — requirements",
+        "information security management system requirements",
+        "security techniques — informati",  # Catches partial from upload
+        "security techniques — information security",
+        "security techniques information security",
+        "technologies de l'information", "tecnolog", "technologies d'",  # ISO docs often have multiple languages
+        "international standard", "this international standard",
+        "foreword", "normative references",  # ISO structure markers
+        "soc 2 controls", "soc 2 trust services criteria", "trust services criteria",
+        "nist framework", "nist cybersecurity framework", "nist sp 800", "special publication",
+        "pci dss standard", "pci security standards", "payment card industry data security standard",
+        "hipaa regulation", "hipaa administrative simplification", "health insurance portability",
+        "annex a controls", "annex a.", "annex b.", "control objective", "control category",
+        "compliance standard", "regulatory framework", "certification requirements",
+        "audit criteria", "control framework", "maturity model",
+        "iso iec", "iec iso", "first edition", "second edition", "third edition"  # ISO edition markers
+    ]
+    
+    # Check if this is a compliance framework document itself - REJECT IMMEDIATELY
+    framework_hits = sum(1 for k in compliance_framework_indicators if k in t)
+    if framework_hits >= 1:
+        logger.info(f"DocType: Detected compliance framework document (hits: {framework_hits}) - REJECTING")
+        return "other"
+    
+    # Direct phrase shortcuts for high precision (but AFTER framework check)
     try:
         contains_privacy = "privacy policy" in t
-        contains_terms = ("terms and conditions" in t) or ("terms of service" in t) or ("terms of use" in t)
+        # More specific terms matching to avoid false positives with "terms and definitions" etc.
+        contains_terms = (
+            ("terms and conditions" in t) or 
+            ("terms of service" in t) or 
+            ("terms of use" in t) or
+            ("user agreement" in t and "liability" in t)  # Terms docs always have liability clauses
+        )
         logger.info(
             f"DocType: phrase checks -> privacy='{'yes' if contains_privacy else 'no'}', "
             f"terms='{'yes' if contains_terms else 'no'}'"
@@ -204,7 +239,9 @@ def classify_document_type(text: str, allow_general_docs: bool = False) -> str:
             "- other \n\n"
             "Instructions: base your decision on purpose and structure, not isolated keywords. "
             "Templates with placeholders like [Your Company Name] are valid. "
-            "Academic content (quizzes, exams) and personal documents (CVs) are 'other'.\n\n"
+            "Academic content (quizzes, exams), personal documents (CVs), compliance framework documents (ISO standards, SOC 2 controls, NIST frameworks), and regulatory documents are 'other'.\n"
+            "IMPORTANT: If the document IS the compliance standard/framework itself (like ISO 27001 standard document), classify as 'other'.\n"
+            "Only user-created policies and documentation should be privacy_policy, terms_and_conditions, or general_documentation.\n\n"
             f"Document (first 2000 chars):\n{text[:2000]}\n\n"
             "Respond with ONLY one of: privacy_policy, terms_and_conditions, "
             + ("general_documentation, " if allow_general_docs else "") + "other"
@@ -733,7 +770,13 @@ def get_concise_max_tokens(query: str) -> int:
 
 @timing_decorator
 def expert_security_controls(query: str, context: str, conversation_context: str = "") -> str:
-    """Expert analysis for security controls."""
+    """Expert analysis for security controls with evidence-based prompting."""
+    print("\n" + "="*80)
+    print("🔒 SECURITY EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"🔒 SECURITY EXPERT triggered for query: {query[:100]}")
+    
     is_concise = detect_concise_request(query)
     max_tokens = get_concise_max_tokens(query)
     
@@ -744,98 +787,152 @@ def expert_security_controls(query: str, context: str, conversation_context: str
             f"Context: {context[:500]}\n\n"
             "Format as:\n"
             "**Key Steps:**\n"
-            "• Point 1\n"
-            "• Point 2\n"
-            "• Point 3\n\n"
+            "• Point 1 (cite source if from context)\n"
+            "• Point 2 (cite source if from context)\n"
+            "• Point 3 (cite source if from context)\n\n"
             "Keep it under 150 words total. Focus on actionable steps only."
         )
     else:
         prompt = (
             "You are a cybersecurity and information security expert specializing in enterprise security controls and compliance frameworks.\n\n"
             f"Previous conversation context:\n{conversation_context}\n\n"
-            f"Current Query: {query}\n"
-            f"Relevant Context from Documents: {context}\n\n"
+            f"Current Query: {query}\n\n"
+            f"SECURITY FRAMEWORK DOCUMENTS:\n{context}\n\n"
+            "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+            "For EVERY security control, requirement, or technical recommendation you make, you MUST:\n"
+            "1. ✅ Quote the EXACT text from the framework documents that supports your recommendation\n"
+            "2. ✅ Use this format: [Your recommendation] (🔒 Source: \"exact quote\" - Framework Name)\n"
+            "3. ✅ If technical details are NOT in the provided documents, state: \"⚠️ Not in frameworks - industry best practice\"\n"
+            "4. ✅ For implementation steps, cite the framework requirement that mandates each step\n\n"
+            "EXAMPLE FORMAT:\n"
+            "Organizations must implement multi-factor authentication for administrative access (🔒 Source: \"multi-factor authentication shall be required for all privileged user access\" - NIST 800-53 IA-2)\n\n"
             "Provide a comprehensive analysis focusing on:\n"
-            "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS, etc.\n"
-            "2. **Implementation Guidelines**: Step-by-step technical implementation\n"
-            "3. **Risk Assessment**: Identify threats, vulnerabilities, and risk levels\n"
-            "4. **Monitoring & Validation**: Methods to verify control effectiveness\n"
-            "5. **Best Practices**: Industry-proven security measures\n"
-            "6. **Compliance Mapping**: How controls map to regulatory requirements\n\n"
-            "Structure your response with clear headings and actionable recommendations.\n"
-            "Use technical precision while remaining practical for implementation.\n\n"
-            "Once you write an answer iterate over it to see all points are covered before showing it to user\n\n"
-            "Response:"
+            "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS (with exact citations)\n"
+            "2. **Implementation Guidelines**: Step-by-step technical implementation (cite framework requirements)\n"
+            "3. **Risk Assessment**: Threats, vulnerabilities, and risk levels (reference framework risk tables)\n"
+            "4. **Monitoring & Validation**: Methods to verify control effectiveness (cite verification procedures)\n"
+            "5. **Best Practices**: Industry-proven measures (distinguish framework requirements vs. best practices)\n"
+            "6. **Compliance Mapping**: How controls map to regulations (cite specific control mappings)\n\n"
+            "Structure your response with clear headings, actionable recommendations, and MANDATORY evidence citations.\n"
+            "Think step by step and verify each claim is supported by the provided framework documents.\n\n"
+            "Response with evidence-based citations:"
         )
     return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
 @timing_decorator
 def expert_privacy_regulations(query: str, context: str, conversation_context: str = "") -> str:
-    """Expert analysis for privacy regulations."""
+    """Expert analysis for privacy regulations with evidence-based prompting."""
+    print("\n" + "="*80)
+    print("⚖️ PRIVACY EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"⚖️ PRIVACY EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
         "You are a data privacy and protection expert with deep knowledge of global privacy regulations and data governance.\n\n"
         f"Previous conversation context:\n{conversation_context}\n\n"
-        f"Current Query: {query}\n"
-        f"Relevant Context from Documents: {context}\n\n"
+        f"Current Query: {query}\n\n"
+        f"PRIVACY REGULATION DOCUMENTS:\n{context}\n\n"
+        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+        "For EVERY legal requirement, obligation, or compliance recommendation you make, you MUST:\n"
+        "1. ✅ Quote the EXACT legal text from the regulation documents that establishes this requirement\n"
+        "2. ✅ Use this format: [Legal requirement] (⚖️ Legal Basis: \"exact quote\" - Regulation Article/Section)\n"
+        "3. ✅ If specific implementation details are NOT in the regulations, state: \"⚠️ Not specified in regulations - recommended practice\"\n"
+        "4. ✅ For each data subject right, cite the exact article that grants that right\n"
+        "5. ✅ For penalties/fines, quote the exact text with amounts and conditions\n\n"
+        "EXAMPLE FORMAT:\n"
+        "GDPR requires data controllers to notify supervisory authorities of breaches within 72 hours (⚖️ Legal Basis: \"the controller shall...notify the personal data breach to the supervisory authority...without undue delay and, where feasible, not later than 72 hours\" - GDPR Article 33(1))\n\n"
         "Provide a comprehensive analysis focusing on:\n"
-        "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA, etc.\n"
-        "2. **Data Subject Rights**: Individual rights and how to implement them\n"
-        "3. **Legal Basis & Consent**: Lawful processing and consent mechanisms\n"
-        "4. **Data Protection Measures**: Technical and organizational safeguards\n"
-        "5. **Cross-Border Transfers**: International data transfer requirements\n"
-        "6. **Breach Response**: Notification requirements and procedures\n"
-        "7. **Documentation**: Required policies, records, and assessments\n\n"
-        "Include specific regulatory citations and practical implementation guidance.\n"
-        "Address both legal compliance and operational requirements.\n\n"
-        "Response:"
+        "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA (cite exact articles)\n"
+        "2. **Data Subject Rights**: Individual rights and implementation (quote the article granting each right)\n"
+        "3. **Legal Basis & Consent**: Lawful processing grounds (cite legal basis articles with exact wording)\n"
+        "4. **Data Protection Measures**: Required safeguards (reference specific security requirements)\n"
+        "5. **Cross-Border Transfers**: Transfer mechanisms (cite adequacy decisions and transfer articles)\n"
+        "6. **Breach Response**: Notification timelines and procedures (exact regulatory quotes)\n"
+        "7. **Documentation**: Required records and assessments (cite documentation requirements)\n\n"
+        "Include specific regulatory citations with article numbers and exact legal text.\n"
+        "Distinguish between legal requirements (must cite) vs. operational best practices.\n\n"
+        "Response with mandatory legal citations:"
     )
     return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_audit_compliance(query: str, context: str, conversation_context: str = "") -> str:
-    """Expert analysis for audit compliance."""
+    """Expert analysis for audit compliance with evidence-based prompting."""
+    print("\n" + "="*80)
+    print("📄 AUDIT EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"📄 AUDIT EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
         "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
         f"Previous conversation context:\n{conversation_context}\n\n"
-        f"Current Query: {query}\n"
-        f"Relevant Context from Documents: {context}\n\n"
+        f"Current Query: {query}\n\n"
+        f"COMPLIANCE FRAMEWORK DOCUMENTS:\n{context}\n\n"
+        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+        "For EVERY requirement, recommendation, or claim you make, you MUST:\n"
+        "1. ✅ Quote the EXACT text from the framework documents above that supports your statement\n"
+        "2. ✅ Use this format: [Your statement] (📄 Evidence: \"exact quote from documents\")\n"
+        "3. ✅ If information is NOT in the provided documents, explicitly state: \"⚠️ Not found in provided frameworks - based on industry best practices\"\n"
+        "4. ✅ Never make claims without citing supporting evidence from the context\n\n"
+        "EXAMPLE FORMAT:\n"
+        "ISO 27001 requires organizations to establish an information security management system (📄 Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
         "Provide a comprehensive analysis focusing on:\n"
-        "1. **Audit Requirements**: Specific audit standards and procedures\n"
-        "2. **Evidence Collection**: Documentation and artifacts needed\n"
-        "3. **Compliance Verification**: Methods to assess and validate compliance\n"
-        "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks\n"
-        "5. **Control Testing**: Procedures to test control effectiveness\n"
-        "6. **Remediation Planning**: Steps to address findings and gaps\n"
-        "7. **Continuous Monitoring**: Ongoing compliance assurance processes\n\n"
-        "Reference relevant frameworks (ISO 27001, SOC 2, NIST, COBIT) and provide\n"
-        "specific audit procedures and compliance checklists where applicable.\n\n"
-        "Think step by step before answering\n\n"
-        "Response:"
+        "1. **Audit Requirements**: Specific audit standards and procedures (with citations)\n"
+        "2. **Evidence Collection**: Documentation and artifacts needed (with framework references)\n"
+        "3. **Compliance Verification**: Methods to assess and validate compliance (with citations)\n"
+        "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks (with evidence)\n"
+        "5. **Control Testing**: Procedures to test control effectiveness (with citations)\n"
+        "6. **Remediation Planning**: Steps to address findings and gaps (with evidence)\n"
+        "7. **Continuous Monitoring**: Ongoing compliance assurance processes (with citations)\n\n"
+        "Think step by step, cite evidence for each point, and be explicit about what comes from the documents vs. general knowledge.\n\n"
+        "Response with mandatory evidence citations:"
     )
     return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_financial_compliance(query: str, context: str, conversation_context: str = "") -> str:
-    """Expert analysis for financial compliance and regulations."""
+    """Expert analysis for financial compliance with evidence-based prompting and chain-of-thought."""
+    print("\n" + "="*80)
+    print("💰 FINANCIAL EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"💰 FINANCIAL EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
-        "As a financial compliance expert, analyze the following query:\n\n"
-        f"{conversation_context}"
-        f"Query: {query}\n"
-        f"Context: {context}\n"
+        "You are a financial compliance expert with expertise in banking regulations, payment standards, and financial reporting requirements.\n\n"
+        f"Previous conversation context:\n{conversation_context}\n\n"
+        f"Current Query: {query}\n\n"
+        f"FINANCIAL REGULATION DOCUMENTS:\n{context}\n\n"
+        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+        "For EVERY financial regulation, control, or requirement you reference, you MUST:\n"
+        "1. ✅ Quote the EXACT text from the regulation that establishes this requirement\n"
+        "2. ✅ Use this format: [Requirement] (💰 Regulation: \"exact quote\" - Standard/Section)\n"
+        "3. ✅ If implementation details are NOT in regulations, state: \"⚠️ Not in regulations - industry guidance\"\n"
+        "4. ✅ For penalties/fines, quote exact amounts and violation conditions\n\n"
+        "EXAMPLE FORMAT:\n"
+        "PCI DSS requires organizations to maintain a firewall configuration to protect cardholder data (💰 Regulation: \"Install and maintain a firewall configuration to protect cardholder data\" - PCI DSS Requirement 1.1)\n\n"
         "Focus on:\n"
-        "1. Financial regulations (PCI DSS, SOX, Basel III, etc.)\n"
-        "2. Anti-money laundering (AML) and Know Your Customer (KYC)\n"
-        "3. Payment card industry standards\n"
-        "4. Banking and financial services compliance\n"
-        "5. Financial reporting and disclosure requirements\n"
-        "6. Risk management frameworks (COSO, Basel)\n"
-        "Chain-of-Thought Analysis:"
+        "1. **Financial Regulations**: PCI DSS, SOX, Basel III requirements (cite exact control numbers)\n"
+        "2. **AML/KYC**: Anti-money laundering and Know Your Customer procedures (quote regulatory text)\n"
+        "3. **Payment Standards**: Card industry standards and requirements (cite PCI DSS sections)\n"
+        "4. **Banking Compliance**: Financial services regulatory requirements (reference specific regulations)\n"
+        "5. **Financial Reporting**: Disclosure and reporting requirements (cite exact reporting standards)\n"
+        "6. **Risk Management**: COSO, Basel frameworks (quote framework requirements)\n\n"
+        "Chain-of-Thought Analysis with Evidence Citations:"
     )
     return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
 def expert_healthcare_compliance(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for healthcare compliance and HIPAA."""
+    print("\n" + "="*80)
+    print("🏥 HEALTHCARE EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"🏥 HEALTHCARE EXPERT triggered for query: {query[:100]}")
+    
     is_concise = detect_concise_request(query)
     max_tokens = get_concise_max_tokens(query)
     
@@ -871,6 +968,12 @@ def expert_healthcare_compliance(query: str, context: str, conversation_context:
 @timing_decorator
 def expert_international_compliance(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for international and cross-border compliance."""
+    print("\n" + "="*80)
+    print("🌍 INTERNATIONAL EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"🌍 INTERNATIONAL EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
         "As an international compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
@@ -890,6 +993,12 @@ def expert_international_compliance(query: str, context: str, conversation_conte
 @timing_decorator
 def expert_operational_compliance(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for operational compliance and business processes."""
+    print("\n" + "="*80)
+    print("⚙️ OPERATIONAL EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"⚙️ OPERATIONAL EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
         "As an operational compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
@@ -909,6 +1018,12 @@ def expert_operational_compliance(query: str, context: str, conversation_context
 @timing_decorator
 def expert_industry_specific(query: str, context: str, conversation_context: str = "") -> str:
     """Expert analysis for industry-specific compliance requirements."""
+    print("\n" + "="*80)
+    print("🏭 INDUSTRY-SPECIFIC EXPERT TRIGGERED")
+    print(f"Query: {query[:100]}...")
+    print("="*80 + "\n")
+    logger.info(f"🏭 INDUSTRY-SPECIFIC EXPERT triggered for query: {query[:100]}")
+    
     prompt = (
         "As an industry-specific compliance expert, analyze the following query:\n\n"
         f"{conversation_context}"
@@ -3333,51 +3448,69 @@ def detect_document_reference(query: str, conversation_context: str = "") -> boo
     2. Upload/possession indicators combined with compliance questions
     3. Explicit self-reference with compliance context
     4. Context-aware patterns (looks at conversation history for document mentions)
+    
+    IMPORTANT: Primarily focuses on the CURRENT QUERY to avoid false positives from conversation history.
     """
     try:
-        text = ((query or "") + "\n" + (conversation_context or "")).lower()
-        if not text.strip():
+        query_lower = (query or "").lower().strip()
+        if not query_lower:
             return False
 
-        # Pattern 1: Strong possession indicators with upload context
+        # Pattern 1: Strong possession indicators with upload context (CURRENT QUERY ONLY)
         strong_possession_patterns = [
-            r"\b(?:my|the|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)\s+(?:i|we|that\s+i)\s+(?:uploaded|provided|attached|sent|have)",
-            r"\b(?:uploaded|provided|attached|sent)\s+(?:my|the|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)",
+            r"\b(?:my|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)\s+(?:i|we|that\s+i)\s+(?:uploaded|provided|attached|sent|have)",
+            r"\b(?:uploaded|provided|attached|sent)\s+(?:my|this|our)\s+(?:doc|document|file|pdf|docx|policy|privacy\s+policy|terms)",
             r"\b(?:the\s+)?(?:doc|document|file)\s+(?:i|we)\s+(?:uploaded|provided|attached|sent|have)\s+(?:is|for|to)",
-            r"\b(?:check|review|analyze|examine|assess)\s+(?:my|the|this|our)\s+(?:uploaded|provided|attached|sent)\s+(?:doc|document|file|policy)",
-            r"\b(?:is|does)\s+(?:my|the|this)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)\s+(?:compliant|comply|follow|meet)"
+            r"\b(?:check|review|analyze|examine|assess)\s+(?:my|this|our)\s+(?:uploaded|provided|attached|sent)?\s+(?:doc|document|file|policy)",
+            r"\b(?:is|does)\s+(?:my|this)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)\s+(?:compliant|comply|follow|meet)",
+            r"\b(?:analyze|check|review)\s+(?:the\s+)?(?:doc|document|file|policy)(?:\s+(?:i|we)\s+uploaded)?",
+            r"\b(?:uploaded|attached|provided)\s+(?:doc|document|file|policy)"
         ]
 
-        # Pattern 2: Self-reference with specific compliance questions
+        # Pattern 2: Self-reference with specific compliance questions (CURRENT QUERY ONLY)
         self_reference_patterns = [
-            r"\b(?:my|this|the)\s+(?:doc|document|file|policy|privacy\s+policy|terms)\s+(?:is|does|can|will|should)\s+(?:compliant|comply|follow|meet|according\s+to|align\s+with)",
-            r"\b(?:is|does|can)\s+(?:my|this|the)\s+(?:doc|document|file|policy)\s+(?:gdpr|hipaa|ccpa|compliant|comply)",
-            r"\b(?:tell\s+me\s+about|what\s+about|how\s+about)\s+(?:my|the)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)"
+            r"\b(?:my|this)\s+(?:doc|document|file|policy|privacy\s+policy|terms)\s+(?:is|does|can|will|should)\s+(?:compliant|comply|follow|meet|according\s+to|align\s+with)",
+            r"\b(?:is|does|can)\s+(?:my|this)\s+(?:doc|document|file|policy)\s+(?:gdpr|hipaa|ccpa|compliant|comply)",
+            r"\b(?:tell\s+me\s+about|what\s+about|how\s+about)\s+(?:my|this)\s+(?:uploaded|provided)\s+(?:doc|document|file|policy)"
         ]
 
-        # Pattern 3: Context-aware patterns (document possession + compliance context)
-        context_patterns = [
-            r"\b(?:doc|document|file|policy)\s+(?:i|we)\s+(?:uploaded|provided|have|sent)\s+(?:for|to|with)\s+(?:gdpr|hipaa|ccpa|compliance|standards)",
-            r"\b(?:uploaded|provided)\s+(?:doc|document|file|policy)\s+(?:for|to)\s+(?:compliance|gdpr|hipaa|ccpa|review|check)"
+        # Pattern 3: Explicit upload/file references (CURRENT QUERY ONLY)
+        explicit_document_patterns = [
+            r"\b(?:doc|document|file|policy)\s+(?:i|we)\s+(?:uploaded|provided|have|sent)\s+(?:for|to|with)",
+            r"\b(?:uploaded|provided)\s+(?:doc|document|file|policy)",
+            r"\b(?:the\s+)?(?:file|document)\s+(?:i\s+)?(?:uploaded|attached|sent|provided)"
         ]
 
-        # Pattern 4: Hypothetical vs. actual document distinction
-        # Look for indicators of hypothetical/general questions
-        hypothetical_indicators = [
-            r"\b(?:if\s+i\s+had|suppose\s+i\s+have|what\s+would|how\s+would\s+you|in\s+a|for\s+a\s+sample|example|typical|standard)",
-            r"\b(?:what\s+should|how\s+do\s+i|can\s+you\s+explain|tell\s+me\s+about\s+general)",
-            r"\b(?:companies|organizations|businesses|people)\s+(?:implement|create|write|draft)"
+        # Pattern 4: General/informational question patterns (should NOT trigger)
+        general_question_patterns = [
+            r"^(?:what|who|when|where|why|how)\s+(?:is|are|does|do|can|should|would)",
+            r"\b(?:tell\s+me\s+about|explain|describe|define)\s+(?!my|this|the\s+uploaded)",
+            r"\b(?:what\s+should|how\s+do\s+i|can\s+you\s+explain)",
+            r"\b(?:if\s+i\s+had|suppose\s+i\s+have|what\s+would|how\s+would\s+you)",
+            r"\b(?:in\s+general|generally|typically|usually|standard|best\s+practice)",
+            r"\b(?:example|sample|template)"
         ]
 
-        # Check if it's likely hypothetical/general (should NOT trigger)
-        is_hypothetical = any(re.search(pattern, text) for pattern in hypothetical_indicators)
+        # First check: Is this clearly a general question? If yes, return False immediately
+        for pattern in general_question_patterns:
+            if re.search(pattern, query_lower):
+                return False
 
-        # Only check for document references if it's not clearly hypothetical
-        if not is_hypothetical:
-            # Check strong possession patterns first (highest confidence)
-            for pattern in strong_possession_patterns + self_reference_patterns + context_patterns:
-                if re.search(pattern, text):
-                    return True
+        # Second check: Look for explicit document references in CURRENT QUERY ONLY
+        for pattern in strong_possession_patterns + self_reference_patterns + explicit_document_patterns:
+            if re.search(pattern, query_lower):
+                return True
+
+        # Third check: Only use conversation context if the current query has some document-related words
+        # This prevents "what is gdpr" from being flagged just because previous message mentioned "document"
+        doc_keywords_in_query = re.search(r"\b(?:doc|document|file|policy|uploaded|attached|provided|sent)\b", query_lower)
+        
+        if doc_keywords_in_query and conversation_context:
+            context_lower = conversation_context.lower()
+            # Only flag as document reference if BOTH query has doc keywords AND context shows upload activity
+            upload_in_context = re.search(r"\b(?:uploaded|provided|attached|sent|upload)\b", context_lower)
+            if upload_in_context:
+                return True
 
         return False
     except Exception:

@@ -340,3 +340,36 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
 }
+
+/* Enhanced Select Dropdown Styling */
+select {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+select:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: hsl(var(--primary));
+  transform: translateY(-1px);
+}
+
+select option {
+  padding: 0.75rem 1rem;
+  background-color: hsl(var(--card));
+  color: hsl(var(--foreground));
+  transition: background-color 0.15s ease;
+}
+
+select option:hover {
+  background-color: hsl(var(--secondary));
+}
+
+select option:checked {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}

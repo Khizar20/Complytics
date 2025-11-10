@@ -14,7 +14,8 @@ from utils.security import get_current_user
 from db import database
 from ui_testing.scanners.wcag import run_wcag_scan, get_dom_snapshot
 from ui_testing.scanners.security import run_security_scan
-from ui_testing.scanners.interaction import run_interactive_test
+from ui_testing.scanners.interaction import run_interactive_test, run_interactive_test_with_auth
+from ui_testing.scanners.authenticated_site_scanner import scan_authenticated_site
 from ui_testing.ai.recommendations import (
     configure_gemini,
     generate_findings_and_recommendations,
@@ -50,6 +51,7 @@ class ScanRequest(BaseModel):
 
 class ScheduleScanRequest(BaseModel):
     run_at_iso: str  # ISO 8601 datetime string in user's local or UTC; we interpret as UTC if zoned
+    url: Optional[str] = None  # Optional URL - if not provided, uses last scanned URL
 
 
 @router.on_event("startup")
@@ -145,17 +147,20 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
         # Mark running
         await database.db.scheduled_scans.update_one({"_id": ObjectId(schedule_id)}, {"$set": {"status": "running", "updated_at": int(time.time())}})
 
-        # Get last scanned URL for the org (prefer whole-site scan results)
-        last_doc = await database.db.ui_testing_site_results.find_one({"organization_id": org_id}, sort=[("created_at", -1)])
-        if not last_doc:
-            # Fallback to single-page scan results
-            last_doc = await database.db.ui_testing_results.find_one({"organization_id": org_id}, sort=[("created_at", -1)])
-        
-        url = (last_doc or {}).get("url")
+        # Get URL - use stored URL if provided, otherwise use last scanned URL
+        url = doc.get("url")
         if not url:
-            # No previous scans to re-use
-            await database.db.scheduled_scans.update_one({"_id": ObjectId(schedule_id)}, {"$set": {"status": "failed", "error": "No previous scan URL found", "updated_at": int(time.time())}})
-            return
+            # Get last scanned URL for the org (prefer whole-site scan results)
+            last_doc = await database.db.ui_testing_site_results.find_one({"organization_id": org_id}, sort=[("created_at", -1)])
+            if not last_doc:
+                # Fallback to single-page scan results
+                last_doc = await database.db.ui_testing_results.find_one({"organization_id": org_id}, sort=[("created_at", -1)])
+            
+            url = (last_doc or {}).get("url")
+            if not url:
+                # No previous scans to re-use
+                await database.db.scheduled_scans.update_one({"_id": ObjectId(schedule_id)}, {"$set": {"status": "failed", "error": "No previous scan URL found", "updated_at": int(time.time())}})
+                return
 
         # Execute whole-site scan (comprehensive testing)
         try:
@@ -336,6 +341,7 @@ async def scan(payload: ScanRequest, user=Depends(get_current_user)) -> Dict[str
     # Sequence heavy headless Chrome tasks to avoid parallel renderer contention
     if mode in (ScanMode.all, ScanMode.accessibility):
         try:
+            # For standard scans, no credentials needed
             wcag_results = await run_wcag_scan(url)
         except Exception as e:
             wcag_results = {"error": str(e), "violations": []}
@@ -560,6 +566,10 @@ async def schedule_scan(payload: ScheduleScanRequest, user=Depends(get_current_u
         "created_at": int(time.time()),
         "updated_at": int(time.time()),
     }
+    
+    # Store URL if provided, otherwise will use last scanned URL at execution time
+    if payload.url:
+        doc["url"] = _normalize_url(payload.url)
     if database.db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
     res = await database.db.scheduled_scans.insert_one(doc)
@@ -849,6 +859,21 @@ class SiteScanRequest(BaseModel):
     scan_mode: ScanMode = ScanMode.all
     parallel_scans: int = 3
     use_selenium_crawler: bool = False
+    credentials: Optional[Dict[str, str]] = None
+
+
+class AuthenticatedScanRequest(BaseModel):
+    url: str
+    scan_mode: ScanMode = ScanMode.all
+    max_pages: int = 50
+    max_depth: int = 3
+    parallel_scans: int = 3
+    credentials: Dict[str, str]
+
+
+class AuthenticationTestRequest(BaseModel):
+    url: str
+    credentials: Dict[str, str]
 
 
 @router.post("/ui/scan-site")
@@ -882,27 +907,47 @@ async def scan_whole_site_endpoint(
         }
     """
     try:
-        from ui_testing.scanners.site_scanner import scan_whole_site
-        
         url = _normalize_url(request.url)
         
-        logger.info(
-            f"Starting whole-site scan for {url} | "
-            f"max_pages={request.max_pages}, max_depth={request.max_depth}, "
-            f"mode={request.scan_mode}, org={user.organization_id}"
-        )
-        
-        # Run the site scan with crawl caching
-        result = await scan_whole_site(
-            url=url,
-            max_pages=request.max_pages,
-            max_depth=request.max_depth,
-            scan_mode=request.scan_mode.value,
-            parallel_scans=request.parallel_scans,
-            use_selenium_crawler=request.use_selenium_crawler,
-            db=database.db,
-            organization_id=str(user.organization_id) if user.organization_id else None
-        )
+        # Check if authentication is requested
+        if request.credentials and request.credentials.get("username") and request.credentials.get("password"):
+            logger.info(
+                f"Starting authenticated whole-site scan for {url} | "
+                f"max_pages={request.max_pages}, max_depth={request.max_depth}, "
+                f"mode={request.scan_mode}, user={request.credentials.get('username')}, org={user.organization_id}"
+            )
+            
+            # Use authenticated site scanner
+            result = await scan_authenticated_site(
+                url=url,
+                credentials=request.credentials,
+                max_pages=request.max_pages,
+                max_depth=request.max_depth,
+                scan_mode=request.scan_mode.value,
+                parallel_scans=request.parallel_scans,
+                use_selenium_crawler=request.use_selenium_crawler,
+                db=database.db,
+                organization_id=str(user.organization_id) if user.organization_id else None
+            )
+        else:
+            logger.info(
+                f"Starting standard whole-site scan for {url} | "
+                f"max_pages={request.max_pages}, max_depth={request.max_depth}, "
+                f"mode={request.scan_mode}, org={user.organization_id}"
+            )
+            
+            # Use standard site scanner
+            from ui_testing.scanners.site_scanner import scan_whole_site
+            result = await scan_whole_site(
+                url=url,
+                max_pages=request.max_pages,
+                max_depth=request.max_depth,
+                scan_mode=request.scan_mode.value,
+                parallel_scans=request.parallel_scans,
+                use_selenium_crawler=request.use_selenium_crawler,
+                db=database.db,
+                organization_id=str(user.organization_id) if user.organization_id else None
+            )
         
         # Generate AI recommendations for the site scan
         try:
@@ -1068,5 +1113,159 @@ async def get_site_scan_history(
     except Exception as e:
         logger.exception("Failed to fetch site scan history")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+
+
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+@router.post("/ui/scan-authenticated")
+async def scan_authenticated(
+    request: AuthenticatedScanRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Scan website with authentication support for login-protected pages.
+    
+    This endpoint handles websites that require login credentials to access
+    protected areas. It will automatically detect login pages, authenticate
+    using provided credentials, and then scan the authenticated areas.
+    """
+    try:
+        url = _normalize_url(request.url)
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        if not request.credentials or not request.credentials.get("username") or not request.credentials.get("password"):
+            raise HTTPException(status_code=400, detail="Username and password are required for authenticated scanning")
+        
+        logger.info(f"Starting authenticated scan for {url} | user={request.credentials.get('username')} | org={user.organization_id}")
+        
+        # Run interactive test with authentication
+        interaction_result = run_interactive_test_with_auth(url, request.credentials)
+        
+        # Check authentication status
+        auth_required = interaction_result.get("authentication_required", False)
+        auth_successful = interaction_result.get("authentication_successful", False)
+        
+        if auth_required and not auth_successful:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication failed. Please check your credentials."
+            )
+        
+        # Run scans based on mode
+        wcag_task = None
+        security_task = None
+        dom_task = None
+        
+        if request.scan_mode in (ScanMode.all, ScanMode.accessibility):
+            # Use credentials if available for authenticated scans
+            credentials = request.credentials if hasattr(request, 'credentials') else None
+            session_cookies = None
+            if interaction_result.get("session_info"):
+                session_cookies = interaction_result["session_info"].get("cookies", [])
+            wcag_task = asyncio.create_task(run_wcag_scan(url, credentials=credentials, session_cookies=session_cookies))
+            dom_task = asyncio.to_thread(get_dom_snapshot, url)
+        
+        if request.scan_mode in (ScanMode.all, ScanMode.security):
+            security_task = asyncio.create_task(run_security_scan(url))
+        
+        async def _gather_or_none(task):
+            return await task if task is not None else None
+        
+        wcag_results, security_results, dom_html = await asyncio.gather(
+            _gather_or_none(wcag_task),
+            _gather_or_none(security_task),
+            _gather_or_none(dom_task),
+            return_exceptions=True,
+        )
+        
+        # Normalize results
+        def ensure_dict(result: Any) -> Dict[str, Any]:
+            if isinstance(result, Exception):
+                logger.exception("Scan task raised an exception")
+                return {"error": f"Scan failed: {str(result)}"}
+            if isinstance(result, dict):
+                return result
+            logger.error("Scan returned unexpected type: %s", type(result))
+            return {"error": f"Unexpected scan result type"}
+        
+        wcag_results_dict = ensure_dict(wcag_results) if wcag_results is not None else {}
+        security_results_dict = ensure_dict(security_results) if security_results is not None else {}
+        dom_snapshot = dom_html if isinstance(dom_html, str) else ""
+        
+        # Generate recommendations
+        findings: Dict[str, Any] = {}
+        recommendations: str = ""
+        try:
+            fr = await asyncio.to_thread(
+                generate_findings_and_recommendations,
+                {
+                    "wcag_results": wcag_results_dict,
+                    "security_results": security_results_dict,
+                    "_extras": {"dom_snapshot": dom_snapshot, "interaction_log": interaction_result},
+                    "_mode": request.scan_mode.value,
+                    "_authenticated": True
+                },
+            )
+            findings = fr.get("findings", {}) or {}
+            recommendations = fr.get("recommendations", "") or ""
+        except Exception:
+            logger.exception("Findings/recommendations generation failed")
+            recommendations = "AI recommendations unavailable for authenticated scan."
+        
+        return {
+            "wcag_results": wcag_results_dict,
+            "security_results": security_results_dict,
+            "findings": findings,
+            "recommendations": recommendations,
+            "authentication_required": auth_required,
+            "authentication_successful": auth_successful,
+            "session_used": bool(interaction_result.get("session_info"))
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Authenticated scan failed for url=%s", request.url)
+        raise HTTPException(status_code=500, detail=f"Authenticated scan failed: {str(e)}")
+
+
+@router.post("/ui/test-authentication")
+async def test_authentication(
+    request: AuthenticationTestRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Test authentication for a URL without running a full scan.
+    
+    This endpoint allows you to test if authentication works for a given URL
+    and credentials before running a full authenticated scan.
+    """
+    try:
+        url = _normalize_url(request.url)
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        if not request.credentials or not request.credentials.get("username") or not request.credentials.get("password"):
+            raise HTTPException(status_code=400, detail="Username and password are required")
+        
+        logger.info(f"Testing authentication for {url} | user={request.credentials.get('username')} | org={user.organization_id}")
+        
+        # Run interactive test with authentication
+        auth_result = run_interactive_test_with_auth(url, request.credentials)
+        
+        return {
+            "url": url,
+            "authentication_required": auth_result.get("authentication_required", False),
+            "authentication_successful": auth_result.get("authentication_successful", False),
+            "login_form_detected": auth_result.get("login_form_detected", False),
+            "session_info": auth_result.get("session_info", {}),
+            "final_url": auth_result.get("final_url", url),
+            "error": auth_result.get("error")
+        }
+        
+    except Exception as e:
+        logger.exception("Authentication test failed for url=%s", request.url)
+        raise HTTPException(status_code=500, detail=f"Authentication test failed: {str(e)}")
 
 

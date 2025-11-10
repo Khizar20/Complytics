@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import TimeoutException
 
+from .auth_handler import AuthenticationHandler
 
 logger = logging.getLogger("scanner.interaction")
 
@@ -105,28 +106,91 @@ def _keyboard_navigation(driver: webdriver.Chrome) -> List[Dict[str, Any]]:
     return steps
 
 
-def run_interactive_test(url: str) -> Dict[str, Any]:
+def run_interactive_test(url: str, credentials: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """
+    Run interactive test with optional authentication support.
+    
+    Args:
+        url: URL to test
+        credentials: Optional dict with 'username' and 'password' for authentication
+        
+    Returns:
+        Dict containing test results and authentication status
+    """
     driver = None
     log: Dict[str, Any] = {"steps": []}
+    auth_handler = None
+    authenticated = False
+    
     try:
         logger.info("Interactive test start | url=%s", url)
         driver = _build_chrome_driver()
+        
         try:
             driver.get(url)
         except TimeoutException as e:
             # Continue with whatever loaded to still collect partial signals
             log["warning"] = f"Navigation timeout: {e}"
+        
         log["title"] = driver.title
         log["url"] = driver.current_url
+        
+        # Check if authentication is required and handle it
+        if credentials:
+            auth_handler = AuthenticationHandler(credentials)
+            
+            # Check if current page is a login page
+            if auth_handler.detect_login_page(driver):
+                logger.info("Login page detected, attempting authentication")
+                log["authentication_required"] = True
+                
+                # Find login form
+                login_form = auth_handler.find_login_form(driver)
+                if login_form:
+                    logger.info("Login form found, attempting login")
+                    log["login_form_detected"] = True
+                    
+                    # Attempt login
+                    if auth_handler.perform_login(driver, login_form):
+                        authenticated = True
+                        log["authentication_successful"] = True
+                        logger.info("Authentication successful")
+                        
+                        # Store session information
+                        session_info = auth_handler.get_authenticated_session(driver)
+                        log["session_info"] = session_info
+                    else:
+                        log["authentication_failed"] = True
+                        logger.warning("Authentication failed")
+                else:
+                    log["login_form_not_found"] = True
+                    logger.warning("Login form not found")
+            else:
+                log["authentication_required"] = False
+                logger.info("No login page detected")
+        
+        # Update log with current state after potential authentication
+        log["title"] = driver.title
+        log["url"] = driver.current_url
+        log["authenticated"] = authenticated
+        
+        # Run interactive tests
         try:
             log["steps"] += _keyboard_navigation(driver)
         except Exception as e:
             log["steps"].append({"action": "tab", "error": str(e)})
+        
         try:
             log["steps"] += _interact_with_forms(driver)
         except Exception as e:
             log["steps"].append({"action": "forms", "error": str(e)})
+        
         log["final_url"] = driver.current_url
+        
+        # Check if still authenticated after interactions
+        if authenticated and auth_handler:
+            log["still_authenticated"] = auth_handler.is_authenticated(driver)
+        
     except Exception as e:
         logger.exception("Interactive test failed for url=%s", url)
         log["error"] = str(e)
@@ -137,5 +201,19 @@ def run_interactive_test(url: str) -> Dict[str, Any]:
         except Exception:
             pass
     return log
+
+
+def run_interactive_test_with_auth(url: str, credentials: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Convenience function to run interactive test with authentication.
+    
+    Args:
+        url: URL to test
+        credentials: Dict with 'username' and 'password'
+        
+    Returns:
+        Dict containing test results
+    """
+    return run_interactive_test(url, credentials)
 
 

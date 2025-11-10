@@ -13,7 +13,8 @@ import {
   FaSignOutAlt,
   FaHome,
   FaChartLine,
-  FaCog
+  FaCog,
+  FaTrash
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/components/ui/toast';
@@ -128,6 +129,9 @@ const SuperadminDashboard = () => {
   const [frameworksLoading, setFrameworksLoading] = useState(true);
   const [showApproveDeletionDialog, setShowApproveDeletionDialog] = useState(false);
   const [showRejectDeletionDialog, setShowRejectDeletionDialog] = useState(false);
+  const [showDeleteUserDialog, setShowDeleteUserDialog] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   useEffect(() => {
     if (!authToken) {
@@ -229,6 +233,13 @@ const SuperadminDashboard = () => {
     }
   }, [authToken, fetchWithRetry]);
 
+  // Helper function to get organization name by ID
+  const getOrganizationName = (organizationId) => {
+    if (!organizationId) return 'Not assigned';
+    const org = organizations.find(org => org.id === organizationId || org._id === organizationId);
+    return org ? org.name : organizationId; // Fallback to ID if not found
+  };
+
   // Fetch framework documents
   useEffect(() => {
     const fetchFrameworks = async () => {
@@ -315,6 +326,64 @@ const SuperadminDashboard = () => {
       setRejectingId(null);
       setShowRejectDialog(false);
       setSelectedRequest(null);
+    }
+  };
+
+  // Delete user handler
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      setDeletingUserId(selectedUser._id);
+      setError('');
+      setSuccess('');
+
+      const response = await fetchWithRetry(
+        `http://localhost:8000/superadmin/users/${selectedUser._id}`,
+        {
+          method: 'DELETE'
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to delete user');
+      }
+
+      const result = await response.json();
+      
+      toast({ 
+        title: 'User deleted successfully', 
+        description: result.message,
+        variant: 'success' 
+      });
+      
+      // Refresh the users list
+      const updatedResponse = await fetchWithRetry('http://localhost:8000/superadmin/active-users');
+      if (updatedResponse.ok) {
+        const updatedData = await updatedResponse.json();
+        setActiveUsers(updatedData);
+      }
+      
+      // Refresh organizations list if organization was deleted
+      if (result.deleted_organization_id) {
+        const orgsResponse = await fetchWithRetry('http://localhost:8000/superadmin/organizations/active');
+        if (orgsResponse.ok) {
+          const orgsData = await orgsResponse.json();
+          setOrganizations(orgsData);
+        }
+      }
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      toast({ 
+        title: 'Failed to delete user', 
+        description: err.message, 
+        variant: 'error' 
+      });
+    } finally {
+      setDeletingUserId(null);
+      setShowDeleteUserDialog(false);
+      setSelectedUser(null);
     }
   };
 
@@ -812,52 +881,79 @@ const SuperadminDashboard = () => {
                     whileHover={cardHoverVariants.hover}
                     className="glass-card p-6 rounded-lg border border-border/50"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0">
-                          <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
-                            <FaUserCheck className="h-5 w-5" />
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="flex items-start space-x-4">
+                          <div className="flex-shrink-0">
+                            <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
+                              <FaUserCheck className="h-5 w-5" />
+                            </div>
+                          </div>
+                          <div>
+                            <h3 className="font-medium text-lg">
+                              {user.first_name} {user.last_name}
+                            </h3>
+                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+                              <FaEnvelope className="mr-2" />
+                              {user.email}
+                            </div>
                           </div>
                         </div>
-                        <div>
-                          <h3 className="font-medium text-lg">
-                            {user.first_name} {user.last_name}
-                          </h3>
-                          <div className="flex items-center text-sm text-muted-foreground mt-1">
-                            <FaEnvelope className="mr-2" />
-                            {user.email}
+
+                        <div className="space-y-2">
+                          <div className="flex items-center text-sm">
+                            <span className="font-medium">Role:</span>
+                            <span className="ml-1 capitalize">{user.role}</span>
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="font-medium">Status:</span>
+                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                              user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {user.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center text-sm">
+                            <span className="font-medium">Organization:</span>
+                            <span className="ml-1">
+                              {getOrganizationName(user.organization_id)}
+                            </span>
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="font-medium">Joined:</span>
+                            <span className="ml-1">
+                              {new Date(user.created_at).toLocaleDateString()}
+                            </span>
                           </div>
                         </div>
                       </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Role:</span>
-                          <span className="ml-1 capitalize">{user.role}</span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Status:</span>
-                          <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                            user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {user.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Organization:</span>
-                          <span className="ml-1">
-                            {user.organization_id || 'Not assigned'}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Joined:</span>
-                          <span className="ml-1">
-                            {new Date(user.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
+                      
+                      <div className="flex justify-end pt-2 border-t border-border/50">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowDeleteUserDialog(true);
+                          }}
+                          disabled={deletingUserId === user._id}
+                          className="flex items-center gap-2"
+                        >
+                          {deletingUserId === user._id ? (
+                            <>
+                              <FaSpinner className="animate-spin" />
+                              Deleting...
+                            </>
+                          ) : (
+                            <>
+                              <FaTrash />
+                              Delete User
+                            </>
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </motion.div>
@@ -1128,6 +1224,59 @@ const SuperadminDashboard = () => {
             <AlertDialogAction onClick={() => handleRejectDeletion(selectedRequest?._id)} className="flex items-center gap-2">
               {rejectingId === selectedRequest?._id ? <FaSpinner className="animate-spin" /> : null}
               Reject
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <AlertDialog open={showDeleteUserDialog} onOpenChange={setShowDeleteUserDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-2">
+                <p>
+                  Are you sure you want to delete <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong> ({selectedUser?.email})?
+                </p>
+                {selectedUser?.organization_id && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <p className="text-sm font-semibold text-red-800 mb-1">⚠️ Warning: This will also delete:</p>
+                    <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                      <li>The entire organization and all its data</li>
+                      <li>All users in this organization</li>
+                      <li>All compliance chat history</li>
+                      <li>All UI testing results</li>
+                      <li>All Azure connections and logs</li>
+                    </ul>
+                    <p className="text-sm font-semibold text-red-800 mt-2">This action cannot be undone!</p>
+                  </div>
+                )}
+                {!selectedUser?.organization_id && (
+                  <p className="text-sm text-muted-foreground">
+                    This will delete the user and all their personal data. This action cannot be undone.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteUser} 
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700"
+            >
+              {deletingUserId === selectedUser?._id ? (
+                <>
+                  <FaSpinner className="animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <FaTrash />
+                  Delete User
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

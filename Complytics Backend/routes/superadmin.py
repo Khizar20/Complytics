@@ -100,6 +100,104 @@ async def get_active_users(
     # Convert MongoDB documents to UserInDB models
     return [UserInDB.from_mongo(user) for user in users]
 
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    current_user: UserInDB = Depends(get_superadmin)
+):
+    """
+    Delete a user and all related organization data.
+    If the user has an organization, all organization data will be deleted.
+    """
+    try:
+        obj_id = ObjectId(user_id)
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID"
+        )
+    
+    # Find the user
+    user = await database.db.users.find_one({"_id": obj_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent superadmin from deleting themselves
+    if user.get("role") == "superadmin" and str(user.get("_id")) == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own superadmin account"
+        )
+    
+    user_id_str = str(user.get("_id"))
+    org_id = user.get("organization_id")
+    
+    # If user has an organization, delete all organization-related data
+    if org_id:
+        # Collect all user ids in the organization (admin + team)
+        org_users = await database.db.users.find({"organization_id": org_id}).to_list(length=None)
+        org_user_ids = [str(u.get("_id")) for u in org_users if u.get("_id")]
+        
+        # Delete compliance chat history for all org users
+        if org_user_ids:
+            await database.db.compliance_chat_history.delete_many({
+                "user_id": {"$in": org_user_ids}
+            })
+        
+        # Delete UI testing results for the organization
+        await database.db.ui_testing_results.delete_many({
+            "organization_id": org_id
+        })
+        
+        # Delete Azure connection records for the organization
+        await database.db.azure_connections.delete_many({
+            "organization_id": org_id
+        })
+        
+        # Delete Azure config logs for the organization
+        await database.db.azure_config_logs.delete_many({
+            "organization_id": org_id
+        })
+        
+        # Delete all users in the organization (including the current user)
+        await database.db.users.delete_many({"organization_id": org_id})
+        
+        # Delete organization record
+        try:
+            await database.db.organizations.delete_one({"_id": ObjectId(org_id)})
+        except:
+            # If ObjectId conversion fails, attempt by string match
+            await database.db.organizations.delete_one({"_id": org_id})
+        
+        return {
+            "message": f"User and organization (ID: {org_id}) deleted successfully. All related data has been removed.",
+            "deleted_user_id": user_id_str,
+            "deleted_organization_id": org_id,
+            "deleted_users_count": len(org_user_ids)
+        }
+    else:
+        # User has no organization, just delete user-specific data
+        # Delete compliance chat history for this user
+        await database.db.compliance_chat_history.delete_many({
+            "user_id": user_id_str
+        })
+        
+        # Delete Azure config logs for this user
+        await database.db.azure_config_logs.delete_many({
+            "user_id": user_id_str
+        })
+        
+        # Delete the user
+        await database.db.users.delete_one({"_id": obj_id})
+        
+        return {
+            "message": f"User deleted successfully. All related data has been removed.",
+            "deleted_user_id": user_id_str
+        }
+
 @router.get("/deletion-requests")
 async def list_deletion_requests(current_user: UserInDB = Depends(get_superadmin)):
     requests = await database.db.account_deletion_requests.find({}).to_list(length=None)
