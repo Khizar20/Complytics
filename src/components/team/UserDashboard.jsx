@@ -28,6 +28,7 @@ import {
   FaTasks,
   FaInfo,
   FaEye,
+  FaListAlt,
   FaEyeSlash,
   FaKey,
   FaBuilding,
@@ -39,9 +40,11 @@ import {
   FaClipboardList,
   FaChevronLeft,
   FaChevronRight,
-  FaSearch
+  FaSearch,
+  FaBook,
+  FaInbox
 } from 'react-icons/fa';
-import { FaFilePdf, FaFileWord } from 'react-icons/fa';
+import { FaFilePdf, FaFileWord, FaFileCsv, FaDownload } from 'react-icons/fa';
 import Profile from '../auth/Profile';
 import ComplianceChat from './ComplianceChat';
 import UiTesting from './UiTesting';
@@ -1644,181 +1647,6 @@ const AzureADConfiguration = () => {
         </motion.div>
       </div>
 
-      {/* ISO 27017 Compliance Section */}
-      {configData?.compliance_check && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="mt-8"
-        >
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-lg">
-              <FaShieldAlt className="text-2xl text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">ISO 27017 Compliance Assessment</h2>
-              <p className="text-muted-foreground">Azure AD security compliance against ISO 27017 standards</p>
-            </div>
-          </div>
-
-          {/* Compliance Score Overview */}
-          <motion.div
-            whileHover={{ scale: 1.01 }}
-            className="p-6 bg-card rounded-xl shadow-lg border border-border mb-6"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Compliance Overview</h3>
-              <div className="text-right">
-                <div className="text-3xl font-bold text-primary">
-                  {configData.compliance_check.summary?.compliance_score || 0}%
-                </div>
-                <div className="text-sm text-muted-foreground">Compliance Score</div>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-green-100 dark:bg-green-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {configData.compliance_check.summary?.compliant_count || 0}
-                </div>
-                <div className="text-sm text-green-700 dark:text-green-300">Compliant</div>
-              </div>
-              <div className="p-4 bg-red-100 dark:bg-red-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                  {configData.compliance_check.summary?.non_compliant_count || 0}
-                </div>
-                <div className="text-sm text-red-700 dark:text-red-300">Non-Compliant</div>
-              </div>
-              <div className="p-4 bg-gray-100 dark:bg-gray-900/20 rounded-lg">
-                <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
-                  {configData.compliance_check.summary?.not_applicable_count || 0}
-                </div>
-                <div className="text-sm text-gray-700 dark:text-gray-300">Not Applicable</div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Non-Compliant Rules - Recommendations */}
-          {configData.compliance_check.non_compliant?.length > 0 && (
-            <motion.div
-              whileHover={{ scale: 1.01 }}
-              className="p-6 bg-card rounded-xl shadow-lg border border-border mb-6"
-            >
-              <div className="flex items-center space-x-3 mb-4">
-                <FaExclamationTriangle className="text-xl text-red-500" />
-                <h3 className="text-lg font-semibold">Security Recommendations</h3>
-              </div>
-              <div className="space-y-4">
-                {configData.compliance_check.non_compliant.map((rule, index) => (
-                  <div key={index} className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-red-800 dark:text-red-200">{rule.title}</h4>
-                        <p className="text-sm text-red-700 dark:text-red-300 mt-1">{rule.description}</p>
-                      </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        rule.severity === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                        rule.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                        'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'
-                      }`}>
-                        {rule.severity?.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border">
-                      <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Recommended Action:</div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{rule.remediation}</p>
-                    </div>
-                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      <span className="font-medium">Control ID:</span> {rule.control_id} | 
-                      <span className="font-medium ml-2">Current Value:</span> {String(rule.current_value || 'N/A')} | 
-                      <span className="font-medium ml-2">Expected:</span> {String(rule.expected_value || 'N/A')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Compliant Rules */}
-          {configData.compliance_check.compliant?.length > 0 && (
-            <motion.div
-              whileHover={{ scale: 1.01 }}
-              className="p-6 bg-card rounded-xl shadow-lg border border-border mb-6"
-            >
-              <div className="flex items-center space-x-3 mb-4">
-                <FaCheckCircle className="text-xl text-green-500" />
-                <h3 className="text-lg font-semibold">Compliant Controls</h3>
-              </div>
-              <div className="space-y-3">
-                {configData.compliance_check.compliant.map((rule, index) => (
-                  <div key={index} className="p-3 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium text-green-800 dark:text-green-200">{rule.title}</h4>
-                        <p className="text-xs text-green-600 dark:text-green-400 mt-1">{rule.control_id}</p>
-                      </div>
-                      <FaCheckCircle className="text-green-500" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Compliance Checklist */}
-          <motion.div
-            whileHover={{ scale: 1.01 }}
-            className="p-6 bg-card rounded-xl shadow-lg border border-border"
-          >
-            <div className="flex items-center space-x-3 mb-4">
-              <FaClipboardList className="text-xl text-primary" />
-              <h3 className="text-lg font-semibold">Compliance Checklist</h3>
-            </div>
-            <div className="space-y-3">
-              {configData.compliance_check.non_compliant?.map((rule, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
-                  <input 
-                    type="checkbox" 
-                    className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 dark:focus:ring-red-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                    disabled
-                  />
-                  <div className="flex-1">
-                    <label className="text-sm font-medium text-red-800 dark:text-red-200">
-                      {rule.title}
-                    </label>
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                      {rule.remediation}
-                    </p>
-                  </div>
-                  <span className="text-xs text-red-600 dark:text-red-400 font-medium">
-                    {rule.severity?.toUpperCase()}
-                  </span>
-                </div>
-              ))}
-              {configData.compliance_check.compliant?.map((rule, index) => (
-                <div key={`compliant-${index}`} className="flex items-center space-x-3 p-3 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg">
-                  <input 
-                    type="checkbox" 
-                    checked
-                    readOnly
-                    className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 dark:focus:ring-green-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                  />
-                  <div className="flex-1">
-                    <label className="text-sm font-medium text-green-800 dark:text-green-200">
-                      {rule.title}
-                    </label>
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                      ✓ Compliant
-                    </p>
-                  </div>
-                  <FaCheckCircle className="text-green-500" />
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
 
     </motion.div>
   );
@@ -2819,14 +2647,591 @@ const AzureComplianceReportsList = () => {
   );
 };
 
+const ComplianceLogs = () => {
+  const { authToken } = useAuth();
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [summary, setSummary] = useState({
+    today: { analyses: 0, uploads: 0, config_fetches: 0, checklists: 0, total: 0 },
+    this_week: { analyses: 0, uploads: 0, config_fetches: 0, checklists: 0, total: 0 }
+  });
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    activityType: '',
+    status: ''
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const logsPerPage = 20;
+
+  useEffect(() => {
+    fetchLogs();
+  }, [authToken, filters, currentPage]);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const params = new URLSearchParams({
+        limit: logsPerPage.toString(),
+        skip: ((currentPage - 1) * logsPerPage).toString()
+      });
+      
+      if (filters.startDate) params.append('start_date', filters.startDate);
+      if (filters.endDate) params.append('end_date', filters.endDate);
+      if (filters.activityType) params.append('activity_type', filters.activityType);
+      if (filters.status) params.append('status', filters.status);
+      
+      const response = await fetch(`http://localhost:8000/api/compliance/compliance-logs?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      setLogs(data.logs || []);
+      setSummary(data.summary || summary);
+      setTotalLogs(data.total || 0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFilterChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setCurrentPage(1);
+  };
+
+  const formatTimestamp = (timestamp) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      success: { bg: 'bg-green-100 dark:bg-green-900/20', text: 'text-green-800 dark:text-green-400', icon: <FaCheckCircle /> },
+      warning: { bg: 'bg-yellow-100 dark:bg-yellow-900/20', text: 'text-yellow-800 dark:text-yellow-400', icon: <FaExclamationTriangle /> },
+      failed: { bg: 'bg-red-100 dark:bg-red-900/20', text: 'text-red-800 dark:text-red-400', icon: <FaExclamationTriangle /> }
+    };
+    const config = statusConfig[status] || statusConfig.success;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+        {config.icon}
+        {status?.toUpperCase() || 'SUCCESS'}
+      </span>
+    );
+  };
+
+  const getActivityIcon = (icon) => {
+    return <span className="text-2xl">{icon || '📋'}</span>;
+  };
+
+  const fetchAllLogsForExport = async () => {
+    try {
+      const params = new URLSearchParams({
+        limit: '10000', // Large limit to get all logs
+        skip: '0'
+      });
+      
+      if (filters.startDate) params.append('start_date', filters.startDate);
+      if (filters.endDate) params.append('end_date', filters.endDate);
+      if (filters.activityType) params.append('activity_type', filters.activityType);
+      if (filters.status) params.append('status', filters.status);
+      
+      const response = await fetch(`http://localhost:8000/api/compliance/compliance-logs?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      return data.logs || [];
+    } catch (err) {
+      console.error('Error fetching logs for export:', err);
+      return [];
+    }
+  };
+
+  const exportToCSV = async () => {
+    try {
+      const allLogs = await fetchAllLogsForExport();
+      
+      // CSV Headers
+      const headers = ['Timestamp', 'Activity Type', 'Description', 'Status', 'Details'];
+      
+      // CSV Rows
+      const rows = allLogs.map(log => {
+        const timestamp = formatTimestamp(log.timestamp);
+        const activityType = log.activity_label || log.activity_type || 'Unknown';
+        const description = log.description || '';
+        const status = log.status || 'unknown';
+        const details = log.details ? JSON.stringify(log.details).replace(/"/g, '""') : '';
+        
+        return [
+          `"${timestamp}"`,
+          `"${activityType}"`,
+          `"${description.replace(/"/g, '""')}"`,
+          `"${status}"`,
+          `"${details}"`
+        ].join(',');
+      });
+      
+      // Combine headers and rows
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `compliance_activity_logs_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error exporting to CSV:', err);
+      alert('Failed to export CSV. Please try again.');
+    }
+  };
+
+  const exportToPDF = async () => {
+    try {
+      const allLogs = await fetchAllLogsForExport();
+      
+      const doc = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
+      
+      // Add title
+      doc.setFontSize(20);
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Compliance Team Activity Logs Report', 14, 20);
+      
+      // Add subtitle with date range
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      const dateRange = filters.startDate && filters.endDate 
+        ? `${filters.startDate} to ${filters.endDate}`
+        : 'All Time';
+      doc.text(`Report Period: ${dateRange}`, 14, 28);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 33);
+      
+      // Add summary section
+      doc.setFontSize(14);
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Summary', 14, 43);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Activities: ${allLogs.length}`, 14, 50);
+      doc.text(`Today's Analyses: ${summary.today.analyses}`, 14, 55);
+      doc.text(`Today's Uploads: ${summary.today.uploads}`, 14, 60);
+      doc.text(`This Week Total: ${summary.this_week.total}`, 14, 65);
+      
+      // Helper function to format details in a readable way
+      const formatDetails = (details) => {
+        if (!details) return 'N/A';
+        try {
+          // Extract key information instead of showing raw JSON
+          const parts = [];
+          if (details.score !== undefined) parts.push(`Score: ${details.score}`);
+          if (details.frameworks && Array.isArray(details.frameworks)) {
+            parts.push(`Frameworks: ${details.frameworks.join(', ')}`);
+          }
+          if (details.filename) parts.push(`File: ${details.filename}`);
+          if (details.doc_type) parts.push(`Type: ${details.doc_type}`);
+          if (details.file_type) parts.push(`Format: ${details.file_type}`);
+          
+          // If we have extracted info, use it; otherwise format JSON compactly
+          if (parts.length > 0) {
+            return parts.join(' | ');
+          }
+          
+          // For other details, show a compact version
+          const jsonStr = JSON.stringify(details);
+          if (jsonStr.length > 60) {
+            return jsonStr.substring(0, 57) + '...';
+          }
+          return jsonStr;
+        } catch {
+          return String(details).substring(0, 60);
+        }
+      };
+      
+      // Prepare table data
+      const tableData = allLogs.map(log => [
+        formatTimestamp(log.timestamp),
+        log.activity_label || log.activity_type || 'Unknown',
+        (log.description || '').substring(0, 45) + (log.description?.length > 45 ? '...' : ''),
+        log.status || 'unknown',
+        formatDetails(log.details)
+      ]);
+      
+      // Add table with proper column widths
+      autoTable(doc, {
+        head: [['Timestamp', 'Activity Type', 'Description', 'Status', 'Details']],
+        body: tableData,
+        startY: 72,
+        columnStyles: {
+          0: { cellWidth: 35, fontSize: 7 }, // Timestamp
+          1: { cellWidth: 40, fontSize: 8 }, // Activity Type
+          2: { cellWidth: 50, fontSize: 7 }, // Description
+          3: { cellWidth: 25, fontSize: 8 }, // Status
+          4: { cellWidth: 80, fontSize: 7, overflow: 'linebreak' } // Details - wider with linebreak
+        },
+        styles: {
+          font: 'helvetica',
+          fontSize: 8,
+          cellPadding: 2,
+          overflow: 'linebreak',
+          cellWidth: 'wrap'
+        },
+        headStyles: {
+          fillColor: [59, 130, 246],
+          textColor: 255,
+          fontStyle: 'bold',
+          font: 'helvetica',
+        },
+        alternateRowStyles: {
+          fillColor: [245, 247, 250],
+        },
+        margin: { top: 72, left: 14, right: 14 },
+        tableWidth: 'auto',
+      });
+      
+      // Add footer
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+          `Page ${i} of ${pageCount} - Complytics Activity Logs`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      // Save PDF
+      doc.save(`compliance_activity_logs_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error('Error exporting to PDF:', err);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  const totalPages = Math.ceil(totalLogs / logsPerPage);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-4">
+          <motion.div
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg"
+          >
+            <FaClipboardList className="text-2xl text-white" />
+          </motion.div>
+          <div>
+            <h2 className="text-3xl font-bold text-foreground">My Activity Logs</h2>
+            <p className="text-muted-foreground">Track your compliance activities and analyses</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-md transition-colors"
+            title="Export to CSV"
+          >
+            <FaFileCsv />
+            <span className="hidden sm:inline">Export CSV</span>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={exportToPDF}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-md transition-colors"
+            title="Export to PDF"
+          >
+            <FaFilePdf />
+            <span className="hidden sm:inline">Export PDF</span>
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Analyses</span>
+            <FaCloud className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.analyses}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.analyses}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Uploads</span>
+            <FaFileAlt className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.uploads}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.uploads}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Today's Checklists</span>
+            <FaListAlt className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.checklists || 0}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.checklists || 0}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="p-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg text-white"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium opacity-90">Total Activities</span>
+            <FaChartBar className="text-xl opacity-80" />
+          </div>
+          <p className="text-3xl font-bold">{summary.today.total}</p>
+          <p className="text-xs opacity-75 mt-1">This week: {summary.this_week.total}</p>
+        </motion.div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-card rounded-lg border border-border p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Start Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => handleFilterChange('startDate', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">End Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => handleFilterChange('endDate', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Activity Type</label>
+            <select
+              value={filters.activityType}
+              onChange={(e) => handleFilterChange('activityType', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            >
+              <option value="">All Activities</option>
+              <option value="azure_analysis">Azure Analysis</option>
+              <option value="document_upload">Document Upload</option>
+              <option value="azure_config_fetch">Azure Config Fetch</option>
+              <option value="checklist_generation">Checklist Generation</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Status</label>
+            <select
+              value={filters.status}
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            >
+              <option value="">All Status</option>
+              <option value="success">Success</option>
+              <option value="warning">Warning</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Logs Table */}
+      {loading ? (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <p className="text-red-800 dark:text-red-400">{error}</p>
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <FaInbox className="text-4xl text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No activity logs found</p>
+        </div>
+      ) : (
+        <>
+          <div className="bg-card rounded-lg border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-secondary">
+                  <tr>
+                    <th className="p-3 text-left text-sm font-semibold">Activity</th>
+                    <th className="p-3 text-left text-sm font-semibold">Description</th>
+                    <th className="p-3 text-left text-sm font-semibold">Status</th>
+                    <th className="p-3 text-left text-sm font-semibold">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log, index) => (
+                    <motion.tr
+                      key={log.id || index}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="border-b border-border hover:bg-secondary/50 transition-colors"
+                    >
+                      <td className="p-3">
+                        <div className="flex items-center gap-3">
+                          {getActivityIcon(log.icon)}
+                          <span className="font-medium text-sm">{log.activity_label}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        <div>
+                          <p>{log.description}</p>
+                          {log.details && (
+                            <div className="mt-1 text-xs space-y-1">
+                              {log.details.score && (
+                                <span className="inline-block px-2 py-0.5 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 rounded mr-2">
+                                  Score: {log.details.score}/100
+                                </span>
+                              )}
+                              {log.details.frameworks && log.details.frameworks.length > 0 && (
+                                <span className="inline-block px-2 py-0.5 bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-400 rounded">
+                                  {log.details.frameworks.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">{getStatusBadge(log.status)}</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {formatTimestamp(log.timestamp)}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * logsPerPage) + 1} to {Math.min(currentPage * logsPerPage, totalLogs)} of {totalLogs} logs
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                    currentPage === 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  <FaChevronLeft />
+                  <span>Previous</span>
+                </button>
+                <span className="px-3 py-1.5 text-sm">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                    currentPage === totalPages
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  <span>Next</span>
+                  <FaChevronRight />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </motion.div>
+  );
+};
+
 const ManagementLogs = () => {
   const { authToken } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState({
-    today: { scans: 0, analyses: 0, reports: 0, uploads: 0 },
-    this_week: { scans: 0, analyses: 0, reports: 0, uploads: 0 }
+    today: { scans: 0, analyses: 0, reports: 0, uploads: 0, checklists: 0 },
+    this_week: { scans: 0, analyses: 0, reports: 0, uploads: 0, checklists: 0 }
   });
   const [totalLogs, setTotalLogs] = useState(0);
   const [filters, setFilters] = useState({
@@ -2932,6 +3337,221 @@ const ManagementLogs = () => {
     );
   };
 
+  const fetchAllLogsForExport = async () => {
+    try {
+      const params = new URLSearchParams({
+        limit: '10000', // Large limit to get all logs
+        skip: '0'
+      });
+      
+      if (filters.startDate) params.append('start_date', filters.startDate);
+      if (filters.endDate) params.append('end_date', filters.endDate);
+      if (filters.activityType) params.append('activity_type', filters.activityType);
+      if (filters.teamMember) params.append('team_member', filters.teamMember);
+      if (filters.status) params.append('status', filters.status);
+      
+      const response = await fetch(`http://localhost:8000/api/compliance/management-logs?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+      
+      const data = await response.json();
+      return data.logs || [];
+    } catch (err) {
+      console.error('Error fetching logs for export:', err);
+      return [];
+    }
+  };
+
+  const exportToCSV = async () => {
+    try {
+      const allLogs = await fetchAllLogsForExport();
+      
+      // CSV Headers
+      const headers = ['Timestamp', 'Activity Type', 'Description', 'User Email', 'User Role', 'Status', 'Details'];
+      
+      // CSV Rows
+      const rows = allLogs.map(log => {
+        const timestamp = formatTimestamp(log.timestamp);
+        const activityType = log.activity_label || log.activity_type || 'Unknown';
+        const description = log.description || '';
+        const userEmail = log.user_email || 'Unknown';
+        const userRole = log.user_role || 'Unknown';
+        const status = log.status || 'unknown';
+        const details = log.details ? JSON.stringify(log.details).replace(/"/g, '""') : '';
+        
+        return [
+          `"${timestamp}"`,
+          `"${activityType}"`,
+          `"${description.replace(/"/g, '""')}"`,
+          `"${userEmail}"`,
+          `"${userRole}"`,
+          `"${status}"`,
+          `"${details}"`
+        ].join(',');
+      });
+      
+      // Combine headers and rows
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `management_activity_logs_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error exporting to CSV:', err);
+      alert('Failed to export CSV. Please try again.');
+    }
+  };
+
+  const exportToPDF = async () => {
+    try {
+      const allLogs = await fetchAllLogsForExport();
+      
+      const doc = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
+      
+      // Add title
+      doc.setFontSize(20);
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Management Team Activity Logs Report', 14, 20);
+      
+      // Add subtitle with date range
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      const dateRange = filters.startDate && filters.endDate 
+        ? `${filters.startDate} to ${filters.endDate}`
+        : 'All Time';
+      doc.text(`Report Period: ${dateRange}`, 14, 28);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 33);
+      
+      // Add summary section
+      doc.setFontSize(14);
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Summary', 14, 43);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Activities: ${allLogs.length}`, 14, 50);
+      doc.text(`Today's Scans: ${summary.today.scans}`, 14, 55);
+      doc.text(`Today's Analyses: ${summary.today.analyses}`, 14, 60);
+      doc.text(`Today's Uploads: ${summary.today.uploads}`, 14, 65);
+      doc.text(`This Week Total: ${summary.this_week.scans + summary.this_week.analyses + summary.this_week.uploads}`, 14, 70);
+      
+      // Helper function to format details in a readable way
+      const formatDetails = (details) => {
+        if (!details) return 'N/A';
+        try {
+          // Extract key information instead of showing raw JSON
+          const parts = [];
+          if (details.score !== undefined) parts.push(`Score: ${details.score}`);
+          if (details.frameworks && Array.isArray(details.frameworks)) {
+            parts.push(`Frameworks: ${details.frameworks.join(', ')}`);
+          }
+          if (details.filename) parts.push(`File: ${details.filename}`);
+          if (details.doc_type) parts.push(`Type: ${details.doc_type}`);
+          if (details.file_type) parts.push(`Format: ${details.file_type}`);
+          if (details.url) parts.push(`URL: ${details.url}`);
+          if (details.scan_type) parts.push(`Scan: ${details.scan_type}`);
+          
+          // If we have extracted info, use it; otherwise format JSON compactly
+          if (parts.length > 0) {
+            return parts.join(' | ');
+          }
+          
+          // For other details, show a compact version
+          const jsonStr = JSON.stringify(details);
+          if (jsonStr.length > 50) {
+            return jsonStr.substring(0, 47) + '...';
+          }
+          return jsonStr;
+        } catch {
+          return String(details).substring(0, 50);
+        }
+      };
+      
+      // Prepare table data
+      const tableData = allLogs.map(log => [
+        formatTimestamp(log.timestamp),
+        log.activity_label || log.activity_type || 'Unknown',
+        (log.description || '').substring(0, 35) + (log.description?.length > 35 ? '...' : ''),
+        (log.user_email || 'Unknown').substring(0, 25) + ((log.user_email || '').length > 25 ? '...' : ''),
+        log.user_role ? log.user_role.replace('_', ' ') : 'Unknown',
+        log.status || 'unknown',
+        formatDetails(log.details)
+      ]);
+      
+      // Add table with proper column widths
+      autoTable(doc, {
+        head: [['Timestamp', 'Activity Type', 'Description', 'User Email', 'User Role', 'Status', 'Details']],
+        body: tableData,
+        startY: 77,
+        columnStyles: {
+          0: { cellWidth: 30, fontSize: 6 }, // Timestamp
+          1: { cellWidth: 35, fontSize: 7 }, // Activity Type
+          2: { cellWidth: 40, fontSize: 6 }, // Description
+          3: { cellWidth: 35, fontSize: 6 }, // User Email
+          4: { cellWidth: 25, fontSize: 7 }, // User Role
+          5: { cellWidth: 20, fontSize: 7 }, // Status
+          6: { cellWidth: 70, fontSize: 6, overflow: 'linebreak' } // Details - wider with linebreak
+        },
+        styles: {
+          font: 'helvetica',
+          fontSize: 7,
+          cellPadding: 2,
+          overflow: 'linebreak',
+          cellWidth: 'wrap'
+        },
+        headStyles: {
+          fillColor: [147, 51, 234], // Purple color for management
+          textColor: 255,
+          fontStyle: 'bold',
+          font: 'helvetica',
+        },
+        alternateRowStyles: {
+          fillColor: [245, 247, 250],
+        },
+        margin: { top: 77, left: 14, right: 14 },
+        tableWidth: 'auto',
+      });
+      
+      // Add footer
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+          `Page ${i} of ${pageCount} - Complytics Management Activity Logs`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      // Save PDF
+      doc.save(`management_activity_logs_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error('Error exporting to PDF:', err);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
   const totalPages = Math.ceil(totalLogs / logsPerPage);
   const startIndex = (currentPage - 1) * logsPerPage;
   const endIndex = Math.min(startIndex + logsPerPage, totalLogs);
@@ -2956,6 +3576,28 @@ const ManagementLogs = () => {
             <h2 className="text-3xl font-bold text-foreground">Activity Logs</h2>
             <p className="text-muted-foreground">Monitor compliance and IT team activities across your organization</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-md transition-colors"
+            title="Export to CSV"
+          >
+            <FaFileCsv />
+            <span className="hidden sm:inline">Export CSV</span>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={exportToPDF}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-md transition-colors"
+            title="Export to PDF"
+          >
+            <FaFilePdf />
+            <span className="hidden sm:inline">Export PDF</span>
+          </motion.button>
         </div>
       </div>
 
@@ -3063,6 +3705,7 @@ const ManagementLogs = () => {
               <option value="azure_analysis">Azure Analysis</option>
               <option value="ui_scan">UI Scan</option>
               <option value="document_upload">Document Upload</option>
+              <option value="checklist_generation">Checklist Generation</option>
             </select>
           </div>
           <div className="space-y-2">
@@ -3317,6 +3960,7 @@ const UserDashboard = () => {
         { id: 'testing', icon: <FaDesktop />, label: 'UI Testing' },
         { id: 'scan', icon: <FaCalendarAlt />, label: 'Schedule Scan' },
         { id: 'azure-checker', icon: <FaCloud />, label: 'Azure Compliance Checker' },
+        { id: 'logs', icon: <FaClipboardList />, label: 'Activity Logs' },
       ],
     };
 
@@ -4742,6 +5386,8 @@ const UserDashboard = () => {
         // Show different logs component based on role
         if (userData?.role === 'management_team') {
           return <ManagementLogs />;
+        } else if (userData?.role === 'compliance_team') {
+          return <ComplianceLogs />;
         } else {
           return <AzureADChangeLogs />;
         }

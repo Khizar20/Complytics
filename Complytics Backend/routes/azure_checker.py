@@ -682,6 +682,983 @@ async def analyze_azure_document(
         )
 
 
+@router.post("/generate-checklist/{result_id}")
+async def generate_compliance_checklist(
+    result_id: str,
+    framework: Optional[str] = None,  # 'gdpr', 'iso27001', 'iso27018', or None for all
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(lambda: database.db)
+):
+    """
+    Generate a fully compliant checklist based on identified gaps from analysis.
+    Creates actionable items for users to implement in Azure to become compliant.
+    """
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        from compliance_rag import rate_limited_generate_content_optimized
+        import json
+        
+        # Validate result_id
+        try:
+            result_obj_id = ObjectId(result_id)
+        except InvalidId:
+            raise HTTPException(status_code=400, detail="Invalid result ID format")
+        
+        # Fetch analysis result
+        result = await db.azure_compliance_results.find_one({"_id": result_obj_id})
+        if not result:
+            raise HTTPException(status_code=404, detail="Analysis result not found")
+        
+        # Check user access
+        if str(result.get('user_id')) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Access denied to this analysis result")
+        
+        # Get frameworks to process
+        frameworks_to_process = []
+        if framework:
+            if framework in result.get('frameworks', {}):
+                frameworks_to_process = [framework]
+            else:
+                raise HTTPException(status_code=400, detail=f"Framework '{framework}' not found in analysis")
+        else:
+            # Process all frameworks that have gaps
+            frameworks_to_process = [
+                fw for fw, fw_data in result.get('frameworks', {}).items()
+                if fw_data.get('gaps') and len(fw_data.get('gaps', [])) > 0
+            ]
+        
+        if not frameworks_to_process:
+            raise HTTPException(
+                status_code=400,
+                detail="No frameworks with identified gaps found. Cannot generate checklist."
+            )
+        
+        # Framework display names
+        framework_names = {
+            'gdpr': 'GDPR',
+            'iso27001': 'ISO 27001',
+            'iso27018': 'ISO 27018',
+            'iso27017': 'ISO 27017',
+            'azure': 'Azure Best Practices'
+        }
+        
+        # Generate checklist for each framework
+        checklist_items = []
+        
+        for fw_name in frameworks_to_process:
+            fw_data = result.get('frameworks', {}).get(fw_name, {})
+            gaps = fw_data.get('gaps', [])
+            compliant_areas = fw_data.get('compliant_areas', [])
+            recommendation = fw_data.get('recommendation', '')
+            key_requirements = fw_data.get('key_requirements', [])
+            score = fw_data.get('score', 0)
+            
+            if not gaps:
+                continue
+            
+            # Use AI to generate actionable checklist items from gaps
+            prompt = f"""You are an Azure compliance expert creating a detailed, actionable checklist for Azure portal implementation to achieve full {framework_names.get(fw_name, fw_name)} compliance.
+
+ANALYSIS RESULTS:
+- Current Compliance Score: {score}/100
+- Framework: {framework_names.get(fw_name, fw_name)}
+- Identified Gaps: {json.dumps(gaps, indent=2)}
+- Compliant Areas: {json.dumps(compliant_areas, indent=2)}
+- Key Requirements: {json.dumps(key_requirements, indent=2)}
+- Recommendation: {recommendation}
+
+TASK:
+Create a comprehensive, actionable checklist that addresses ALL identified gaps. Each checklist item MUST include:
+
+1. **Exact Azure Portal Navigation Path**: Step-by-step portal navigation (e.g., "Azure Portal > Azure Active Directory > Security > Conditional Access > Policies")
+2. **Specific Settings to Configure**: Exact setting names, values, and configurations
+3. **Detailed Step-by-Step Instructions**: Precise clicks, selections, and configurations
+4. **Azure Portal URLs/Paths**: Direct links or exact navigation paths where possible
+5. **Screenshots Guidance**: What users should see at each step
+6. **Verification Steps**: How to verify the setting was applied correctly
+
+FORMAT YOUR RESPONSE AS JSON:
+{{
+  "framework": "{framework_names.get(fw_name, fw_name)}",
+  "current_score": {score},
+  "target_score": 100,
+  "checklist_items": [
+    {{
+      "id": 1,
+      "title": "Specific actionable item title",
+      "description": "Detailed description of what needs to be done and why",
+      "gap_addressed": "Which gap this item addresses",
+      "priority": "CRITICAL|HIGH|MEDIUM|LOW",
+      "effort": "Quick|Moderate|Complex",
+      "azure_services": ["Azure Service 1", "Azure Service 2"],
+      "azure_portal_path": "Exact navigation path in Azure Portal",
+      "azure_portal_url": "Direct URL or portal path (if applicable)",
+      "settings_to_configure": {{
+        "setting_name": "Exact setting name",
+        "current_value": "What it likely is now",
+        "required_value": "What it should be",
+        "location": "Where in the portal this setting is located"
+      }},
+      "implementation_steps": [
+        {{
+          "step_number": 1,
+          "action": "Navigate to Azure Portal > Azure Active Directory",
+          "details": "Click on 'Azure Active Directory' in the left navigation menu",
+          "what_to_look_for": "You should see the Azure AD overview page"
+        }},
+        {{
+          "step_number": 2,
+          "action": "Go to Security > Conditional Access",
+          "details": "In the left menu, expand 'Security' and click 'Conditional Access'",
+          "what_to_look_for": "You should see the Conditional Access policies list"
+        }},
+        {{
+          "step_number": 3,
+          "action": "Configure specific setting",
+          "details": "Exact configuration details with field names and values",
+          "what_to_look_for": "What the user should see after configuration"
+        }}
+      ],
+      "verification_steps": [
+        "Step 1: How to verify the setting",
+        "Step 2: What to check to confirm it's working"
+      ],
+      "expected_outcome": "What compliance requirement this achieves",
+      "framework_reference": "Specific {framework_names.get(fw_name, fw_name)} requirement/control",
+      "additional_notes": "Any important warnings or considerations"
+    }}
+  ],
+  "summary": "Brief summary of checklist"
+}}
+
+CRITICAL REQUIREMENTS:
+- Provide EXACT Azure Portal navigation paths (menu items, section names)
+- Include specific setting names as they appear in Azure Portal
+- Give precise configuration values (not generic descriptions)
+- Include verification steps to confirm settings are applied
+- Reference actual Azure features/services with their exact names
+- Order by priority (CRITICAL first)
+- Make every step actionable and specific to Azure Portal UI
+- Include what users should see at each step for validation
+"""
+            
+            try:
+                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=8000)
+                logger.info(f"AI response received for {fw_name}, length: {len(ai_response)}")
+                
+                # Parse AI response
+                try:
+                    # Try to extract JSON from response
+                    cleaned_response = ai_response.strip()
+                    
+                    # Remove markdown code blocks
+                    if '```json' in cleaned_response:
+                        json_start = cleaned_response.find('```json') + 7
+                        json_end = cleaned_response.find('```', json_start)
+                        if json_end > json_start:
+                            cleaned_response = cleaned_response[json_start:json_end].strip()
+                    elif '```' in cleaned_response:
+                        json_start = cleaned_response.find('```') + 3
+                        json_end = cleaned_response.find('```', json_start)
+                        if json_end > json_start:
+                            cleaned_response = cleaned_response[json_start:json_end].strip()
+                    
+                    # Try to find JSON object boundaries
+                    if '{' in cleaned_response and '}' in cleaned_response:
+                        first_brace = cleaned_response.find('{')
+                        last_brace = cleaned_response.rfind('}')
+                        if last_brace > first_brace:
+                            cleaned_response = cleaned_response[first_brace:last_brace+1]
+                    
+                    checklist_data = json.loads(cleaned_response)
+                    parsed_items = checklist_data.get('checklist_items', [])
+                    
+                    if parsed_items:
+                        logger.info(f"Successfully parsed {len(parsed_items)} checklist items from AI for {fw_name}")
+                        checklist_items.extend(parsed_items)
+                    else:
+                        raise ValueError("No checklist items found in AI response")
+                except (json.JSONDecodeError, ValueError) as parse_error:
+                    logger.error(f"Failed to parse AI response for {fw_name}: {parse_error}")
+                    logger.debug(f"AI Response (first 500 chars): {ai_response[:500]}")
+                    
+                    # Smart fallback: Create gap-specific checklist items with intelligent mapping
+                    for idx, gap in enumerate(gaps):
+                        gap_lower = gap.lower()
+                        
+                        # Intelligent Azure service and path mapping based on gap content
+                        azure_services = []
+                        portal_path = 'Azure Portal'
+                        setting_name = 'Configuration required'
+                        
+                        # Map gaps to specific Azure services and paths
+                        if 'workstation' in gap_lower or 'administrator' in gap_lower or 'admin' in gap_lower:
+                            azure_services = ['Azure AD', 'Privileged Identity Management (PIM)', 'Azure AD Identity Protection']
+                            portal_path = 'Azure Portal > Azure Active Directory > Security > Privileged Identity Management'
+                            setting_name = 'Privileged Access Workstation (PAW) Configuration'
+                        elif 'certificate' in gap_lower or 'x.509' in gap_lower or 'x509' in gap_lower:
+                            azure_services = ['Azure Key Vault', 'Azure AD', 'Certificate Management']
+                            portal_path = 'Azure Portal > Azure Key Vault > Certificates'
+                            setting_name = 'X.509 Certificate Management Configuration'
+                        elif 'service model' in gap_lower or 'iaas' in gap_lower or 'paas' in gap_lower or 'saas' in gap_lower:
+                            azure_services = ['Azure Policy', 'Azure Security Center', 'Azure Governance']
+                            portal_path = 'Azure Portal > Azure Policy > Definitions'
+                            setting_name = 'Cloud Service Model Security Configuration'
+                        elif 'conditional access' in gap_lower or 'mfa' in gap_lower or 'multi-factor' in gap_lower:
+                            azure_services = ['Azure AD', 'Conditional Access']
+                            portal_path = 'Azure Portal > Azure Active Directory > Security > Conditional Access > Policies'
+                            setting_name = 'Conditional Access Policy Configuration'
+                        elif 'encryption' in gap_lower or 'data protection' in gap_lower:
+                            azure_services = ['Azure Key Vault', 'Azure Storage', 'Azure Disk Encryption']
+                            portal_path = 'Azure Portal > Azure Key Vault > Keys'
+                            setting_name = 'Encryption Configuration'
+                        elif 'monitoring' in gap_lower or 'logging' in gap_lower or 'audit' in gap_lower:
+                            azure_services = ['Azure Monitor', 'Azure Log Analytics', 'Azure Sentinel']
+                            portal_path = 'Azure Portal > Azure Monitor > Logs'
+                            setting_name = 'Monitoring and Logging Configuration'
+                        elif 'network' in gap_lower or 'firewall' in gap_lower or 'nsg' in gap_lower:
+                            azure_services = ['Azure Network Security Groups', 'Azure Firewall', 'Virtual Network']
+                            portal_path = 'Azure Portal > Network Security Groups'
+                            setting_name = 'Network Security Configuration'
+                        else:
+                            azure_services = ['Azure AD', 'Azure Policy', 'Azure Security Center']
+                            portal_path = 'Azure Portal > Azure Active Directory > Overview'
+                            setting_name = 'Security Configuration'
+                        
+                        # Create detailed implementation steps based on gap
+                        implementation_steps = [
+                            {
+                                'step_number': 1,
+                                'action': f"Navigate to {portal_path}",
+                                'details': f"Open Azure Portal (portal.azure.com) and navigate to the specified path in the left navigation menu",
+                                'what_to_look_for': f"You should see the {setting_name} configuration page"
+                            },
+                            {
+                                'step_number': 2,
+                                'action': f"Review current {setting_name} settings",
+                                'details': f"Examine the current configuration for {gap[:60]}",
+                                'what_to_look_for': 'Current settings and configuration options'
+                            },
+                            {
+                                'step_number': 3,
+                                'action': f"Configure {setting_name} to address the gap",
+                                'details': f"Update the settings to ensure compliance with {framework_names.get(fw_name, fw_name)} requirements for: {gap[:80]}",
+                                'what_to_look_for': 'Configuration saved confirmation message'
+                            },
+                            {
+                                'step_number': 4,
+                                'action': 'Save and apply the configuration',
+                                'details': 'Click Save/Apply button to commit the changes',
+                                'what_to_look_for': 'Success notification confirming the configuration was saved'
+                            }
+                        ]
+                        
+                        checklist_items.append({
+                            'id': len(checklist_items) + 1,
+                            'title': f"Configure {setting_name} for {gap[:70]}",
+                            'description': f"Implement {setting_name} to address the compliance gap: {gap}. This configuration ensures adherence to {framework_names.get(fw_name, fw_name)} requirements.",
+                            'gap_addressed': gap,
+                            'priority': 'HIGH' if 'critical' in gap_lower or 'security' in gap_lower else 'MEDIUM',
+                            'effort': 'Complex' if 'certificate' in gap_lower or 'workstation' in gap_lower else 'Moderate',
+                            'azure_services': azure_services,
+                            'azure_portal_path': portal_path,
+                            'azure_portal_url': None,
+                            'settings_to_configure': {
+                                'setting_name': setting_name,
+                                'current_value': 'Needs to be reviewed and configured',
+                                'required_value': f"Compliant {setting_name} per {framework_names.get(fw_name, fw_name)} requirements",
+                                'location': portal_path
+                            },
+                            'implementation_steps': implementation_steps,
+                            'verification_steps': [
+                                f"Verify {setting_name} is configured correctly in {portal_path}",
+                                f"Confirm the configuration addresses: {gap[:80]}",
+                                'Test the configuration to ensure it works as expected',
+                                'Document the configuration changes for audit purposes'
+                            ],
+                            'expected_outcome': f"Successfully configured {setting_name} to address: {gap[:100]}",
+                            'framework_reference': f"{framework_names.get(fw_name, fw_name)} compliance requirement",
+                            'additional_notes': f"Refer to Azure documentation for {setting_name} and {framework_names.get(fw_name, fw_name)} best practices. Consider testing in a non-production environment first."
+                        })
+            except Exception as e:
+                logger.error(f"Error generating checklist for {fw_name}: {e}")
+                # Use smart fallback with gap-specific mapping
+                for idx, gap in enumerate(gaps):
+                    gap_lower = gap.lower()
+                    
+                    # Intelligent Azure service and path mapping
+                    azure_services = []
+                    portal_path = 'Azure Portal'
+                    setting_name = 'Configuration required'
+                    
+                    if 'workstation' in gap_lower or 'administrator' in gap_lower or 'admin' in gap_lower:
+                        azure_services = ['Azure AD', 'Privileged Identity Management (PIM)', 'Azure AD Identity Protection']
+                        portal_path = 'Azure Portal > Azure Active Directory > Security > Privileged Identity Management'
+                        setting_name = 'Privileged Access Workstation (PAW) Configuration'
+                    elif 'certificate' in gap_lower or 'x.509' in gap_lower or 'x509' in gap_lower:
+                        azure_services = ['Azure Key Vault', 'Azure AD', 'Certificate Management']
+                        portal_path = 'Azure Portal > Azure Key Vault > Certificates'
+                        setting_name = 'X.509 Certificate Management Configuration'
+                    elif 'service model' in gap_lower or 'iaas' in gap_lower or 'paas' in gap_lower or 'saas' in gap_lower:
+                        azure_services = ['Azure Policy', 'Azure Security Center', 'Azure Governance']
+                        portal_path = 'Azure Portal > Azure Policy > Definitions'
+                        setting_name = 'Cloud Service Model Security Configuration'
+                    else:
+                        azure_services = ['Azure AD', 'Azure Policy', 'Azure Security Center']
+                        portal_path = 'Azure Portal > Azure Active Directory > Overview'
+                        setting_name = 'Security Configuration'
+                    
+                    implementation_steps = [
+                        {
+                            'step_number': 1,
+                            'action': f"Navigate to {portal_path}",
+                            'details': f"Open Azure Portal (portal.azure.com) and navigate to the specified path",
+                            'what_to_look_for': f"You should see the {setting_name} configuration page"
+                        },
+                        {
+                            'step_number': 2,
+                            'action': f"Configure {setting_name}",
+                            'details': f"Update settings to address: {gap[:80]}",
+                            'what_to_look_for': 'Configuration options and save button'
+                        },
+                        {
+                            'step_number': 3,
+                            'action': 'Save and verify',
+                            'details': 'Save the configuration and verify it was applied',
+                            'what_to_look_for': 'Success confirmation message'
+                        }
+                    ]
+                    
+                    checklist_items.append({
+                        'id': len(checklist_items) + 1,
+                        'title': f"Configure {setting_name} for {gap[:70]}",
+                        'description': f"Implement {setting_name} to address: {gap}",
+                        'gap_addressed': gap,
+                        'priority': 'HIGH',
+                        'effort': 'Moderate',
+                        'azure_services': azure_services,
+                        'azure_portal_path': portal_path,
+                        'settings_to_configure': {
+                            'setting_name': setting_name,
+                            'current_value': 'Needs configuration',
+                            'required_value': f"Compliant {setting_name} per {framework_names.get(fw_name, fw_name)}",
+                            'location': portal_path
+                        },
+                        'implementation_steps': implementation_steps,
+                        'verification_steps': [
+                            f"Verify {setting_name} is configured in {portal_path}",
+                            f"Confirm it addresses: {gap[:80]}"
+                        ],
+                        'expected_outcome': f"Resolve gap: {gap}",
+                        'framework_reference': framework_names.get(fw_name, fw_name),
+                        'additional_notes': f"Refer to Azure documentation for {setting_name}"
+                    })
+        
+        # Sort by priority
+        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        checklist_items.sort(key=lambda x: priority_order.get(x.get('priority', 'MEDIUM'), 3))
+        
+        # Add IDs if missing
+        for idx, item in enumerate(checklist_items):
+            if 'id' not in item:
+                item['id'] = idx + 1
+        
+        # Get user's organization_id if available
+        user_doc = await db.users.find_one({"_id": current_user.id})
+        organization_id = user_doc.get('organization_id') if user_doc else None
+        
+        # Save checklist to MongoDB
+        checklist_document = {
+            'user_id': current_user.id,
+            'user_email': current_user.email,
+            'organization_id': organization_id,
+            'result_id': result_id,
+            'analysis_result_id': result_obj_id,
+            'document_name': result.get('document_name', 'Unknown'),
+            'framework': framework if framework else 'all',
+            'frameworks': frameworks_to_process,
+            'checklist_items': checklist_items,
+            'total_items': len(checklist_items),
+            'generated_at': datetime.utcnow(),
+            'summary': f"Generated {len(checklist_items)} actionable checklist items to achieve full compliance"
+        }
+        
+        try:
+            checklist_result = await db.compliance_checklists.insert_one(checklist_document)
+            checklist_id = str(checklist_result.inserted_id)
+            logger.info(f"Compliance checklist saved to MongoDB with ID: {checklist_id}")
+        except Exception as e:
+            logger.error(f"Error saving compliance checklist to MongoDB: {e}")
+            checklist_id = None
+        
+        # Create activity log entry for checklist generation
+        try:
+            activity_log = {
+                'user_id': current_user.id,
+                'user_email': current_user.email,
+                'organization_id': organization_id,
+                'activity_type': 'checklist_generation',
+                'activity_label': 'Compliance Checklist Generated',
+                'description': f"Generated compliance checklist for {result.get('document_name', 'Unknown')} - {len(checklist_items)} items for {', '.join([fw.upper() if fw != 'gdpr' else 'GDPR' for fw in frameworks_to_process])}",
+                'status': 'success',
+                'details': {
+                    'checklist_id': checklist_id,
+                    'result_id': result_id,
+                    'document_name': result.get('document_name', 'Unknown'),
+                    'framework': framework if framework else 'all',
+                    'frameworks': frameworks_to_process,
+                    'total_items': len(checklist_items)
+                },
+                'timestamp': datetime.utcnow(),
+                'icon': '✅'
+            }
+            await db.activity_logs.insert_one(activity_log)
+            logger.info(f"Activity log created for checklist generation: {checklist_id}")
+        except Exception as e:
+            logger.error(f"Error creating activity log for checklist generation: {e}")
+        
+        # Create response
+        response = {
+            'checklist_id': checklist_id,
+            'result_id': result_id,
+            'document_name': result.get('document_name', 'Unknown'),
+            'frameworks': frameworks_to_process,
+            'checklist_items': checklist_items,
+            'total_items': len(checklist_items),
+            'generated_at': datetime.utcnow().isoformat(),
+            'summary': f"Generated {len(checklist_items)} actionable checklist items to achieve full compliance"
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating compliance checklist: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating checklist: {str(e)}"
+        )
+
+
+@router.post("/export-checklist-pdf/{result_id}")
+async def export_checklist_pdf(
+    result_id: str,
+    framework: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(lambda: database.db)
+):
+    """
+    Export compliance checklist as a detailed PDF with Azure portal navigation instructions
+    """
+    try:
+        from bson import ObjectId
+        from bson.errors import InvalidId
+        
+        # Validate result_id
+        try:
+            result_obj_id = ObjectId(result_id)
+        except InvalidId:
+            raise HTTPException(status_code=400, detail="Invalid result ID format")
+        
+        # Fetch analysis result
+        result = await db.azure_compliance_results.find_one({"_id": result_obj_id})
+        if not result:
+            raise HTTPException(status_code=404, detail="Analysis result not found")
+        
+        # Check user access
+        if str(result.get('user_id')) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Access denied to this analysis result")
+        
+        # Generate checklist first - call the function directly
+        # Get frameworks to process
+        frameworks_to_process = []
+        if framework:
+            if framework in result.get('frameworks', {}):
+                frameworks_to_process = [framework]
+            else:
+                raise HTTPException(status_code=400, detail=f"Framework '{framework}' not found in analysis")
+        else:
+            frameworks_to_process = [
+                fw for fw, fw_data in result.get('frameworks', {}).items()
+                if fw_data.get('gaps') and len(fw_data.get('gaps', [])) > 0
+            ]
+        
+        if not frameworks_to_process:
+            raise HTTPException(
+                status_code=400,
+                detail="No frameworks with identified gaps found. Cannot generate checklist."
+            )
+        
+        # Framework display names
+        framework_names = {
+            'gdpr': 'GDPR',
+            'iso27001': 'ISO 27001',
+            'iso27018': 'ISO 27018',
+            'iso27017': 'ISO 27017',
+            'azure': 'Azure Best Practices'
+        }
+        
+        # Generate full checklist using the same logic as the main endpoint
+        # We'll call the generate_compliance_checklist function logic inline
+        checklist_items = []
+        
+        for fw_name in frameworks_to_process:
+            fw_data = result.get('frameworks', {}).get(fw_name, {})
+            gaps = fw_data.get('gaps', [])
+            compliant_areas = fw_data.get('compliant_areas', [])
+            recommendation = fw_data.get('recommendation', '')
+            key_requirements = fw_data.get('key_requirements', [])
+            score = fw_data.get('score', 0)
+            
+            if not gaps:
+                continue
+            
+            # Use AI to generate detailed checklist (same prompt as main endpoint)
+            from compliance_rag import rate_limited_generate_content_optimized
+            prompt = f"""You are an Azure compliance expert creating a detailed, actionable checklist for Azure portal implementation to achieve full {framework_names.get(fw_name, fw_name)} compliance.
+
+ANALYSIS RESULTS:
+- Current Compliance Score: {score}/100
+- Framework: {framework_names.get(fw_name, fw_name)}
+- Identified Gaps: {json.dumps(gaps, indent=2)}
+- Compliant Areas: {json.dumps(compliant_areas, indent=2)}
+- Key Requirements: {json.dumps(key_requirements, indent=2)}
+- Recommendation: {recommendation}
+
+TASK:
+Create a comprehensive, actionable checklist that addresses ALL identified gaps. Each checklist item MUST include:
+
+1. **Exact Azure Portal Navigation Path**: Step-by-step portal navigation (e.g., "Azure Portal > Azure Active Directory > Security > Conditional Access > Policies")
+2. **Specific Settings to Configure**: Exact setting names, values, and configurations
+3. **Detailed Step-by-Step Instructions**: Precise clicks, selections, and configurations
+4. **Azure Portal URLs/Paths**: Direct links or exact navigation paths where possible
+5. **Screenshots Guidance**: What users should see at each step
+6. **Verification Steps**: How to verify the setting was applied correctly
+
+FORMAT YOUR RESPONSE AS JSON:
+{{
+  "framework": "{framework_names.get(fw_name, fw_name)}",
+  "current_score": {score},
+  "target_score": 100,
+  "checklist_items": [
+    {{
+      "id": 1,
+      "title": "Specific actionable item title",
+      "description": "Detailed description of what needs to be done and why",
+      "gap_addressed": "Which gap this item addresses",
+      "priority": "CRITICAL|HIGH|MEDIUM|LOW",
+      "effort": "Quick|Moderate|Complex",
+      "azure_services": ["Azure Service 1", "Azure Service 2"],
+      "azure_portal_path": "Exact navigation path in Azure Portal",
+      "azure_portal_url": "Direct URL or portal path (if applicable)",
+      "settings_to_configure": {{
+        "setting_name": "Exact setting name",
+        "current_value": "What it likely is now",
+        "required_value": "What it should be",
+        "location": "Where in the portal this setting is located"
+      }},
+      "implementation_steps": [
+        {{
+          "step_number": 1,
+          "action": "Navigate to Azure Portal > Azure Active Directory",
+          "details": "Click on 'Azure Active Directory' in the left navigation menu",
+          "what_to_look_for": "You should see the Azure AD overview page"
+        }},
+        {{
+          "step_number": 2,
+          "action": "Go to Security > Conditional Access",
+          "details": "In the left menu, expand 'Security' and click 'Conditional Access'",
+          "what_to_look_for": "You should see the Conditional Access policies list"
+        }},
+        {{
+          "step_number": 3,
+          "action": "Configure specific setting",
+          "details": "Exact configuration details with field names and values",
+          "what_to_look_for": "What the user should see after configuration"
+        }}
+      ],
+      "verification_steps": [
+        "Step 1: How to verify the setting",
+        "Step 2: What to check to confirm it's working"
+      ],
+      "expected_outcome": "What compliance requirement this achieves",
+      "framework_reference": "Specific {framework_names.get(fw_name, fw_name)} requirement/control",
+      "additional_notes": "Any important warnings or considerations"
+    }}
+  ],
+  "summary": "Brief summary of checklist"
+}}
+
+CRITICAL REQUIREMENTS:
+- Provide EXACT Azure Portal navigation paths (menu items, section names)
+- Include specific setting names as they appear in Azure Portal
+- Give precise configuration values (not generic descriptions)
+- Include verification steps to confirm settings are applied
+- Reference actual Azure features/services with their exact names
+- Order by priority (CRITICAL first)
+- Make every step actionable and specific to Azure Portal UI
+- Include what users should see at each step for validation
+"""
+            
+            try:
+                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=8000)
+                logger.info(f"AI response received for {fw_name} (PDF), length: {len(ai_response)}")
+                
+                # Parse AI response
+                try:
+                    if '```json' in ai_response:
+                        json_start = ai_response.find('```json') + 7
+                        json_end = ai_response.find('```', json_start)
+                        ai_response = ai_response[json_start:json_end].strip()
+                    elif '```' in ai_response:
+                        json_start = ai_response.find('```') + 3
+                        json_end = ai_response.find('```', json_start)
+                        ai_response = ai_response[json_start:json_end].strip()
+                    
+                    checklist_data = json.loads(ai_response)
+                    checklist_items.extend(checklist_data.get('checklist_items', []))
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse AI response for {fw_name} in PDF export")
+                    # Use smart fallback with gap-specific mapping (same as main endpoint)
+                    for idx, gap in enumerate(gaps):
+                        gap_lower = gap.lower()
+                        
+                        if 'workstation' in gap_lower or 'administrator' in gap_lower or 'admin' in gap_lower:
+                            azure_services = ['Azure AD', 'Privileged Identity Management (PIM)', 'Azure AD Identity Protection']
+                            portal_path = 'Azure Portal > Azure Active Directory > Security > Privileged Identity Management'
+                            setting_name = 'Privileged Access Workstation (PAW) Configuration'
+                        elif 'certificate' in gap_lower or 'x.509' in gap_lower or 'x509' in gap_lower:
+                            azure_services = ['Azure Key Vault', 'Azure AD', 'Certificate Management']
+                            portal_path = 'Azure Portal > Azure Key Vault > Certificates'
+                            setting_name = 'X.509 Certificate Management Configuration'
+                        elif 'service model' in gap_lower or 'iaas' in gap_lower or 'paas' in gap_lower or 'saas' in gap_lower:
+                            azure_services = ['Azure Policy', 'Azure Security Center', 'Azure Governance']
+                            portal_path = 'Azure Portal > Azure Policy > Definitions'
+                            setting_name = 'Cloud Service Model Security Configuration'
+                        else:
+                            azure_services = ['Azure AD', 'Azure Policy', 'Azure Security Center']
+                            portal_path = 'Azure Portal > Azure Active Directory > Overview'
+                            setting_name = 'Security Configuration'
+                        
+                        checklist_items.append({
+                            'id': len(checklist_items) + 1,
+                            'title': f"Configure {setting_name} for {gap[:70]}",
+                            'description': f"Implement {setting_name} to address: {gap}",
+                            'gap_addressed': gap,
+                            'priority': 'HIGH',
+                            'effort': 'Moderate',
+                            'azure_services': azure_services,
+                            'azure_portal_path': portal_path,
+                            'settings_to_configure': {
+                                'setting_name': setting_name,
+                                'current_value': 'Needs configuration',
+                                'required_value': f"Compliant {setting_name} per {framework_names.get(fw_name, fw_name)}",
+                                'location': portal_path
+                            },
+                            'implementation_steps': [
+                                {
+                                    'step_number': 1,
+                                    'action': f"Navigate to {portal_path}",
+                                    'details': f"Open Azure Portal (portal.azure.com) and navigate to the specified path",
+                                    'what_to_look_for': f"You should see the {setting_name} configuration page"
+                                },
+                                {
+                                    'step_number': 2,
+                                    'action': f"Configure {setting_name}",
+                                    'details': f"Update settings to address: {gap[:80]}",
+                                    'what_to_look_for': 'Configuration options and save button'
+                                },
+                                {
+                                    'step_number': 3,
+                                    'action': 'Save and verify',
+                                    'details': 'Save the configuration and verify it was applied',
+                                    'what_to_look_for': 'Success confirmation message'
+                                }
+                            ],
+                            'verification_steps': [
+                                f"Verify {setting_name} is configured in {portal_path}",
+                                f"Confirm it addresses: {gap[:80]}"
+                            ],
+                            'expected_outcome': f"Resolve gap: {gap}",
+                            'framework_reference': framework_names.get(fw_name, fw_name),
+                            'additional_notes': f"Refer to Azure documentation for {setting_name}"
+                        })
+            except Exception as e:
+                logger.error(f"Error generating checklist for {fw_name} in PDF: {e}")
+                # Fallback
+                for idx, gap in enumerate(gaps):
+                    checklist_items.append({
+                        'id': len(checklist_items) + 1,
+                        'title': f"Address: {gap[:100]}",
+                        'description': gap,
+                        'gap_addressed': gap,
+                        'priority': 'HIGH',
+                        'effort': 'Moderate',
+                        'azure_services': ['Azure AD', 'Azure Policy'],
+                        'azure_portal_path': 'Azure Portal > Azure Active Directory > [Configure based on gap]',
+                        'settings_to_configure': {
+                            'setting_name': 'Configuration required',
+                            'current_value': 'To be determined',
+                            'required_value': 'Compliant configuration',
+                            'location': 'Azure Portal'
+                        },
+                        'implementation_steps': [
+                            {
+                                'step_number': 1,
+                                'action': f"Navigate to Azure Portal to address: {gap[:50]}",
+                                'details': 'Review the gap and identify the appropriate Azure service',
+                                'what_to_look_for': 'Azure Portal dashboard'
+                            }
+                        ],
+                        'verification_steps': ['Verify the setting has been applied'],
+                        'expected_outcome': f"Resolve gap: {gap}",
+                        'framework_reference': framework_names.get(fw_name, fw_name)
+                    })
+        
+        # Sort by priority
+        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        checklist_items.sort(key=lambda x: priority_order.get(x.get('priority', 'MEDIUM'), 3))
+        
+        # Add IDs if missing
+        for idx, item in enumerate(checklist_items):
+            if 'id' not in item:
+                item['id'] = idx + 1
+        
+        checklist = {
+            'frameworks': frameworks_to_process,
+            'checklist_items': checklist_items,
+            'total_items': len(checklist_items)
+        }
+        
+        # Create PDF
+        from io import BytesIO
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        story = []
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=20,
+            textColor=colors.HexColor('#1e40af'),
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#1e40af'),
+            spaceAfter=8,
+            spaceBefore=12
+        )
+        subheading_style = ParagraphStyle(
+            'CustomSubHeading',
+            parent=styles['Heading3'],
+            fontSize=12,
+            textColor=colors.HexColor('#374151'),
+            spaceAfter=6,
+            spaceBefore=8
+        )
+        
+        # Title
+        story.append(Paragraph("Azure Compliance Implementation Checklist", title_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Document info
+        info_data = [
+            ['Document:', result.get('document_name', 'Unknown')],
+            ['Frameworks:', ', '.join([fw.upper() if fw != 'gdpr' else 'GDPR' for fw in checklist.get('frameworks', [])])],
+            ['Total Items:', str(checklist.get('total_items', 0))],
+            ['Generated:', datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')]
+        ]
+        info_table = Table(info_data, colWidths=[1.5*inch, 4.5*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f4f6')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Checklist items
+        for idx, item in enumerate(checklist.get('checklist_items', []), 1):
+            # Item header
+            priority_colors = {
+                'CRITICAL': colors.HexColor('#dc2626'),
+                'HIGH': colors.HexColor('#ea580c'),
+                'MEDIUM': colors.HexColor('#ca8a04'),
+                'LOW': colors.HexColor('#2563eb')
+            }
+            
+            item_title = f"Item #{item.get('id', idx)}: {item.get('title', 'Untitled')}"
+            story.append(Paragraph(item_title, heading_style))
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Priority and Effort badges
+            priority = item.get('priority', 'MEDIUM')
+            effort = item.get('effort', 'Moderate')
+            badge_data = [
+                ['Priority:', priority, 'Effort:', effort]
+            ]
+            badge_table = Table(badge_data, colWidths=[0.8*inch, 1.2*inch, 0.8*inch, 1.2*inch])
+            badge_table.setStyle(TableStyle([
+                ('BACKGROUND', (1, 0), (1, 0), priority_colors.get(priority, colors.grey)),
+                ('BACKGROUND', (3, 0), (3, 0), colors.HexColor('#f3f4f6')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('TEXTCOLOR', (1, 0), (1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (3, 0), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(badge_table)
+            story.append(Spacer(1, 0.15*inch))
+            
+            # Description
+            story.append(Paragraph("<b>Description:</b>", subheading_style))
+            story.append(Paragraph(item.get('description', 'No description'), styles['Normal']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Gap Addressed
+            story.append(Paragraph(f"<b>Gap Addressed:</b> {item.get('gap_addressed', 'N/A')}", styles['Normal']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Azure Portal Path
+            portal_path = item.get('azure_portal_path', 'N/A')
+            if portal_path:
+                story.append(Paragraph(f"<b>Azure Portal Navigation:</b> {portal_path}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Settings to Configure
+            settings = item.get('settings_to_configure', {})
+            if settings and isinstance(settings, dict):
+                story.append(Paragraph("<b>Settings to Configure:</b>", subheading_style))
+                settings_data = [
+                    ['Setting Name:', settings.get('setting_name', 'N/A')],
+                    ['Current Value:', settings.get('current_value', 'N/A')],
+                    ['Required Value:', settings.get('required_value', 'N/A')],
+                    ['Location:', settings.get('location', 'N/A')]
+                ]
+                settings_table = Table(settings_data, colWidths=[1.5*inch, 4.5*inch])
+                settings_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f4f6')),
+                    ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+                ]))
+                story.append(settings_table)
+                story.append(Spacer(1, 0.15*inch))
+            
+            # Implementation Steps
+            steps = item.get('implementation_steps', [])
+            if steps:
+                story.append(Paragraph("<b>Step-by-Step Implementation Guide:</b>", subheading_style))
+                for step in steps:
+                    if isinstance(step, dict):
+                        step_num = step.get('step_number', '')
+                        action = step.get('action', '')
+                        details = step.get('details', '')
+                        look_for = step.get('what_to_look_for', '')
+                        
+                        step_text = f"<b>Step {step_num}: {action}</b><br/>"
+                        if details:
+                            step_text += f"{details}<br/>"
+                        if look_for:
+                            step_text += f"<i>What to look for: {look_for}</i>"
+                        
+                        story.append(Paragraph(step_text, styles['Normal']))
+                        story.append(Spacer(1, 0.08*inch))
+                    else:
+                        # Fallback for string steps
+                        story.append(Paragraph(f"• {step}", styles['Normal']))
+                        story.append(Spacer(1, 0.05*inch))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Verification Steps
+            verification = item.get('verification_steps', [])
+            if verification:
+                story.append(Paragraph("<b>Verification Steps:</b>", subheading_style))
+                for v_step in verification:
+                    story.append(Paragraph(f"• {v_step}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Azure Services
+            services = item.get('azure_services', [])
+            if services:
+                story.append(Paragraph(f"<b>Azure Services Required:</b> {', '.join(services)}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Expected Outcome
+            outcome = item.get('expected_outcome', '')
+            if outcome:
+                story.append(Paragraph(f"<b>Expected Outcome:</b> {outcome}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Framework Reference
+            framework_ref = item.get('framework_reference', '')
+            if framework_ref:
+                story.append(Paragraph(f"<b>Framework Reference:</b> {framework_ref}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Additional Notes
+            notes = item.get('additional_notes', '')
+            if notes:
+                story.append(Paragraph(f"<b>Additional Notes:</b> {notes}", styles['Normal']))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Page break between items (except last)
+            if idx < len(checklist.get('checklist_items', [])):
+                story.append(PageBreak())
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Generate filename
+        frameworks_str = '_'.join(checklist.get('frameworks', []))
+        filename = f"compliance_checklist_{frameworks_str}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filepath = REPORTS_DIR / filename
+        
+        # Save to file
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
+        
+        logger.info(f"Checklist PDF generated: {filepath}")
+        
+        return FileResponse(
+            path=str(filepath),
+            filename=filename,
+            media_type='application/pdf'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating checklist PDF: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating checklist PDF: {str(e)}"
+        )
+
+
 @router.get("/generate-report/{result_id}")
 async def generate_report_from_saved(
     result_id: str,

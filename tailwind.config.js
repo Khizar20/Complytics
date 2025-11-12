@@ -16,7 +16,8 @@ module.exports = {
 	  },
 	  extend: {
 		fontFamily: {
-		  sans: ['Inter', 'SF Pro Display', 'sans-serif'],
+		  sans: ['DM Sans', 'sans-serif'],
+		  heading: ['Montserrat', 'sans-serif'],
 		  mono: ['SF Mono', 'monospace'],
 		},
 		colors: {

@@ -29,6 +29,9 @@ const AzureComplianceChecker = () => {
   const [error, setError] = useState(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [checkerStatus, setCheckerStatus] = useState(null);
+  const [checklist, setChecklist] = useState(null);
+  const [generatingChecklist, setGeneratingChecklist] = useState(false);
+  const [selectedFramework, setSelectedFramework] = useState(null);
 
   // Check if Azure Checker is ready
   useEffect(() => {
@@ -147,6 +150,109 @@ const AzureComplianceChecker = () => {
       setError('Failed to generate PDF report');
     } finally {
       setGeneratingReport(false);
+    }
+  };
+
+  const handleGenerateChecklist = async (framework = null) => {
+    if (!analysis || !analysis.result_id) {
+      setError('Please analyze a document first');
+      return;
+    }
+
+    setGeneratingChecklist(true);
+    setError(null);
+
+    try {
+      const url = framework 
+        ? `http://localhost:8000/api/azure-checker/generate-checklist/${analysis.result_id}?framework=${framework}`
+        : `http://localhost:8000/api/azure-checker/generate-checklist/${analysis.result_id}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate checklist');
+      }
+
+      const data = await response.json();
+      setChecklist(data);
+      setSelectedFramework(framework);
+    } catch (error) {
+      console.error('Error generating checklist:', error);
+      setError(error.message || 'Failed to generate compliance checklist');
+    } finally {
+      setGeneratingChecklist(false);
+    }
+  };
+
+  const exportChecklistToCSV = () => {
+    if (!checklist) return;
+
+    const headers = ['ID', 'Title', 'Priority', 'Effort', 'Gap Addressed', 'Azure Portal Path', 'Azure Services', 'Framework Reference'];
+    const rows = checklist.checklist_items.map(item => [
+      item.id,
+      `"${item.title}"`,
+      item.priority,
+      item.effort,
+      `"${item.gap_addressed}"`,
+      `"${item.azure_portal_path || 'N/A'}"`,
+      `"${item.azure_services?.join(', ') || 'N/A'}"`,
+      `"${item.framework_reference || 'N/A'}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `compliance_checklist_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportChecklistToPDF = async () => {
+    if (!analysis || !analysis.result_id || !checklist) {
+      setError('Please generate a checklist first');
+      return;
+    }
+
+    try {
+      const url = selectedFramework 
+        ? `http://localhost:8000/api/azure-checker/export-checklist-pdf/${analysis.result_id}?framework=${selectedFramework}`
+        : `http://localhost:8000/api/azure-checker/export-checklist-pdf/${analysis.result_id}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to export PDF');
+      }
+
+      // Download the PDF
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `compliance_checklist_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error exporting checklist PDF:', error);
+      setError(error.message || 'Failed to export PDF checklist');
     }
   };
 
@@ -625,6 +731,241 @@ const AzureComplianceChecker = () => {
                   <p className="text-gray-500">No detailed findings available.</p>
                 )}
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Compliance Checklist Section */}
+        <AnimatePresence>
+          {analysis && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mt-6 bg-white rounded-2xl shadow-lg p-6"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <FaListAlt className="text-blue-600" />
+                    Compliance Checklist
+                  </h2>
+                  <p className="text-gray-600 mt-1">
+                    Generate an actionable checklist to achieve full compliance based on identified gaps
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {Object.keys(analysis.frameworks || {}).map((fw) => (
+                    <button
+                      key={fw}
+                      onClick={() => handleGenerateChecklist(fw)}
+                      disabled={generatingChecklist}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 text-sm"
+                    >
+                      {fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => handleGenerateChecklist()}
+                    disabled={generatingChecklist}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-300 text-sm"
+                  >
+                    {generatingChecklist ? (
+                      <>
+                        <FaSpinner className="animate-spin inline mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      'All Frameworks'
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {checklist && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-6"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {checklist.total_items} Actionable Items
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Frameworks: {checklist.frameworks.map(fw => 
+                          fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()
+                        ).join(', ')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={exportChecklistToCSV}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <FaDownload />
+                        Export CSV
+                      </button>
+                      <button
+                        onClick={exportChecklistToPDF}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        <FaFilePdf />
+                        Export PDF
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {checklist.checklist_items.map((item, index) => {
+                      const priorityColors = {
+                        'CRITICAL': 'bg-red-100 border-red-300 text-red-800',
+                        'HIGH': 'bg-orange-100 border-orange-300 text-orange-800',
+                        'MEDIUM': 'bg-yellow-100 border-yellow-300 text-yellow-800',
+                        'LOW': 'bg-blue-100 border-blue-300 text-blue-800'
+                      };
+                      const effortColors = {
+                        'Quick': 'bg-green-100 text-green-800',
+                        'Moderate': 'bg-yellow-100 text-yellow-800',
+                        'Complex': 'bg-red-100 text-red-800'
+                      };
+
+                      return (
+                        <motion.div
+                          key={item.id || index}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          className="border rounded-lg p-5 hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="text-lg font-bold text-gray-700">#{item.id}</span>
+                                <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
+                              </div>
+                              <p className="text-gray-700 mb-3">{item.description}</p>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm font-medium text-gray-600">Gap Addressed:</span>
+                                <span className="text-sm text-gray-800">{item.gap_addressed}</span>
+                              </div>
+                              {item.azure_portal_path && (
+                                <div className="mb-2 p-2 bg-blue-50 rounded border border-blue-200">
+                                  <span className="text-sm font-semibold text-blue-900">📍 Azure Portal Path:</span>
+                                  <p className="text-sm text-blue-800 mt-1">{item.azure_portal_path}</p>
+                                </div>
+                              )}
+                              {item.settings_to_configure && typeof item.settings_to_configure === 'object' && (
+                                <div className="mb-2 p-3 bg-gray-50 rounded border border-gray-200">
+                                  <p className="text-sm font-semibold text-gray-900 mb-2">⚙️ Settings to Configure:</p>
+                                  <div className="space-y-1 text-sm">
+                                    <div><span className="font-medium">Setting:</span> {item.settings_to_configure.setting_name || 'N/A'}</div>
+                                    <div><span className="font-medium">Current Value:</span> {item.settings_to_configure.current_value || 'N/A'}</div>
+                                    <div><span className="font-medium">Required Value:</span> {item.settings_to_configure.required_value || 'N/A'}</div>
+                                    <div><span className="font-medium">Location:</span> {item.settings_to_configure.location || 'N/A'}</div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2 ml-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${priorityColors[item.priority] || priorityColors.MEDIUM}`}>
+                                {item.priority}
+                              </span>
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${effortColors[item.effort] || effortColors.Moderate}`}>
+                                {item.effort}
+                              </span>
+                            </div>
+                          </div>
+
+                          {item.azure_services && item.azure_services.length > 0 && (
+                            <div className="mb-3">
+                              <span className="text-sm font-medium text-gray-600">Azure Services: </span>
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {item.azure_services.map((service, idx) => (
+                                  <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
+                                    {service}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {item.implementation_steps && item.implementation_steps.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-sm font-semibold text-gray-700 mb-2">📋 Step-by-Step Implementation Guide:</p>
+                              <div className="space-y-3">
+                                {item.implementation_steps.map((step, idx) => {
+                                  if (typeof step === 'object' && step.step_number) {
+                                    return (
+                                      <div key={idx} className="pl-4 border-l-2 border-blue-300">
+                                        <div className="font-semibold text-sm text-gray-900">
+                                          Step {step.step_number}: {step.action}
+                                        </div>
+                                        {step.details && (
+                                          <div className="text-sm text-gray-700 mt-1">{step.details}</div>
+                                        )}
+                                        {step.what_to_look_for && (
+                                          <div className="text-xs text-gray-500 italic mt-1">
+                                            👁️ What to look for: {step.what_to_look_for}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  } else {
+                                    return (
+                                      <div key={idx} className="text-sm text-gray-700">
+                                        • {typeof step === 'string' ? step : JSON.stringify(step)}
+                                      </div>
+                                    );
+                                  }
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {item.verification_steps && item.verification_steps.length > 0 && (
+                            <div className="mb-3 p-3 bg-green-50 rounded border border-green-200">
+                              <p className="text-sm font-semibold text-green-900 mb-2">✅ Verification Steps:</p>
+                              <ul className="list-disc list-inside space-y-1 text-sm text-green-800">
+                                {item.verification_steps.map((vStep, idx) => (
+                                  <li key={idx}>{vStep}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {item.additional_notes && (
+                            <div className="mb-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+                              <p className="text-xs font-semibold text-yellow-900 mb-1">⚠️ Additional Notes:</p>
+                              <p className="text-xs text-yellow-800">{item.additional_notes}</p>
+                            </div>
+                          )}
+
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="flex items-center justify-between text-sm">
+                              <div>
+                                <span className="text-gray-600">Expected Outcome: </span>
+                                <span className="text-gray-800">{item.expected_outcome}</span>
+                              </div>
+                              {item.framework_reference && (
+                                <span className="text-gray-500 italic">
+                                  {item.framework_reference}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
+              {!checklist && !generatingChecklist && (
+                <div className="text-center py-8 text-gray-500">
+                  <FaListAlt className="text-4xl mx-auto mb-3 opacity-30" />
+                  <p>Click a framework button above to generate a compliance checklist</p>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

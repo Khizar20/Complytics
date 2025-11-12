@@ -155,7 +155,7 @@ const FormattedResponse = ({ content }) => {
             <Typography
               variant={level === 1 ? "h4" : level === 2 ? "h5" : "h6"}
               sx={{
-                fontFamily: 'Poppins, sans-serif',
+                fontFamily: 'Montserrat, sans-serif',
                 fontWeight: 600,
                 mb: 2,
                 color: theme.palette.text.primary,
@@ -224,7 +224,7 @@ const FormattedResponse = ({ content }) => {
                     <Typography
                       variant="body1"
                       sx={{
-                        fontFamily: 'Inter, sans-serif',
+                        fontFamily: 'DM Sans, sans-serif',
                         lineHeight: 1.6,
                         fontSize: '0.95rem',
                         '& a': {
@@ -252,7 +252,7 @@ const FormattedResponse = ({ content }) => {
           key={index}
           variant="body1"
           sx={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'DM Sans, sans-serif',
             lineHeight: 1.6,
             mb: 2,
             fontSize: '0.95rem',
@@ -334,7 +334,7 @@ const TypewriterText = ({ text, onComplete }) => {
       {currentIndex < text.length ? (
         <Box sx={{ 
           whiteSpace: 'pre-wrap',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'DM Sans, sans-serif',
           lineHeight: 1.6
         }}>
           <FormattedResponse content={displayedText} />
@@ -1034,7 +1034,7 @@ const ComplianceChat = () => {
           startIcon={<ArrowBackIcon />}
           onClick={handleBackToDashboard}
           sx={{ 
-            fontFamily: 'Poppins, sans-serif',
+            fontFamily: 'Montserrat, sans-serif',
             fontWeight: 600,
             mb: 1
           }}
@@ -1049,7 +1049,7 @@ const ComplianceChat = () => {
           sx={{ 
             bgcolor: theme.palette.primary.main,
             color: 'white',
-            fontFamily: 'Poppins, sans-serif',
+            fontFamily: 'Montserrat, sans-serif',
             fontWeight: 600,
             '&:hover': {
               bgcolor: theme.palette.primary.dark,
@@ -1080,7 +1080,7 @@ const ComplianceChat = () => {
             color: theme.palette.text.secondary,
             fontWeight: 500,
             pl: 2,
-            fontFamily: 'Poppins, sans-serif',
+            fontFamily: 'Montserrat, sans-serif',
           }}
         >
           Current Session
@@ -1107,12 +1107,12 @@ const ComplianceChat = () => {
                 primaryTypographyProps={{
                   noWrap: true,
                   fontSize: '0.875rem',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: 'DM Sans, sans-serif',
                   fontWeight: 600
                 }}
                 secondaryTypographyProps={{
                   fontSize: '0.75rem',
-                  fontFamily: 'Inter, sans-serif'
+                  fontFamily: 'DM Sans, sans-serif'
                 }}
               />
             </ListItem>
@@ -1129,7 +1129,7 @@ const ComplianceChat = () => {
                 pl: 2,
                 mt: 3,
                 mb: 2,
-                fontFamily: 'Poppins, sans-serif',
+                fontFamily: 'Montserrat, sans-serif',
                 display: 'block'
               }}
             >
@@ -1162,7 +1162,7 @@ const ComplianceChat = () => {
                         color: theme.palette.text.secondary,
                         pl: 2,
                         pt: 1,
-                        fontFamily: 'Inter, sans-serif',
+                        fontFamily: 'DM Sans, sans-serif',
                         display: 'block',
                         mb: 1
                       }}
@@ -1188,12 +1188,12 @@ const ComplianceChat = () => {
                         primaryTypographyProps={{
                           noWrap: true,
                           fontSize: '0.875rem',
-                          fontFamily: 'Inter, sans-serif',
+                          fontFamily: 'DM Sans, sans-serif',
                           fontWeight: 500
                         }}
                         secondaryTypographyProps={{
                           fontSize: '0.75rem',
-                          fontFamily: 'Inter, sans-serif'
+                          fontFamily: 'DM Sans, sans-serif'
                         }}
                       />
                     </ListItem>
@@ -1260,7 +1260,7 @@ const ComplianceChat = () => {
             bgcolor: theme.palette.background.default,
             borderRadius: 2,
             fontSize: '0.9rem',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'DM Sans, sans-serif',
             '&:hover': {
               bgcolor: alpha(theme.palette.background.default, 0.9),
             },
@@ -1280,7 +1280,7 @@ const ComplianceChat = () => {
           minWidth: '100px',
           height: '40px',
           textTransform: 'none',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'DM Sans, sans-serif',
           fontWeight: 500,
         }}
         endIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
@@ -1468,7 +1468,7 @@ const ComplianceChat = () => {
               variant="h6" 
               sx={{ 
                 fontWeight: 600,
-                fontFamily: 'Poppins, sans-serif',
+                fontFamily: 'Montserrat, sans-serif',
                 fontSize: '1.1rem',
               }}
             >
@@ -1478,7 +1478,7 @@ const ComplianceChat = () => {
               variant="body2" 
               sx={{ 
                 opacity: 0.8,
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: 'DM Sans, sans-serif',
                 fontSize: '0.85rem',
               }}
             >
@@ -1556,7 +1556,7 @@ const ComplianceChat = () => {
                   variant="h5"
                   sx={{ 
                     mb: 1,
-                    fontFamily: 'Poppins, sans-serif',
+                    fontFamily: 'Montserrat, sans-serif',
                     fontWeight: 600,
                   }}
                 >
@@ -1565,7 +1565,7 @@ const ComplianceChat = () => {
                 <Typography
                   sx={{ 
                     maxWidth: '500px',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: 'DM Sans, sans-serif',
                   }}
                 >
                   Ask questions about compliance frameworks, security controls, and regulatory requirements.
@@ -1642,7 +1642,7 @@ const ComplianceChat = () => {
                             variant="caption"
                             sx={{ 
                               color: theme.palette.text.secondary,
-                              fontFamily: 'Inter, sans-serif',
+                              fontFamily: 'DM Sans, sans-serif',
                             }}
                           >
                             Consulted experts: {message.experts.join(', ')}

@@ -317,10 +317,10 @@ async def compliance_chat(
 
                         # Use the first specified framework for targeted analysis
                         framework_choice = frameworks[0]
-                        response = generate_comprehensive_document_analysis(
-                            document_text, framework_choice, doc_type
-                        )
-                        experts = ['privacy', 'audit']
+                        # Use document_compliance_expert for all document analysis
+                        result = document_compliance_expert(document_text, doc_type, framework_choice)
+                        response = format_document_compliance_response(result)
+                        experts = ['document_compliance']
                         conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
                         await db.compliance_chat_history.update_one(
                             {"user_id": current_user.id, "session_id": session_id},
@@ -357,8 +357,12 @@ async def compliance_chat(
                     end_time = datetime.utcnow()
                     response_time = (end_time - start_time).total_seconds()
                     
-                    response = analyze_general_documentation_compliance(document_text, frameworks)
-                    experts = ['security', 'audit']
+                    # Use document_compliance_expert for general documentation analysis
+                    # Use the first framework or default to GDPR
+                    framework_choice = frameworks[0] if frameworks else "GDPR"
+                    result = document_compliance_expert(document_text, doc_type, framework_choice)
+                    response = format_document_compliance_response(result)
+                    experts = ['document_compliance']
                     
                     conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
                     await db.compliance_chat_history.update_one(
@@ -724,14 +728,13 @@ Please upload one of the supported document types."""
                         "is_compliance": True
                     }
                 
-                # Generate comprehensive analysis
+                # Generate comprehensive analysis using document_compliance_expert
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "document")
                 
-                response = generate_comprehensive_document_analysis(
-                    document_text, framework, document_type
-                )
-                experts = ['privacy', 'audit']
+                result = document_compliance_expert(document_text, document_type, framework)
+                response = format_document_compliance_response(result)
+                experts = ['document_compliance']
 
         elif intent_analysis["intent"] == "GENERATE_NEW":
             # Generate a new compliant document
@@ -839,10 +842,10 @@ Please upload one of the supported document types."""
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "document")
                 
-                response = generate_comprehensive_document_analysis(
-                    document_text, framework, document_type
-                )
-                experts = ['privacy', 'audit']
+                # Use document_compliance_expert for all document analysis
+                result = document_compliance_expert(document_text, document_type, framework)
+                response = format_document_compliance_response(result)
+                experts = ['document_compliance']
 
         elif intent_analysis["intent"] == "GET_IMPROVEMENT_SUGGESTIONS":
             if not has_uploaded_doc:
@@ -984,10 +987,9 @@ Please upload one of the supported document types."""
                 framework = intent_analysis.get("framework", "GDPR")
                 document_type = intent_analysis.get("document_type", "privacy_policy")
                 
-                # First analyze the current document
-                analysis = generate_comprehensive_document_analysis(
-                    document_text, framework, document_type
-                )
+                # First analyze the current document using document_compliance_expert
+                result = document_compliance_expert(document_text, document_type, framework)
+                analysis = format_document_compliance_response(result)
                 
                 # Then generate an improved version
                 improved_content = generate_intelligent_compliant_document(
@@ -1992,7 +1994,33 @@ async def get_management_logs(
                 "icon": "📄"
             })
         
-        # 4. Report Downloads (from Azure compliance results - we'll track report generation as downloads)
+        # 4. Compliance Checklist Generation
+        checklist_query = {"user_id": {"$in": user_ids}, "activity_type": "checklist_generation"}
+        if date_filter:
+            checklist_query["timestamp"] = date_filter
+        if team_member_user_id:
+            checklist_query["user_id"] = team_member_user_id
+        
+        checklist_logs = await db.activity_logs.find(checklist_query).sort("timestamp", -1).limit(limit).to_list(length=None)
+        
+        logger.info(f"Found {len(checklist_logs)} checklist generation logs")
+        for log_entry in checklist_logs:
+            user_id_checklist = log_entry.get("user_id")
+            all_logs.append({
+                "id": str(log_entry.get("_id", "")),
+                "timestamp": log_entry.get("timestamp", log_entry.get("generated_at", datetime.utcnow())),
+                "user_id": user_id_checklist,
+                "user_email": user_emails.get(user_id_checklist, log_entry.get("user_email", "Unknown")),
+                "user_role": user_roles.get(user_id_checklist, "Unknown"),
+                "activity_type": "checklist_generation",
+                "activity_label": log_entry.get("activity_label", "Compliance Checklist Generated"),
+                "description": log_entry.get("description", "Generated compliance checklist"),
+                "status": log_entry.get("status", "success"),
+                "details": log_entry.get("details", {}),
+                "icon": log_entry.get("icon", "✅")
+            })
+        
+        # 5. Report Downloads (from Azure compliance results - we'll track report generation as downloads)
         # Reports are generated on-demand, so we'll use the generate-report endpoint calls
         # For now, we'll note that reports can be generated from existing analyses
         
@@ -2034,13 +2062,15 @@ async def get_management_logs(
                 "scans": len([l for l in today_logs if l["activity_type"] == "ui_scan"]),
                 "analyses": len([l for l in today_logs if l["activity_type"] == "azure_analysis"]),
                 "reports": 0,  # Reports are generated on-demand, not stored
-                "uploads": len([l for l in today_logs if l["activity_type"] == "document_upload"])
+                "uploads": len([l for l in today_logs if l["activity_type"] == "document_upload"]),
+                "checklists": len([l for l in today_logs if l["activity_type"] == "checklist_generation"])
             },
             "this_week": {
                 "scans": len([l for l in week_logs if l["activity_type"] == "ui_scan"]),
                 "analyses": len([l for l in week_logs if l["activity_type"] == "azure_analysis"]),
                 "reports": 0,
-                "uploads": len([l for l in week_logs if l["activity_type"] == "document_upload"])
+                "uploads": len([l for l in week_logs if l["activity_type"] == "document_upload"]),
+                "checklists": len([l for l in week_logs if l["activity_type"] == "checklist_generation"])
             }
         }
         
@@ -2059,4 +2089,259 @@ async def get_management_logs(
         raise
     except Exception as e:
         logger.error(f"Error fetching management logs: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/compliance-logs")
+async def get_compliance_logs(
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(lambda: database.db),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    activity_type: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    """
+    Get activity logs for compliance team dashboard.
+    Shows only the current user's own activities.
+    Aggregates logs from Azure compliance analyses, document uploads, and reports.
+    """
+    try:
+        # Only allow compliance_team to access this endpoint
+        if current_user.role != 'compliance_team':
+            raise HTTPException(
+                status_code=403,
+                detail="Only compliance team can access compliance logs"
+            )
+        
+        user_id = str(current_user.id)
+        user_email = current_user.email
+        
+        # Import ObjectId for proper user_id matching
+        from bson import ObjectId
+        
+        # Build date filter
+        date_filter = {}
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                date_filter["$gte"] = start_dt
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                date_filter["$lt"] = end_dt
+            except ValueError:
+                pass
+        
+        all_logs = []
+        
+        # 1. Azure Compliance Analyses (user's own)
+        # Handle both ObjectId and string user_id formats
+        try:
+            user_id_obj = ObjectId(current_user.id) if isinstance(current_user.id, str) else current_user.id
+        except:
+            user_id_obj = current_user.id
+        
+        azure_query = {"$or": [{"user_id": user_id_obj}, {"user_id": user_id}]}
+        if date_filter:
+            azure_query["created_at"] = date_filter
+        if status:
+            if status == "success":
+                azure_query["overall_status"] = {"$in": ["Compliant", "Partial"]}
+            elif status == "failed":
+                azure_query["overall_status"] = "Non-Compliant"
+        
+        azure_results = await db.azure_compliance_results.find(azure_query).sort("created_at", -1).limit(limit * 2).to_list(length=None)
+        logger.info(f"Found {len(azure_results)} Azure compliance results for user {user_id}")
+        for result in azure_results:
+            frameworks = result.get("frameworks_analyzed", [])
+            if isinstance(frameworks, dict):
+                frameworks = list(frameworks.keys())
+            
+            all_logs.append({
+                "id": str(result["_id"]),
+                "timestamp": result.get("created_at", result.get("analyzed_at", datetime.utcnow())),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": "azure_analysis",
+                "activity_label": "Azure Compliance Analysis",
+                "description": f"Analyzed document: {result.get('document_name', 'Unknown')}",
+                "status": "success" if result.get("overall_status") in ["Compliant", "Partial"] else "warning",
+                "details": {
+                    "document_name": result.get("document_name"),
+                    "score": result.get("overall_score", result.get("score", 0)),
+                    "status": result.get("overall_status"),
+                    "frameworks": frameworks if frameworks else ["azure"]
+                },
+                "icon": "📊"
+            })
+        
+        # 2. Document Uploads (user's own)
+        # Handle both ObjectId and string user_id formats
+        doc_query = {"$or": [{"user_id": user_id_obj}, {"user_id": user_id}]}
+        if date_filter:
+            doc_query["upload_date"] = date_filter
+        
+        doc_results = await db.documents.find(doc_query).sort("upload_date", -1).limit(limit).to_list(length=None)
+        logger.info(f"Found {len(doc_results)} document uploads for user {user_id}")
+        for result in doc_results:
+            doc_type = result.get("doc_type", "unknown")
+            # More precise framework detection - only exact matches or explicit framework types
+            # Exclude common document types that should never be frameworks
+            excluded_types = ["privacy_policy", "terms_and_conditions", "general_documentation", "other", "unknown"]
+            is_framework = (
+                doc_type in ["framework", "compliance_framework"] or 
+                (isinstance(doc_type, str) and doc_type.lower() == "framework") or
+                (isinstance(doc_type, str) and "compliance_framework" in doc_type.lower() and doc_type.lower() not in excluded_types)
+            )
+            
+            # Ensure activity_type is correctly set - document_upload should NOT appear in other filters
+            # Always default to document_upload unless explicitly a framework
+            activity_type_value = "framework_upload" if is_framework else "document_upload"
+            activity_label = "Framework Document Uploaded" if is_framework else "Document Upload"
+            
+            # Log for debugging
+            logger.debug(f"Document upload: {result.get('original_name')}, doc_type: {doc_type}, is_framework: {is_framework}, activity_type: {activity_type_value}")
+            
+            all_logs.append({
+                "id": str(result["_id"]),
+                "timestamp": result.get("upload_date", datetime.utcnow()),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": activity_type_value,  # Use the correctly determined activity type
+                "activity_label": activity_label,
+                "description": f"Uploaded {result.get('original_name', result.get('filename', 'Unknown'))}",
+                "status": result.get("status", "processed") == "processed" and "success" or "warning",
+                "details": {
+                    "filename": result.get("original_name", result.get("filename")),
+                    "doc_type": doc_type,
+                    "file_type": result.get("file_type"),
+                    "is_framework": is_framework
+                },
+                "icon": "📚" if is_framework else "📄"
+            })
+        
+        # 3. Azure AD Configuration Fetches (if user has Azure connection)
+        # Handle both ObjectId and string user_id formats
+        azure_config_query = {
+            "$or": [{"user_id": user_id_obj}, {"user_id": user_id}],
+            "organization_id": current_user.organization_id
+        }
+        if date_filter:
+            azure_config_query["timestamp"] = date_filter
+        
+        azure_config_logs = await db.azure_config_logs.find(azure_config_query).sort("timestamp", -1).limit(limit).to_list(length=None)
+        for log_entry in azure_config_logs:
+            all_logs.append({
+                "id": str(log_entry.get("_id", "")),
+                "timestamp": log_entry.get("timestamp", datetime.utcnow()),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": "azure_config_fetch",
+                "activity_label": "Azure AD Config Fetch",
+                "description": f"Fetched Azure AD configuration: {log_entry.get('change_type', 'config_fetch')}",
+                "status": "success" if log_entry.get("status") == "success" else "failed",
+                "details": {
+                    "change_type": log_entry.get("change_type"),
+                    "error_message": log_entry.get("error_message")
+                },
+                "icon": "🔐"
+            })
+        
+        # 4. Compliance Checklist Generation (user's own)
+        checklist_query = {"$or": [{"user_id": user_id_obj}, {"user_id": user_id}], "activity_type": "checklist_generation"}
+        if date_filter:
+            checklist_query["timestamp"] = date_filter
+        
+        checklist_logs = await db.activity_logs.find(checklist_query).sort("timestamp", -1).limit(limit).to_list(length=None)
+        
+        logger.info(f"Found {len(checklist_logs)} checklist generation logs for user {user_id}")
+        for log_entry in checklist_logs:
+            all_logs.append({
+                "id": str(log_entry.get("_id", "")),
+                "timestamp": log_entry.get("timestamp", log_entry.get("generated_at", datetime.utcnow())),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": "checklist_generation",
+                "activity_label": log_entry.get("activity_label", "Compliance Checklist Generated"),
+                "description": log_entry.get("description", "Generated compliance checklist"),
+                "status": log_entry.get("status", "success"),
+                "details": log_entry.get("details", {}),
+                "icon": log_entry.get("icon", "✅")
+            })
+        
+        # Filter by activity_type if specified - ensure strict matching
+        if activity_type:
+            filtered_logs = []
+            for log in all_logs:
+                # Strict equality check - ensure activity_type matches exactly
+                log_activity_type = log.get("activity_type")
+                if log_activity_type == activity_type:
+                    filtered_logs.append(log)
+                # Debug logging for mismatches
+                elif log_activity_type and activity_type:
+                    logger.debug(f"Filter mismatch: log activity_type='{log_activity_type}', filter='{activity_type}'")
+            logger.info(f"Filtered logs: {len(all_logs)} -> {len(filtered_logs)} (filter: {activity_type})")
+            all_logs = filtered_logs
+        
+        # Filter by status if specified
+        if status:
+            all_logs = [log for log in all_logs if log.get("status") == status]
+        
+        # Sort all logs by timestamp (most recent first)
+        all_logs.sort(key=lambda x: x["timestamp"] if isinstance(x["timestamp"], datetime) else datetime.fromisoformat(str(x["timestamp"])), reverse=True)
+        
+        # Store total count before pagination
+        total_count = len(all_logs)
+        
+        # Calculate summary statistics BEFORE pagination
+        now = datetime.utcnow()
+        today_start = datetime(now.year, now.month, now.day)
+        week_start = today_start - timedelta(days=now.weekday())
+        
+        today_logs = [log for log in all_logs if isinstance(log["timestamp"], datetime) and log["timestamp"] >= today_start]
+        week_logs = [log for log in all_logs if isinstance(log["timestamp"], datetime) and log["timestamp"] >= week_start]
+        
+        # Apply pagination (skip and limit) AFTER calculating summary
+        all_logs = all_logs[skip:skip + limit]
+        
+        # Calculate summary
+        summary = {
+            "today": {
+                "analyses": len([l for l in today_logs if l["activity_type"] == "azure_analysis"]),
+                "uploads": len([l for l in today_logs if l["activity_type"] == "document_upload"]),
+                "framework_uploads": len([l for l in today_logs if l["activity_type"] == "framework_upload"]),
+                "config_fetches": len([l for l in today_logs if l["activity_type"] == "azure_config_fetch"]),
+                "checklists": len([l for l in today_logs if l["activity_type"] == "checklist_generation"]),
+                "total": len(today_logs)
+            },
+            "this_week": {
+                "analyses": len([l for l in week_logs if l["activity_type"] == "azure_analysis"]),
+                "uploads": len([l for l in week_logs if l["activity_type"] == "document_upload"]),
+                "framework_uploads": len([l for l in week_logs if l["activity_type"] == "framework_upload"]),
+                "config_fetches": len([l for l in week_logs if l["activity_type"] == "azure_config_fetch"]),
+                "checklists": len([l for l in week_logs if l["activity_type"] == "checklist_generation"]),
+                "total": len(week_logs)
+            }
+        }
+        
+        # Convert timestamps to ISO format strings
+        for log in all_logs:
+            if isinstance(log["timestamp"], datetime):
+                log["timestamp"] = log["timestamp"].isoformat()
+        
+        return {
+            "logs": all_logs,
+            "summary": summary,
+            "total": total_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching compliance logs: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) 

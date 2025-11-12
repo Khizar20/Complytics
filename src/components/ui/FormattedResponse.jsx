@@ -171,7 +171,7 @@ const FormattedResponse = ({ content }) => {
                     variant="body1"
                     component="span"
                     sx={{
-                      fontFamily: 'Inter, sans-serif',
+                      fontFamily: 'DM Sans, sans-serif',
                       lineHeight: 1.6,
                       fontSize: '0.95rem',
                       display: 'inline',
@@ -209,7 +209,7 @@ const FormattedResponse = ({ content }) => {
                     <Typography
                       variant="body1"
                       sx={{
-                        fontFamily: 'Inter, sans-serif',
+                        fontFamily: 'DM Sans, sans-serif',
                         lineHeight: 1.6,
                         fontSize: '0.95rem',
                         '& a': { cursor: 'pointer', '&:hover': { opacity: 0.8 } }
@@ -229,7 +229,7 @@ const FormattedResponse = ({ content }) => {
           key={index}
           variant="body1"
           sx={{
-            fontFamily: 'Inter, sans-serif',
+                        fontFamily: 'DM Sans, sans-serif',
             lineHeight: 1.6,
             mb: 2,
             fontSize: '0.95rem',
@@ -271,7 +271,7 @@ const FormattedResponse = ({ content }) => {
               <Typography
                 variant={level === 1 ? 'h4' : level === 2 ? 'h5' : 'h6'}
                 sx={{
-                  fontFamily: 'Poppins, sans-serif',
+                  fontFamily: 'Montserrat, sans-serif',
                   fontWeight: 600,
                   mb: 2,
                   color: theme.palette.text.primary,
