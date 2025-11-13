@@ -108,8 +108,13 @@ async def emit_critical_alert(message: str) -> None:
 @app.on_event("startup")
 async def on_startup() -> None:
     # Configure Gemini once (no-op if key missing)
-    configure_gemini(os.getenv("GOOGLE_API_KEY"))
-    logger.info("Application startup complete. Gemini configured=%s", bool(os.getenv("GOOGLE_API_KEY")))
+    primary_key = os.getenv("GOOGLE_API_KEY1")
+    fallback_key = os.getenv("GOOGLE_API_KEY2")
+    configure_gemini(primary_key, fallback_key)
+    logger.info(
+        "Application startup complete. Gemini configured=%s",
+        bool(primary_key or fallback_key),
+    )
 
 
 @app.post("/scan", response_model=ScanResponse, dependencies=[Depends(require_api_key)])

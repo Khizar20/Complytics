@@ -1239,13 +1239,21 @@ async def get_chatbot_analytics(
                     response_times.append(message['response_time'])
         avg_response_time = sum(response_times) / len(response_times) if response_times else 0
         
-        # Calculate success rate (assuming responses with experts consulted are successful)
-        successful_responses = sum(
-            1 for session in sessions
-            for message in session.get('messages', [])
-            if message.get('experts_consulted')
-        )
-        success_rate = (successful_responses / total_queries * 100) if total_queries > 0 else 0
+        # Calculate success rate:
+        # Treat any stored answer as a success, only deduct when the chatbot failed to produce a response.
+        successful_responses = 0
+        failed_responses = 0
+        for session in sessions:
+            for message in session.get('messages', []):
+                response_text = (message.get('response') or "").strip()
+                has_error_flag = bool(message.get('error')) or bool(message.get('error_message'))
+                if response_text and not has_error_flag:
+                    successful_responses += 1
+                else:
+                    failed_responses += 1
+
+        total_attempts = successful_responses + failed_responses
+        success_rate = (successful_responses / total_attempts * 100) if total_attempts > 0 else 0
         
         # Get most common topics (based on query content)
         from collections import Counter

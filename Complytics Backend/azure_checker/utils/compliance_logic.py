@@ -337,7 +337,7 @@ Make recommendations actionable and specific to Azure {category}."""
 
             response = rate_limited_generate_content_optimized(
                 prompt, 
-                temperature=0.2, 
+                temperature=0.0,  # Set to 0.0 for deterministic, consistent responses
                 max_tokens=1500
             )
             
@@ -407,7 +407,7 @@ Keep it professional and actionable."""
 
             summary = rate_limited_generate_content_optimized(
                 prompt,
-                temperature=0.3,
+                temperature=0.0,  # Set to 0.0 for deterministic, consistent responses
                 max_tokens=300
             )
             
@@ -577,7 +577,7 @@ Make sure the score reflects {framework_display_name} compliance, not generic se
         try:
             response = rate_limited_generate_content_optimized(
                 prompt, 
-                temperature=0.2, 
+                temperature=0.0,  # Set to 0.0 for deterministic, consistent responses
                 max_tokens=2000
             )
             
@@ -657,11 +657,8 @@ Make sure the score reflects {framework_display_name} compliance, not generic se
                 # Ensure score is in valid range
                 score = max(0, min(100, final_score))
                 
-                # Add deterministic variation based on framework and analysis to prevent identical scores
-                # Use hash of framework name + gaps count to create consistent but varied scores
-                framework_hash = hash(framework_name + str(len(gaps)) + str(len(compliant_areas))) % 5
-                variation = (framework_hash - 2)  # Range: -2 to +2
-                score = max(0, min(100, score + variation))
+                # Removed hash-based variation to ensure consistent scores for the same document
+                # Scores should be deterministic based on actual compliance analysis
                 
                 status = ai_result.get('status', 'Partial')
                 if status not in ['Compliant', 'Partial', 'Non-Compliant']:

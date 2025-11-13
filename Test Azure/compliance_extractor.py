@@ -8,7 +8,7 @@ from compliance documents (PDF or text) and convert them to JSON format.
 import os
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 import google.generativeai as genai
@@ -27,21 +27,30 @@ class ComplianceExtractor:
     Extracts Azure AD compliance rules from compliance documents using Gemini 2.0 Flash.
     """
     
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """
         Initialize the compliance extractor with Gemini API.
         
         Args:
             api_key (str): Google API key for Gemini. If None, uses environment variable.
         """
-        self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
-        if not self.api_key:
-            raise ValueError("Google API key is required. Set GOOGLE_API_KEY environment variable.")
-        
-        # Configure Gemini
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
-        
+        primary_from_env = os.getenv("GOOGLE_API_KEY1")
+        fallback_from_env = os.getenv("GOOGLE_API_KEY2")
+
+        self._gemini_keys: List[str] = []
+        for candidate in (api_key, primary_from_env, fallback_from_env):
+            if candidate:
+                value = candidate.strip()
+                if value and value not in self._gemini_keys:
+                    self._gemini_keys.append(value)
+
+        if not self._gemini_keys:
+            raise ValueError("Google API key is required. Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2) environment variables.")
+
+        self._active_key_index: Optional[int] = None
+        self.model: Optional[genai.GenerativeModel] = None
+        self._ensure_model_initialized()
+
         # Define the rule extraction prompt
         self.extraction_prompt = """
 You are an expert in Azure AD compliance and security. Your task is to extract actionable Azure AD compliance rules from the given compliance document.
@@ -71,6 +80,77 @@ Rules for extraction:
 
 Return only the JSON array of rules, no additional text.
 """
+
+    def _configure_model_for_index(self, index: int) -> bool:
+        if index < 0 or index >= len(self._gemini_keys):
+            return False
+        key = self._gemini_keys[index]
+        if not key:
+            return False
+        try:
+            genai.configure(api_key=key)
+            self.model = genai.GenerativeModel('gemini-2.0-flash')
+            self._active_key_index = index
+            logger.info("Gemini configured successfully with key #%d", index + 1)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
+            self.model = None
+            return False
+
+    def _ensure_model_initialized(self) -> bool:
+        if self.model is not None:
+            return True
+        for idx in range(len(self._gemini_keys)):
+            if self._configure_model_for_index(idx):
+                return True
+        return False
+
+    def _switch_to_fallback_key(self) -> bool:
+        if len(self._gemini_keys) <= 1:
+            return False
+        current = self._active_key_index
+        for idx in range(len(self._gemini_keys)):
+            if idx == current:
+                continue
+            if self._configure_model_for_index(idx):
+                logger.info("Gemini failover succeeded using key #%d", idx + 1)
+                return True
+        logger.warning("Gemini failover failed: no alternate API keys succeeded")
+        return False
+
+    def _generate_with_gemini(self, prompt: str) -> Tuple[Optional[str], Optional[str]]:
+        if not self._ensure_model_initialized():
+            return None, "No Gemini API key configured"
+
+        attempts = max(1, len(self._gemini_keys) or 1)
+        last_error: Optional[str] = None
+        for _ in range(attempts):
+            active_index = (self._active_key_index or 0) + 1 if self._active_key_index is not None else None
+            try:
+                response = self.model.generate_content(prompt)  # type: ignore[call-arg]
+                text = (getattr(response, "text", "") or "").strip()
+                if text:
+                    return text, None
+                logger.warning(
+                    "Gemini returned an empty response using key #%s",
+                    active_index if active_index is not None else "unknown",
+                )
+                last_error = "Empty response"
+            except Exception as exc:
+                logger.warning(
+                    "Gemini generation failed with key #%s: %s",
+                    active_index if active_index is not None else "unknown",
+                    exc,
+                )
+                last_error = str(exc)
+            finally:
+                self.model = None
+
+            if not self._switch_to_fallback_key():
+                break
+
+        return None, last_error
     
     def extract_text_from_pdf(self, pdf_path: str) -> str:
         """
@@ -118,13 +198,16 @@ Return only the JSON array of rules, no additional text.
             # Create the full prompt
             full_prompt = f"{self.extraction_prompt}\n\nCompliance Document Content:\n{text_content}"
             
-            # Generate response using Gemini
-            response = self.model.generate_content(full_prompt)
+            # Generate response using Gemini with fallback keys
+            response_text, error = self._generate_with_gemini(full_prompt)
+            if not response_text:
+                logger.error(f"Gemini generation failed for {document_path}: {error}")
+                return []
             
             # Parse the response
             try:
                 # Extract JSON from the response
-                response_text = response.text.strip()
+                response_text = response_text.strip()
                 
                 # Find JSON array in the response
                 start_idx = response_text.find('[')
@@ -142,7 +225,7 @@ Return only the JSON array of rules, no additional text.
                     
             except json.JSONDecodeError as e:
                 logger.error(f"Error parsing JSON from Gemini response: {str(e)}")
-                logger.error(f"Response: {response.text}")
+                logger.error(f"Response: {response_text}")
                 return []
                 
         except Exception as e:

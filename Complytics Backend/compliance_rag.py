@@ -31,14 +31,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-# GOOGLE_API_KEY = "AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI"
-# Khizar API KEY
-# GOOGLE_API_KEY="AIzaSyBESSLYw4V10xeLYtyIuez9IxXVS41mC_8"
-# Ayesha API KEY
-GOOGLE_API_KEY="AIzaSyDwl89KPOzPNTOKIdV2ndZlURJRV6RmAso"
-# Khizar 2 API KEY
-# GOOGLE_API_KEY = "AIzaSyDp5MleUzgMF5BmOWda6TTdOAghAsZCjSs"
-genai.configure(api_key=GOOGLE_API_KEY)
+_GEMINI_KEYS = []
+_ACTIVE_GEMINI_INDEX: Optional[int] = None
+
+for key_candidate in (
+    os.getenv("GOOGLE_API_KEY1"),
+    os.getenv("GOOGLE_API_KEY2"),
+):
+    if key_candidate:
+        value = key_candidate.strip()
+        if value and value not in _GEMINI_KEYS:
+            _GEMINI_KEYS.append(value)
 
 # Initialize the embedding model
 logger.info("Initializing embedding model...")
@@ -276,11 +279,60 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
 ]
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    generation_config=generation_config,
-    safety_settings=safety_settings
-)
+model = None
+
+
+def _configure_model_for_index(index: int) -> bool:
+    global model, _ACTIVE_GEMINI_INDEX
+    if index < 0 or index >= len(_GEMINI_KEYS):
+        return False
+    key = _GEMINI_KEYS[index]
+    if not key:
+        return False
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash",
+            generation_config=generation_config,
+            safety_settings=safety_settings
+        )
+        _ACTIVE_GEMINI_INDEX = index
+        logger.info("Gemini configured successfully with key #%d", index + 1)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
+        model = None
+        return False
+
+
+def _ensure_model_initialized() -> bool:
+    if model is not None:
+        return True
+    for idx in range(len(_GEMINI_KEYS)):
+        if _configure_model_for_index(idx):
+            return True
+    if not _GEMINI_KEYS:
+        logger.warning("Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)")
+    else:
+        logger.warning("Gemini not configured: all provided API keys failed")
+    return False
+
+
+def _switch_to_fallback_key() -> bool:
+    if len(_GEMINI_KEYS) <= 1:
+        return False
+    current = _ACTIVE_GEMINI_INDEX
+    for idx in range(len(_GEMINI_KEYS)):
+        if idx == current:
+            continue
+        if _configure_model_for_index(idx):
+            logger.info("Gemini failover succeeded using key #%d", idx + 1)
+            return True
+    logger.warning("Gemini failover failed: no alternate API keys succeeded")
+    return False
+
+
+_ensure_model_initialized()
 
 # Optimized rate limiting configuration (env-driven)
 CALLS_PER_MINUTE = int(os.getenv("GEMINI_CALLS_PER_MINUTE", "40"))
@@ -390,6 +442,10 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
     
     wait_for_rate_limit_optimized()
 
+    if not _ensure_model_initialized():
+        logger.error("Gemini model unavailable; returning empty response")
+        return ""
+
     # Reduced retry attempts for speed
     max_retries = 3
     base_delay = 1.5
@@ -421,6 +477,9 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
                 return result
             except Exception as e:
                 if any(k in str(e) for k in ["429", "ResourceExhausted", "quota"]):
+                    if _switch_to_fallback_key():
+                        logger.info("Switched to fallback Gemini API key after rate limit")
+                        continue
                     retry_delay = base_delay * (1.5 ** attempt)
                     logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
                     time.sleep(retry_delay)
@@ -428,6 +487,9 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
                         break
                 else:
                     logger.error(f"API error: {e}")
+                    if _switch_to_fallback_key():
+                        logger.info("Attempting fallback Gemini API key after API error")
+                        continue
                     break
             finally:
                 try:
@@ -3390,6 +3452,10 @@ What would you like to continue discussing or explore further?"""
 
 def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tokens: int = 3200, max_retries: int = 3) -> str:
     """Generate content with rate limiting and retries."""
+    if not _ensure_model_initialized():
+        logger.error("Gemini model unavailable; falling back to Ollama/local generation")
+        return _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
+
     for attempt in range(max_retries):
         try:
             _log_gemini_api_call(
@@ -3410,6 +3476,12 @@ def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tok
         except Exception as e:
             if attempt == max_retries - 1:
                 break
+            if any(k in str(e) for k in ["429", "ResourceExhausted", "quota"]) and _switch_to_fallback_key():
+                logger.info("Switched to fallback Gemini API key after rate limit")
+                continue
+            if _switch_to_fallback_key():
+                logger.info("Attempting fallback Gemini API key after error: %s", e)
+                continue
             time.sleep(1)  # Wait before retrying
     # Fallback to Ollama
     ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)

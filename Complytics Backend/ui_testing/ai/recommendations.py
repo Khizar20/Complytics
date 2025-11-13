@@ -13,12 +13,24 @@ except Exception:
     Groq = None  # type: ignore
 
 _MODEL = None
+_GEMINI_KEYS: List[str] = []
+_ACTIVE_GEMINI_INDEX: Optional[int] = None
+_GEMINI_MODEL_NAME = "gemini-2.0-flash"
 _GROQ: Optional[Dict[str, Any]] = None
 _LAST_CALL_TS: float = 0.0
 _MIN_CALL_INTERVAL_SEC: float = float(os.getenv("UI_AI_MIN_INTERVAL_SEC", "1.5"))
 _UI_REC_CACHE: Dict[str, str] = {}
 _UI_MAX_TOKENS: int = int(os.getenv("UI_AI_MAX_TOKENS", "8192"))
 logger = logging.getLogger("ai.recommendations")
+
+
+def _base_generation_config() -> Dict[str, Any]:
+    return {
+        "temperature": 0.3,
+        "top_p": 0.9,
+        "top_k": 40,
+        "max_output_tokens": _UI_MAX_TOKENS,
+    }
 
 
 def _hash_text(text: str) -> str:
@@ -48,28 +60,125 @@ def _save_cache() -> None:
     return
 
 
-def configure_gemini(api_key: Optional[str]) -> None:
-    global _MODEL
+def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[str] = None) -> None:
+    global _MODEL, _GEMINI_KEYS, _ACTIVE_GEMINI_INDEX
     # Caching disabled
-    key = api_key or os.getenv("GOOGLE_API_KEY")
-    if not key:
-        _MODEL = None
-        logger.warning("Gemini not configured: no API key available")
+    candidate_keys: List[str] = []
+    for key in (
+        primary_api_key,
+        fallback_api_key,
+        os.getenv("GOOGLE_API_KEY1"),
+        os.getenv("GOOGLE_API_KEY2"),
+    ):
+        if key:
+            value = key.strip()
+            if value and value not in candidate_keys:
+                candidate_keys.append(value)
+
+    _GEMINI_KEYS = candidate_keys
+    _MODEL = None
+    _ACTIVE_GEMINI_INDEX = None
+
+    if not _GEMINI_KEYS:
+        logger.warning(
+            "Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)"
+        )
         return
-    genai.configure(api_key=key)
 
-    generation_config = {
-        "temperature": 0.3,
-        "top_p": 0.9,
-        "top_k": 40,
-        "max_output_tokens": 8192,  # Maximum for Gemini 2.0 Flash - for comprehensive site-wide recommendations
-    }
+    if not _ensure_model_initialized():
+        logger.warning("Gemini not configured: all provided API keys failed")
 
-    _MODEL = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        generation_config=generation_config,
-    )
-    logger.info("Gemini configured successfully")
+
+def _configure_model_for_index(index: int) -> bool:
+    global _MODEL, _ACTIVE_GEMINI_INDEX
+    if index < 0 or index >= len(_GEMINI_KEYS):
+        return False
+    key = _GEMINI_KEYS[index]
+    if not key:
+        return False
+    try:
+        genai.configure(api_key=key)
+        _MODEL = genai.GenerativeModel(
+            model_name=_GEMINI_MODEL_NAME,
+            generation_config=_base_generation_config(),
+        )
+        _ACTIVE_GEMINI_INDEX = index
+        logger.info("Gemini configured successfully with key #%d", index + 1)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
+        _MODEL = None
+        return False
+
+
+def _ensure_model_initialized() -> bool:
+    if _MODEL is not None:
+        return True
+    for idx in range(len(_GEMINI_KEYS)):
+        if _configure_model_for_index(idx):
+            return True
+    return False
+
+
+def _switch_to_fallback_key() -> bool:
+    if len(_GEMINI_KEYS) <= 1:
+        return False
+    current = _ACTIVE_GEMINI_INDEX
+    for idx in range(len(_GEMINI_KEYS)):
+        if idx == current:
+            continue
+        if _configure_model_for_index(idx):
+            logger.info("Gemini failover succeeded using key #%d", idx + 1)
+            return True
+    logger.warning("Gemini failover failed: no alternate API keys succeeded")
+    return False
+
+
+def _generate_with_gemini(
+    prompt: str,
+    *,
+    max_output_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    global _MODEL
+    if not _ensure_model_initialized():
+        return None, None
+
+    generation_config: Optional[Dict[str, Any]] = None
+    if max_output_tokens is not None or temperature is not None:
+        generation_config = _base_generation_config()
+        if max_output_tokens is not None:
+            generation_config["max_output_tokens"] = max_output_tokens
+        if temperature is not None:
+            generation_config["temperature"] = temperature
+
+    attempts = max(1, len(_GEMINI_KEYS) or 1)
+    last_error: Optional[str] = None
+    for attempt in range(attempts):
+        active_index = (_ACTIVE_GEMINI_INDEX or 0) + 1 if _ACTIVE_GEMINI_INDEX is not None else None
+        try:
+            response = _MODEL.generate_content(prompt, generation_config=generation_config)
+            text = (getattr(response, "text", "") or "").strip()
+            if text:
+                return text, None
+            logger.warning(
+                "Gemini returned an empty response using key #%s",
+                active_index if active_index is not None else "unknown",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Gemini generation failed with key #%s: %s",
+                active_index if active_index is not None else "unknown",
+                exc,
+            )
+            last_error = str(exc)
+        finally:
+            _MODEL = None
+
+        if not _switch_to_fallback_key():
+            break
+
+    return None, last_error
 
 
 def configure_ollama(base_url: Optional[str], model: Optional[str]) -> None:
@@ -121,10 +230,12 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
     except Exception:
         agentic_enabled = False
 
-    if _MODEL is None and not agentic_enabled:
+    gemini_ready = _ensure_model_initialized()
+
+    if not gemini_ready and not agentic_enabled:
         logger.warning("AI recommendations requested but Gemini is not configured")
         return (
-            "Set GOOGLE_API_KEY to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.",
+            "Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2) to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.",
             "none",
             "none",
         )
@@ -213,13 +324,14 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
             if bundle_fingerprint in _UI_REC_CACHE:
                 text = _UI_REC_CACHE[bundle_fingerprint]
                 return text, "cache", "agentic"
-            if _MODEL is not None:
-                response = _MODEL.generate_content(prompt, generation_config={"max_output_tokens": _UI_MAX_TOKENS})
-                text = (getattr(response, "text", "") or "No recommendations generated.").strip()
+            text, error = _generate_with_gemini(prompt, max_output_tokens=_UI_MAX_TOKENS)
+            if text:
                 text = _cleanup_recommendations(text)
-                logger.info("Recommendations provider: Gemini(agentic) model=gemini-2.0-flash (len=%d)", len(text))
+                logger.info("Recommendations provider: Gemini(agentic) model=%s (len=%d)", _GEMINI_MODEL_NAME, len(text))
                 _UI_REC_CACHE[bundle_fingerprint] = text
-                return text, "gemini", "gemini-2.0-flash"
+                return text, "gemini", _GEMINI_MODEL_NAME
+            if error:
+                logger.info("Gemini(agentic) attempt failed: %s", error)
             # Gemini not configured → try Groq fallback
             _ensure_groq()
             if _GROQ:
@@ -434,8 +546,8 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
 
         max_retries = 3
         base_delay = 2.0
-        response = None
         final_text = ""
+        last_error_message: Optional[str] = None
         # Cache by compact bundle fingerprint in non-agentic mode too
         bundle_fingerprint = _hash_text(_safe_json_dumps({
             "mode": mode,
@@ -447,99 +559,103 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
             return cached, "cache", "single-shot"
 
         for attempt in range(max_retries):
-            try:
-                response = _MODEL.generate_content(prompt, generation_config={"max_output_tokens": _UI_MAX_TOKENS})
-                # single shot only (no continuation) to reduce usage
-                text_try = getattr(response, "text", "") or ""
+            text_try, error = _generate_with_gemini(prompt, max_output_tokens=_UI_MAX_TOKENS)
+            if text_try:
                 final_text = text_try
                 break
-            except Exception as e:
-                msg = str(e)
-                # On rate limit or token errors, rebuild a compact prompt including ALL violations with summarized targets
-                if any(k in msg for k in ["429", "ResourceExhausted", "quota", "too many tokens", "exceeds maximum"]):
-                    # Build compact-but-complete summaries
-                    wcag_full = _summarize_wcag_full(wcag)
-                    sec_summary = _summarize_security(sec)
-                    impact_counts = wcag.get("impact_counts", {})
-                    
-                    if mode == "accessibility":
-                        prompt = (
-                            "You are an accessibility auditor analyzing a whole-site WCAG audit.\n\n"
-                            f"Site Stats: {wcag.get('total_violations', 0)} violations across {wcag.get('pages_with_issues', 0)} pages\n"
-                            f"Impact: Critical={impact_counts.get('critical', 0)}, Serious={impact_counts.get('serious', 0)}\n"
-                            f"Violations: {wcag_full}\n\n"
-                            "Provide concise recommendations organized by severity.\n"
-                            "For each: Title, why it matters, how to fix (step-by-step), pages affected, priority."
-                        )
-                    elif mode == "security":
-                        missing = sec_summary.get("missing_headers", [])
-                        ssl = sec_summary.get("ssl_grade", "")
-                        prompt = (
-                            "You are a security expert.\n\n"
-                            f"Security Issues:\n"
-                            f"- Missing Headers: {missing if missing else 'None'}\n"
-                            f"- SSL Grade: {ssl if ssl else 'Not tested'}\n\n"
-                            "For each issue, provide:\n"
-                            "### [Severity] Issue Title\n"
-                            "**Impact:** Security risk in one sentence.\n"
-                            "**How to Fix:** Include ```apache and ```nginx code blocks with configuration.\n"
-                            "**Verification:** How to test.\n"
-                            "---\n"
-                            "Be concise but include complete configuration examples."
-                        )
-                    else:
-                        prompt = (
-                            "You are a web compliance expert.\n\n"
-                            f"Accessibility: {wcag.get('total_violations', 0)} violations, {wcag_full}\n"
-                            f"Security: {sec_summary}\n\n"
-                            "Provide concise recommendations in TWO sections:\n"
-                            "1. ACCESSIBILITY: organized by severity\n"
-                            "2. SECURITY: what's missing and how to fix\n"
-                            "Be specific and actionable."
-                        )
-                    time.sleep(base_delay * (attempt + 1))
-                    continue
-                if attempt == max_retries - 1:
-                    raise
+
+            last_error_message = error
+            if error and any(k in error for k in ["429", "ResourceExhausted", "quota", "too many tokens", "exceeds maximum"]):
+                # Build compact-but-complete summaries
+                wcag_full = _summarize_wcag_full(wcag)
+                sec_summary_compact = _summarize_security(sec)
+                impact_counts = wcag.get("impact_counts", {})
+
+                if mode == "accessibility":
+                    prompt = (
+                        "You are an accessibility auditor analyzing a whole-site WCAG audit.\n\n"
+                        f"Site Stats: {wcag.get('total_violations', 0)} violations across {wcag.get('pages_with_issues', 0)} pages\n"
+                        f"Impact: Critical={impact_counts.get('critical', 0)}, Serious={impact_counts.get('serious', 0)}\n"
+                        f"Violations: {wcag_full}\n\n"
+                        "Provide concise recommendations organized by severity.\n"
+                        "For each: Title, why it matters, how to fix (step-by-step), pages affected, priority."
+                    )
+                elif mode == "security":
+                    missing = sec_summary_compact.get("missing_headers", [])
+                    ssl = sec_summary_compact.get("ssl_grade", "")
+                    prompt = (
+                        "You are a security expert.\n\n"
+                        f"Security Issues:\n"
+                        f"- Missing Headers: {missing if missing else 'None'}\n"
+                        f"- SSL Grade: {ssl if ssl else 'Not tested'}\n\n"
+                        "For each issue, provide:\n"
+                        "### [Severity] Issue Title\n"
+                        "**Impact:** Security risk in one sentence.\n"
+                        "**How to Fix:** Include ```apache and ```nginx code blocks with configuration.\n"
+                        "**Verification:** How to test.\n"
+                        "---\n"
+                        "Be concise but include complete configuration examples."
+                    )
+                else:
+                    prompt = (
+                        "You are a web compliance expert.\n\n"
+                        f"Accessibility: {wcag.get('total_violations', 0)} violations, {wcag_full}\n"
+                        f"Security: {sec_summary_compact}\n\n"
+                        "Provide concise recommendations in TWO sections:\n"
+                        "1. ACCESSIBILITY: organized by severity\n"
+                        "2. SECURITY: what's missing and how to fix\n"
+                        "Be specific and actionable."
+                    )
                 time.sleep(base_delay * (attempt + 1))
                 continue
-        _LAST_CALL_TS = time.time()
-        if response is None:
-            logger.warning("Gemini did not return a response after retries; attempting Groq fallback")
-            # Groq fallback
-            _ensure_groq()
-            if _GROQ:
-                try:
-                    prompt_groq = prompt  # reuse compact prompt
-                    if _GROQ.get("sdk"):
-                        comp = _GROQ["sdk"].chat.completions.create(
-                            model="openai/gpt-oss-120b",
-                            messages=[{"role": "user", "content": prompt_groq}],
-                            temperature=1,
-                            max_tokens=2048,
-                            top_p=1,
-                        )
-                        text_g = (comp.choices[0].message.content or "").strip()
-                    else:
-                        headers = {"Authorization": f"Bearer {_GROQ['api_key']}", "Content-Type": "application/json"}
-                        payload = {
-                            "model": "openai/gpt-oss-120b",
-                            "messages": [{"role": "user", "content": prompt_groq}],
-                            "temperature": 1,
-                            "max_tokens": 2048,
-                            "top_p": 1,
-                        }
-                        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=60)
-                        r.raise_for_status()
-                        data = r.json()
-                        text_g = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-                        text_g = text_g.strip()
-                    if text_g:
-                        text_g = _cleanup_recommendations(text_g)
-                        logger.info("Recommendations provider: Groq model=openai/gpt-oss-120b")
-                        return text_g, "groq", "openai/gpt-oss-120b"
-                except Exception as ge:
-                    logger.info("Groq fallback failed: %s", ge)
+
+            if attempt == max_retries - 1:
+                break
+
+            time.sleep(base_delay * (attempt + 1))
+
+        if final_text:
+            _LAST_CALL_TS = time.time()
+            final_text = _cleanup_recommendations(final_text)
+            _UI_REC_CACHE[bundle_fingerprint] = final_text
+            logger.info("Recommendations provider: Gemini(single-shot) model=%s (len=%d)", _GEMINI_MODEL_NAME, len(final_text))
+            return final_text, "gemini", _GEMINI_MODEL_NAME
+
+        logger.warning("Gemini did not return a response after retries; attempting Groq fallback (last_error=%s)", last_error_message)
+        # Groq fallback
+        _ensure_groq()
+        if _GROQ:
+            try:
+                prompt_groq = prompt  # reuse compact prompt
+                if _GROQ.get("sdk"):
+                    comp = _GROQ["sdk"].chat.completions.create(
+                        model="openai/gpt-oss-120b",
+                        messages=[{"role": "user", "content": prompt_groq}],
+                        temperature=1,
+                        max_tokens=2048,
+                        top_p=1,
+                    )
+                    text_g = (comp.choices[0].message.content or "").strip()
+                else:
+                    headers = {"Authorization": f"Bearer {_GROQ['api_key']}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": "openai/gpt-oss-120b",
+                        "messages": [{"role": "user", "content": prompt_groq}],
+                        "temperature": 1,
+                        "max_tokens": 2048,
+                        "top_p": 1,
+                    }
+                    r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=60)
+                    r.raise_for_status()
+                    data = r.json()
+                    text_g = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                    text_g = text_g.strip()
+                if text_g:
+                    text_g = _cleanup_recommendations(text_g)
+                    logger.info("Recommendations provider: Groq model=openai/gpt-oss-120b")
+                    return text_g, "groq", "openai/gpt-oss-120b"
+            except Exception as ge:
+                logger.info("Groq fallback failed: %s", ge)
             # Final fallback
             fallback = (
                 "AI recommendations are temporarily unavailable due to rate limits or token constraints. "

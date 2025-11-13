@@ -36,6 +36,18 @@ def _decrypt_credentials(encrypted: str) -> str:
     return base64.b64decode(encrypted.encode()).decode()
 
 
+def _filter_successful_settings(config_data: dict) -> dict:
+    """Return only configuration sections that were fetched without errors."""
+    filtered: dict = {}
+    for key, value in config_data.items():
+        if key in {"iso_27017_graph_paths", "compliance_check"}:
+            continue
+        if isinstance(value, dict) and value.get("error"):
+            continue
+        filtered[key] = value
+    return filtered
+
+
 def _test_azure_connection(client_id: str, client_secret: str, tenant_id: str) -> Optional[str]:
     authority = f"https://login.microsoftonline.com/{tenant_id}"
     app = msal.ConfidentialClientApplication(
@@ -60,9 +72,15 @@ def _get_azure_graph_data(access_token: str, endpoint: str):
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/json'
     }
+    if endpoint.startswith("https://"):
+        url = endpoint
+    elif endpoint.startswith("/beta/"):
+        url = f"https://graph.microsoft.com{endpoint}"
+    else:
+        url = f"https://graph.microsoft.com/v1.0{endpoint}"
     
     try:
-        response = requests.get(f"https://graph.microsoft.com/v1.0{endpoint}", headers=headers)
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -457,6 +475,19 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "error": f"Failed to fetch users: {str(e)}",
                 "value": []
             }
+
+        # Fetch Authentication Method Configurations (detailed MFA state)
+        print("Fetching Authentication Method Configurations...")
+        try:
+            auth_method_configs = _get_azure_graph_data(access_token, "/policies/authenticationMethodsPolicy/authenticationMethodConfigurations")
+            config_data["authentication_method_configurations"] = auth_method_configs
+            print("Successfully fetched Authentication Method Configurations")
+        except Exception as e:
+            print(f"Failed to fetch authentication method configurations: {str(e)}")
+            config_data["authentication_method_configurations"] = {
+                "error": f"Failed to fetch authentication method configurations: {str(e)}",
+                "value": []
+            }
         
         # Fetch Organization settings
         print("Fetching Organization settings...")
@@ -483,6 +514,19 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "error": f"Failed to fetch authorization policy: {str(e)}",
                 "value": []
             }
+
+        # Fetch On-Premises Synchronization (Azure AD Connect) settings
+        print("Fetching On-Premises Synchronization settings...")
+        try:
+            on_prem_sync = _get_azure_graph_data(access_token, "/directory/onPremisesSynchronization")
+            config_data["on_premises_synchronization"] = on_prem_sync
+            print("Successfully fetched On-Premises Synchronization settings")
+        except Exception as e:
+            print(f"Failed to fetch on-premises synchronization settings: {str(e)}")
+            config_data["on_premises_synchronization"] = {
+                "error": f"Failed to fetch on-premises synchronization settings: {str(e)}",
+                "value": []
+            }
         
         # Fetch Application Registrations
         print("Fetching Application Registrations...")
@@ -496,6 +540,19 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "error": f"Failed to fetch applications: {str(e)}",
                 "value": []
             }
+
+        # Fetch Service Principals (enterprise applications)
+        print("Fetching Service Principals...")
+        try:
+            service_principals = _get_azure_graph_data(access_token, "/servicePrincipals?$top=10&$select=id,appId,displayName,createdDateTime")
+            config_data["service_principals"] = service_principals
+            print("Successfully fetched Service Principals")
+        except Exception as e:
+            print(f"Failed to fetch service principals: {str(e)}")
+            config_data["service_principals"] = {
+                "error": f"Failed to fetch service principals: {str(e)}",
+                "value": []
+            }
         
         # Fetch Groups
         print("Fetching Groups...")
@@ -507,6 +564,32 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
             print(f"Failed to fetch groups: {str(e)}")
             config_data["groups"] = {
                 "error": f"Failed to fetch groups: {str(e)}",
+                "value": []
+            }
+
+        # Fetch Device Compliance Policies (Intune)
+        print("Fetching Device Compliance Policies...")
+        try:
+            device_compliance = _get_azure_graph_data(access_token, "/deviceManagement/deviceCompliancePolicies?$top=10")
+            config_data["device_compliance_policies"] = device_compliance
+            print("Successfully fetched Device Compliance Policies")
+        except Exception as e:
+            print(f"Failed to fetch device compliance policies: {str(e)}")
+            config_data["device_compliance_policies"] = {
+                "error": f"Failed to fetch device compliance policies: {str(e)}",
+                "value": []
+            }
+
+        # Fetch Device Enrollment Configurations (Intune)
+        print("Fetching Device Enrollment Configurations...")
+        try:
+            device_enrollment = _get_azure_graph_data(access_token, "/deviceManagement/deviceEnrollmentConfigurations?$top=10")
+            config_data["device_enrollment_configurations"] = device_enrollment
+            print("Successfully fetched Device Enrollment Configurations")
+        except Exception as e:
+            print(f"Failed to fetch device enrollment configurations: {str(e)}")
+            config_data["device_enrollment_configurations"] = {
+                "error": f"Failed to fetch device enrollment configurations: {str(e)}",
                 "value": []
             }
         
@@ -611,6 +694,31 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "value": []
             }
 
+        # Fetch Role Assignments and Eligibility schedules (PIM)
+        print("Fetching Role Assignments and Eligibility Schedules...")
+        try:
+            role_assignments = _get_azure_graph_data(access_token, "/roleManagement/directory/roleAssignments?$top=25")
+            config_data["role_management_role_assignments"] = role_assignments
+            role_eligibility = _get_azure_graph_data(access_token, "/roleManagement/directory/roleEligibilitySchedules?$top=25")
+            config_data["role_management_role_eligibility_schedules"] = role_eligibility
+            role_eligibility_instances = _get_azure_graph_data(access_token, "/roleManagement/directory/roleEligibilityScheduleInstances?$top=25")
+            config_data["role_management_role_eligibility_instances"] = role_eligibility_instances
+            print("Successfully fetched Role Assignments and Eligibility Schedules")
+        except Exception as e:
+            print(f"Failed to fetch role management data: {str(e)}")
+            config_data["role_management_role_assignments"] = {
+                "error": f"Failed to fetch role assignments: {str(e)}",
+                "value": []
+            }
+            config_data["role_management_role_eligibility_schedules"] = {
+                "error": f"Failed to fetch role eligibility schedules: {str(e)}",
+                "value": []
+            }
+            config_data["role_management_role_eligibility_instances"] = {
+                "error": f"Failed to fetch role eligibility schedule instances: {str(e)}",
+                "value": []
+            }
+
         # Fetch group settings (for group self-service / EnableGroupCreation)
         print("Fetching Group Settings...")
         try:
@@ -668,6 +776,58 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "error": f"Failed to fetch lifecycle workflows: {str(e)}",
                 "value": []
             }
+
+        # Fetch Access Review definitions
+        print("Fetching Access Review Definitions...")
+        try:
+            access_review_defs = _get_azure_graph_data(access_token, "/identityGovernance/accessReviews/definitions?$top=25")
+            config_data["access_review_definitions"] = access_review_defs
+            print("Successfully fetched Access Review Definitions")
+        except Exception as e:
+            print(f"Failed to fetch access review definitions: {str(e)}")
+            config_data["access_review_definitions"] = {
+                "error": f"Failed to fetch access review definitions: {str(e)}",
+                "value": []
+            }
+
+        # Fetch Terms of Use agreements
+        print("Fetching Terms of Use Agreements...")
+        try:
+            terms_of_use = _get_azure_graph_data(access_token, "/identityGovernance/termsOfUse/agreements?$top=25")
+            config_data["terms_of_use_agreements"] = terms_of_use
+            print("Successfully fetched Terms of Use Agreements")
+        except Exception as e:
+            print(f"Failed to fetch terms of use agreements: {str(e)}")
+            config_data["terms_of_use_agreements"] = {
+                "error": f"Failed to fetch terms of use agreements: {str(e)}",
+                "value": []
+            }
+
+        # Fetch Information Protection label policy settings (beta endpoint)
+        print("Fetching Information Protection Label Policy Settings...")
+        try:
+            label_policy_settings = _get_azure_graph_data(access_token, "/beta/security/informationProtection/labelPolicySettings")
+            config_data["information_protection_label_policy_settings"] = label_policy_settings
+            print("Successfully fetched Information Protection Label Policy Settings")
+        except Exception as e:
+            print(f"Failed to fetch information protection label policy settings: {str(e)}")
+            config_data["information_protection_label_policy_settings"] = {
+                "error": f"Failed to fetch information protection label policy settings: {str(e)}",
+                "value": []
+            }
+
+        # Fetch OAuth2 permission grants (enterprise app consents)
+        print("Fetching OAuth2 Permission Grants...")
+        try:
+            oauth_grants = _get_azure_graph_data(access_token, "/oauth2PermissionGrants?$top=25")
+            config_data["oauth_permission_grants"] = oauth_grants
+            print("Successfully fetched OAuth2 Permission Grants")
+        except Exception as e:
+            print(f"Failed to fetch OAuth2 permission grants: {str(e)}")
+            config_data["oauth_permission_grants"] = {
+                "error": f"Failed to fetch OAuth2 permission grants: {str(e)}",
+                "value": []
+            }
         
         # Summarize coverage of ISO 27017 graph paths
         iso_paths = _load_iso_graph_paths()
@@ -676,11 +836,15 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
         implemented.update({
             "/identity/conditionalAccess/policies",
             "/policies/authenticationMethodsPolicy",
+            "/policies/authenticationMethodsPolicy/authenticationMethodConfigurations",
             "/users",
             "/organization",
             "/policies/authorizationPolicy",
             "/applications",
+            "/servicePrincipals",
             "/groups",
+            "/deviceManagement/deviceCompliancePolicies",
+            "/deviceManagement/deviceEnrollmentConfigurations",
             "/policies/crossTenantAccessPolicy",
             "/policies/crossTenantAccessPolicy/default",
             "/policies/crossTenantAccessPolicy/partners",
@@ -692,6 +856,14 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
             "/identityProtection/riskyUsers",
             "/organization/{id}/certificateBasedAuthConfiguration",
             "/identityGovernance/lifecycleWorkflows/workflows",
+            "/directory/onPremisesSynchronization",
+            "/roleManagement/directory/roleAssignments",
+            "/roleManagement/directory/roleEligibilitySchedules",
+            "/roleManagement/directory/roleEligibilityScheduleInstances",
+            "/identityGovernance/accessReviews/definitions",
+            "/identityGovernance/termsOfUse/agreements",
+            "/security/informationProtection/labelPolicySettings",
+            "/oauth2PermissionGrants",
         })
         # Normalize ISO paths (strip query if any)
         iso_base = {_strip_query(p) for p in iso_paths}
@@ -715,6 +887,22 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
                 "error": f"Failed to perform compliance check: {str(e)}",
                 "summary": {"compliance_score": 0}
             }
+
+        # Create sanitized snapshot (only sections fetched without errors)
+        sanitized_settings = _filter_successful_settings(config_data)
+        config_data["sanitized_settings"] = sanitized_settings
+
+        if sanitized_settings:
+            try:
+                await database.db.azure_config_snapshots.insert_one({
+                    "user_id": current_user.id,
+                    "user_email": current_user.email,
+                    "organization_id": current_user.organization_id,
+                    "timestamp": datetime.utcnow(),
+                    "settings": sanitized_settings
+                })
+            except Exception as e:
+                print(f"Failed to store sanitized Azure settings snapshot: {str(e)}")
 
         print("Successfully completed Azure config fetch")
         

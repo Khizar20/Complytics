@@ -25,6 +25,51 @@ def analyze_refined_intent(query: str, conversation_context: str = "", has_uploa
     from compliance_rag import rate_limited_generate_content
     
     try:
+        normalized_query = (query or "").lower()
+        short_answer_triggers = [
+            "short",
+            "brief",
+            "briefly",
+            "quick",
+            "quickly",
+            "concise",
+            "summary",
+            "summarize",
+            "in short",
+            "in a nutshell",
+            "tell shortly",
+            "short answer",
+            "quick answer",
+            "short version",
+        ]
+
+        if not has_uploaded_doc and any(trigger in normalized_query for trigger in short_answer_triggers):
+            framework = "general"
+            framework_keywords = {
+                "gdpr": "GDPR",
+                "ccpa": "CCPA",
+                "hipaa": "HIPAA",
+                "iso 27001": "ISO 27001",
+                "soc 2": "SOC 2",
+                "nist": "NIST",
+                "pci dss": "PCI DSS",
+                "pci-dss": "PCI DSS",
+            }
+            for keyword, framework_name in framework_keywords.items():
+                if keyword in normalized_query:
+                    framework = framework_name
+                    break
+
+            logger.info("Short answer trigger detected; routing to GENERAL_QA_SHORT")
+            return {
+                "intent": "GENERAL_QA_SHORT",
+                "sub_intent": "short_answer",
+                "framework": framework,
+                "requires_framework": False,
+                "confidence": 0.95,
+                "reasoning": "Explicit short/brief answer requested; prioritizing short QA flow.",
+            }
+
         prompt = f"""
 Analyze this user query and classify into ONE intent. Be VERY careful about false positives.
 

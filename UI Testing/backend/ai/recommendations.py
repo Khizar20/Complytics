@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 import os
 import json
 import logging
@@ -12,36 +12,126 @@ except Exception:  # optional import
 
 
 _MODEL = None
-GOOGLE_API_KEY_FALLBACK = "AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI"
+_GEMINI_KEYS: List[str] = []
+_ACTIVE_GEMINI_INDEX: Optional[int] = None
+_GEMINI_MODEL_NAME = "gemini-2.0-flash"
 logger = logging.getLogger("ai.recommendations")
 
 
-def configure_gemini(api_key: Optional[str]) -> None:
-    global _MODEL
-    key = api_key or os.getenv("GOOGLE_API_KEY") or GOOGLE_API_KEY_FALLBACK
-    if not key:
-        _MODEL = None
-        logger.warning("Gemini not configured: no API key available")
-        return
-    genai.configure(api_key=key)
+def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[str] = None) -> None:
+    global _MODEL, _GEMINI_KEYS, _ACTIVE_GEMINI_INDEX
+    candidate_keys: List[str] = []
+    for key in (
+        primary_api_key,
+        fallback_api_key,
+        os.getenv("GOOGLE_API_KEY1"),
+        os.getenv("GOOGLE_API_KEY2"),
+    ):
+        if key:
+            value = key.strip()
+            if value and value not in candidate_keys:
+                candidate_keys.append(value)
 
-    generation_config = {
+    _GEMINI_KEYS = candidate_keys
+    _MODEL = None
+    _ACTIVE_GEMINI_INDEX = None
+
+    if not _ensure_model_initialized():
+        logger.warning(
+            "Gemini not configured: no usable API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)"
+        )
+
+
+def _base_generation_config() -> Dict[str, Any]:
+    return {
         "temperature": 0.3,
         "top_p": 0.9,
         "top_k": 40,
         "max_output_tokens": 1024,
     }
 
-    safety_settings = [
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    ]
 
-    _MODEL = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        generation_config=generation_config,
-        safety_settings=safety_settings,
-    )
-    logger.info("Gemini configured successfully")
+def _configure_model_for_index(index: int) -> bool:
+    global _MODEL, _ACTIVE_GEMINI_INDEX
+    if index < 0 or index >= len(_GEMINI_KEYS):
+        return False
+    key = _GEMINI_KEYS[index]
+    if not key:
+        return False
+    try:
+        genai.configure(api_key=key)
+        _MODEL = genai.GenerativeModel(
+            model_name=_GEMINI_MODEL_NAME,
+            generation_config=_base_generation_config(),
+            safety_settings=[
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            ],
+        )
+        _ACTIVE_GEMINI_INDEX = index
+        logger.info("Gemini configured successfully with key #%d", index + 1)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
+        _MODEL = None
+        return False
+
+
+def _ensure_model_initialized() -> bool:
+    if _MODEL is not None:
+        return True
+    for idx in range(len(_GEMINI_KEYS)):
+        if _configure_model_for_index(idx):
+            return True
+    return False
+
+
+def _switch_to_fallback_key() -> bool:
+    if len(_GEMINI_KEYS) <= 1:
+        return False
+    current = _ACTIVE_GEMINI_INDEX
+    for idx in range(len(_GEMINI_KEYS)):
+        if idx == current:
+            continue
+        if _configure_model_for_index(idx):
+            logger.info("Gemini failover succeeded using key #%d", idx + 1)
+            return True
+    logger.warning("Gemini failover failed: no alternate API keys succeeded")
+    return False
+
+
+def _generate_with_gemini(prompt: str) -> Tuple[Optional[str], Optional[str]]:
+    global _MODEL
+    if not _ensure_model_initialized():
+        return None, None
+
+    attempts = max(1, len(_GEMINI_KEYS) or 1)
+    last_error: Optional[str] = None
+    for _ in range(attempts):
+        active_index = (_ACTIVE_GEMINI_INDEX or 0) + 1 if _ACTIVE_GEMINI_INDEX is not None else None
+        try:
+            response = _MODEL.generate_content(prompt)
+            text = (getattr(response, "text", "") or "").strip()
+            if text:
+                return text, None
+            logger.warning(
+                "Gemini returned an empty response using key #%s",
+                active_index if active_index is not None else "unknown",
+            )
+            last_error = "Empty response"
+        except Exception as exc:
+            logger.warning(
+                "Gemini generation failed with key #%s: %s",
+                active_index if active_index is not None else "unknown",
+                exc,
+            )
+            last_error = str(exc)
+        finally:
+            _MODEL = None
+
+        if not _switch_to_fallback_key():
+            break
+
+    return None, last_error
 
 
 def generate_recommendations(scan_results: Dict[str, Any]) -> str:
@@ -60,10 +150,11 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> str:
                 return text
         except Exception:
             logger.exception("Agentic pipeline failed; falling back to single-shot Gemini")
-    if _MODEL is None:
+    gemini_ready = _ensure_model_initialized()
+    if not gemini_ready:
         logger.warning("AI recommendations requested but Gemini is not configured")
         return (
-            "Set GOOGLE_API_KEY to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy."
+            "Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2) to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy."
         )
 
     if mode == "accessibility":
@@ -98,14 +189,13 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> str:
         Group items by Accessibility vs Security. Use concise bullet points. If data is missing, state assumptions.
         """
 
-    try:
-        response = _MODEL.generate_content(prompt)
-        text = getattr(response, "text", "") or "No recommendations generated."
-        logger.info("Generated AI recommendations (length=%d)", len(text))
+    text, error = _generate_with_gemini(prompt)
+    if text:
+        logger.info("Generated AI recommendations via Gemini (length=%d)", len(text))
         return text
-    except Exception:
-        logger.exception("Gemini generation failed")
-        return "AI recommendations failed to generate. Check API key and network connectivity."
+
+    logger.warning("Gemini generation failed; error=%s", error)
+    return "AI recommendations failed to generate. Check API key configuration and network connectivity."
 
 
 def _impact_to_severity(impact: Optional[str]) -> str:

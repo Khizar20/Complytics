@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
-    GOOGLE_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY1: Optional[str] = os.getenv("GOOGLE_API_KEY1")
+    GOOGLE_API_KEY2: Optional[str] = os.getenv("GOOGLE_API_KEY2")
     
     # SMTP settings
     SMTP_HOST: str

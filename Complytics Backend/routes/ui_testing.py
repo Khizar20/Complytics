@@ -56,7 +56,7 @@ class ScheduleScanRequest(BaseModel):
 
 @router.on_event("startup")
 async def on_startup() -> None:
-    configure_gemini(settings.GOOGLE_API_KEY)
+    configure_gemini(settings.GOOGLE_API_KEY1, settings.GOOGLE_API_KEY2)
     # Initialize scheduler and rehydrate pending jobs
     global SCHEDULER
     try:

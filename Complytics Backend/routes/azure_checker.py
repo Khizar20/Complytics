@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 import numpy as np
+import hashlib
 
 from schemas.users import UserInDB
 from routes.auth import get_current_user
@@ -340,7 +341,7 @@ you MUST set is_relevant to false, regardless of the relevance_score."""
 
         response = rate_limited_generate_content_optimized(
             prompt,
-            temperature=0.1,  # Low temperature for consistent results
+            temperature=0.0,  # Set to 0.0 for deterministic, consistent responses
             max_tokens=500
         )
         
@@ -548,6 +549,42 @@ async def analyze_azure_document(
             logger.info(f"Text length {len(text)} exceeds limit, using first {max_text_length} chars")
             text = text[:max_text_length]
         
+        # Create document fingerprint (hash) for caching
+        document_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        logger.info(f"Document fingerprint: {document_hash[:16]}...")
+        
+        # Check for cached analysis result
+        db = database.db
+        try:
+            cached_result = await db.azure_compliance_results.find_one({
+                'document_hash': document_hash,
+                'user_id': current_user.id
+            })
+            
+            if cached_result:
+                # Check if cache is still valid (within 7 days)
+                cache_age = (datetime.utcnow() - cached_result.get('created_at', datetime.utcnow())).days
+                if cache_age < 7:
+                    logger.info(f"Returning cached analysis result (age: {cache_age} days)")
+                    # Return cached result in expected format
+                    return {
+                        'overall_score': cached_result.get('overall_score', 0),
+                        'overall_status': cached_result.get('overall_status', 'Partial'),
+                        'frameworks': cached_result.get('frameworks', {}),
+                        'framework_scores': cached_result.get('framework_scores', {}),
+                        'document_name': file.filename,
+                        'analyzed_at': cached_result.get('analyzed_at', datetime.utcnow().isoformat()),
+                        'analyzed_by': cached_result.get('user_email', current_user.email),
+                        'frameworks_analyzed': cached_result.get('frameworks_analyzed', 0),
+                        'summary': cached_result.get('summary', ''),
+                        'result_id': str(cached_result['_id']),
+                        'cached': True
+                    }
+                else:
+                    logger.info(f"Cache expired (age: {cache_age} days), performing fresh analysis")
+        except Exception as e:
+            logger.warning(f"Error checking cache: {e}, proceeding with fresh analysis")
+        
         chunks = chunk_text(text, chunk_size=1000, overlap=100)
         
         logger.info(f"Extracted {len(text)} characters, created {len(chunks)} chunks")
@@ -561,8 +598,8 @@ async def analyze_azure_document(
         # Get all framework engines
         framework_engines = get_all_framework_engines()
         
-        # Limit to first 5 chunks for analysis
-        chunks_to_analyze = chunks[:5]
+        # Increased from 5 to 10 chunks for better consistency and coverage
+        chunks_to_analyze = chunks[:10]
         logger.info(f"Analyzing {len(chunks_to_analyze)} chunks across {len(framework_engines)} frameworks")
         
         # Initialize analyzer
@@ -638,10 +675,8 @@ async def analyze_azure_document(
                       f"Analyzed against {len(framework_results)} frameworks: {', '.join(framework_results.keys())}."
         }
         
-        # Save to MongoDB
+        # Save to MongoDB with document hash for caching
         try:
-            db = database.db
-            
             # Get user's organization_id if available
             user_doc = await db.users.find_one({"_id": current_user.id})
             organization_id = user_doc.get('organization_id') if user_doc else None
@@ -651,6 +686,7 @@ async def analyze_azure_document(
                 'user_email': current_user.email,
                 'organization_id': organization_id,
                 'document_name': file.filename,
+                'document_hash': document_hash,  # Store hash for caching
                 'overall_score': analysis['overall_score'],
                 'overall_status': analysis['overall_status'],
                 'frameworks': analysis['frameworks'],
@@ -662,7 +698,7 @@ async def analyze_azure_document(
             }
             
             result = await db.azure_compliance_results.insert_one(result_document)
-            logger.info(f"Multi-framework compliance result saved to MongoDB with ID: {result.inserted_id}")
+            logger.info(f"Multi-framework compliance result saved to MongoDB with ID: {result.inserted_id} (hash: {document_hash[:16]}...)")
             analysis['result_id'] = str(result.inserted_id)
         except Exception as e:
             logger.error(f"Error saving compliance result to MongoDB: {e}")
@@ -844,7 +880,7 @@ CRITICAL REQUIREMENTS:
 """
             
             try:
-                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=8000)
+                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.0, max_tokens=8000)  # Set to 0.0 for deterministic responses
                 logger.info(f"AI response received for {fw_name}, length: {len(ai_response)}")
                 
                 # Parse AI response
@@ -1303,7 +1339,7 @@ CRITICAL REQUIREMENTS:
 """
             
             try:
-                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=8000)
+                ai_response = rate_limited_generate_content_optimized(prompt, temperature=0.0, max_tokens=8000)  # Set to 0.0 for deterministic responses
                 logger.info(f"AI response received for {fw_name} (PDF), length: {len(ai_response)}")
                 
                 # Parse AI response

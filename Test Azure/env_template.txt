@@ -5,4 +5,5 @@ AZURE_TENANT_ID=your_tenant_id_here
 AZURE_CLIENT_SECRET=your_client_secret_here
 
 # Google API Configuration (for Gemini 2.0 Flash)
-GOOGLE_API_KEY=AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI 
+GOOGLE_API_KEY1=AIzaSyAF5hhERrZXTudmLVJkjmTgMxPH2h5PWtI 
+GOOGLE_API_KEY2=
