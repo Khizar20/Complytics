@@ -328,10 +328,45 @@ async def connect_azure_ad(
             },
             upsert=True,
         )
+        
+        # Log the connection event
+        await _log_azure_config_fetch(
+            user_id=str(current_user.id),
+            user_email=current_user.email,
+            organization_id=current_user.organization_id,
+            change_type="connection",
+            status="success",
+            details={
+                "tenant_id": credentials.tenantId,
+                "client_id": credentials.clientId,
+                "connection_time": datetime.utcnow().isoformat(),
+                "action": "connected"
+            }
+        )
+        
         return {"status": "success", "message": "Connected to Azure AD"}
     except HTTPException:
         raise
     except Exception as e:
+        # Log failed connection attempt
+        try:
+            await _log_azure_config_fetch(
+                user_id=str(current_user.id),
+                user_email=current_user.email,
+                organization_id=current_user.organization_id,
+                change_type="connection",
+                status="failed",
+                error_message=str(e),
+                details={
+                    "tenant_id": credentials.tenantId,
+                    "client_id": credentials.clientId,
+                    "connection_time": datetime.utcnow().isoformat(),
+                    "action": "connection_failed"
+                }
+            )
+        except:
+            pass  # Don't fail if logging fails
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
@@ -345,11 +380,35 @@ async def disconnect_azure_ad(current_user: UserInDB = Depends(get_current_user)
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not associated with an organization",
         )
+    
+    # Get connection details before disconnecting
+    connection_doc = await database.db.azure_connections.find_one(
+        {"organization_id": current_user.organization_id}
+    )
+    
     await database.db.azure_connections.update_one(
         {"organization_id": current_user.organization_id},
         {"$set": {"connected": False, "updated_at": datetime.utcnow()}},
         upsert=True,
     )
+    
+    # Log the disconnection event
+    try:
+        await _log_azure_config_fetch(
+            user_id=str(current_user.id),
+            user_email=current_user.email,
+            organization_id=current_user.organization_id,
+            change_type="connection",
+            status="success",
+            details={
+                "tenant_id": connection_doc.get("tenant_id") if connection_doc else None,
+                "disconnection_time": datetime.utcnow().isoformat(),
+                "action": "disconnected"
+            }
+        )
+    except:
+        pass  # Don't fail if logging fails
+    
     return {"status": "success", "message": "Disconnected from Azure AD"}
 
 
@@ -942,6 +1001,47 @@ async def get_azure_config(current_user: UserInDB = Depends(get_current_user)):
         )
 
 
+@router.get("/config/snapshot/latest")
+async def get_latest_azure_snapshot(current_user: UserInDB = Depends(get_current_user)):
+    """Return the latest sanitized Azure config snapshot for the user's organization."""
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an organization",
+        )
+
+    try:
+        snapshot = await database.db.azure_config_snapshots.find_one(
+            {"organization_id": current_user.organization_id},
+            sort=[("timestamp", -1)]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch Azure settings snapshot: {str(e)}"
+        )
+
+    if not snapshot:
+        return {
+            "exists": False,
+            "message": "No Azure configuration snapshot found. Please run the Azure fetch process first."
+        }
+
+    from bson import ObjectId
+    snapshot_id = snapshot.get("_id")
+    if isinstance(snapshot_id, ObjectId):
+        snapshot["_id"] = str(snapshot_id)
+
+    ts = snapshot.get("timestamp")
+    if isinstance(ts, datetime):
+        snapshot["timestamp"] = ts.isoformat()
+
+    return {
+        "exists": True,
+        "snapshot": snapshot
+    }
+
+
 async def _log_azure_config_fetch(
     user_id: str,
     user_email: str,
@@ -995,7 +1095,10 @@ async def get_azure_config_logs(
         date_filter = {}
         if start_date:
             try:
+                # Parse date and set to start of day in UTC
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                # Ensure it's treated as UTC (logs are stored in UTC)
+                start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                 date_filter["$gte"] = start_dt
             except ValueError:
                 raise HTTPException(
@@ -1004,7 +1107,10 @@ async def get_azure_config_logs(
                 )
         if end_date:
             try:
-                end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                # Parse end_date and set to start of next day in UTC
+                # This ensures we get all logs up to but not including the next day
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                end_dt = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
                 date_filter["$lt"] = end_dt
             except ValueError:
                 raise HTTPException(
@@ -1074,10 +1180,14 @@ async def export_azure_config_logs_csv(
     if start_date or end_date:
         date_filter = {}
         if start_date:
+            # Parse date and set to start of day in UTC
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
             date_filter["$gte"] = start_dt
         if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            # Parse end_date and set to start of next day in UTC
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            end_dt = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
             date_filter["$lt"] = end_dt
         if date_filter:
             query["timestamp"] = date_filter
@@ -1167,10 +1277,14 @@ async def export_azure_config_logs_pdf(
     if start_date or end_date:
         date_filter = {}
         if start_date:
+            # Parse date and set to start of day in UTC
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
             date_filter["$gte"] = start_dt
         if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            # Parse end_date and set to start of next day in UTC
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            end_dt = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
             date_filter["$lt"] = end_dt
         if date_filter:
             query["timestamp"] = date_filter

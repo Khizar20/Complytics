@@ -1,0 +1,41 @@
+# Example docker-compose.yml for Azure Cosmos DB
+# This is for reference only - shows how to connect to Cosmos DB instead of local MongoDB
+# In Azure, you'll use Container Apps or App Service, not docker-compose
+
+services:
+  # Note: In Azure, you won't run MongoDB locally
+  # Instead, use Azure Cosmos DB for MongoDB API
+  
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: complytics-backend
+    env_file:
+      - "Complytics Backend/.env"
+    environment:
+      # Replace with your Azure Cosmos DB connection string
+      # Format: mongodb://<account>:<key>@<account>.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb
+      - MONGODB_URL=${COSMOS_DB_CONNECTION_STRING}
+      - MONGODB_NAME=complytics
+    ports:
+      - "8000:8000"
+    # Remove depends_on mongo since we're using Cosmos DB
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: complytics-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    environment:
+      # Update this to point to your backend URL
+      - REACT_APP_API_URL=http://localhost:8000
+
+# No mongo service needed - using Azure Cosmos DB
+
+
+

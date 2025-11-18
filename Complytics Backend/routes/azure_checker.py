@@ -460,6 +460,171 @@ you MUST set is_relevant to false, regardless of the relevance_score."""
         }
 
 
+async def _perform_compliance_analysis(
+    text: str,
+    document_name: str,
+    current_user: UserInDB,
+    document_hash: str,
+    source_type: str = "document",
+    source_metadata: Optional[dict] = None,
+    max_chunks: int = 10
+) -> dict:
+    """
+    Shared helper to run the multi-framework compliance analysis pipeline.
+    Handles caching, analysis, persistence, and response shaping.
+    """
+    db = database.db
+    source_metadata = source_metadata or {}
+
+    # Check cache (valid for 7 days)
+    try:
+        cached_result = await db.azure_compliance_results.find_one({
+            'document_hash': document_hash,
+            'user_id': current_user.id,
+            'source_type': source_type
+        })
+
+        if cached_result:
+            cache_age = (datetime.utcnow() - cached_result.get('created_at', datetime.utcnow())).days
+            if cache_age < 7:
+                logger.info(f"Returning cached {source_type} analysis result (age: {cache_age} days)")
+                return {
+                    'overall_score': cached_result.get('overall_score', 0),
+                    'overall_status': cached_result.get('overall_status', 'Partial'),
+                    'frameworks': cached_result.get('frameworks', {}),
+                    'framework_scores': cached_result.get('framework_scores', {}),
+                    'document_name': document_name,
+                    'analyzed_at': cached_result.get('analyzed_at', datetime.utcnow().isoformat()),
+                    'analyzed_by': cached_result.get('user_email', current_user.email),
+                    'frameworks_analyzed': cached_result.get('frameworks_analyzed', 0),
+                    'summary': cached_result.get('summary', ''),
+                    'result_id': str(cached_result['_id']),
+                    'cached': True,
+                    'source_type': cached_result.get('source_type', source_type),
+                    'source_metadata': cached_result.get('source_metadata', source_metadata)
+                }
+    except Exception as e:
+        logger.warning(f"Error checking cached {source_type} result: {e}, proceeding with fresh analysis")
+
+    chunks = chunk_text(text, chunk_size=1000, overlap=100)
+    if len(chunks) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Content is too short or lacks analyzable text for compliance review."
+        )
+
+    framework_engines = get_all_framework_engines()
+    analyzer = AzureComplianceAnalyzer()
+
+    chunks_to_analyze = chunks[:max_chunks]
+    framework_results = {}
+
+    for framework_name, engine_data in framework_engines.items():
+        logger.info(f"\nAnalyzing against {framework_name} for {source_type}...")
+        try:
+            framework_search_results = []
+            for i, chunk in enumerate(chunks_to_analyze):
+                try:
+                    results = engine_data['engine'].search_similar(
+                        chunk,
+                        engine_data['index'],
+                        engine_data['chunks'],
+                        engine_data['metadata'],
+                        top_k=3
+                    )
+                    framework_search_results.extend(results)
+                except Exception as e:
+                    logger.warning(f"Error searching {framework_name} chunk {i+1}: {e}")
+                    continue
+
+            framework_analysis = analyzer.analyze_framework(
+                framework_name,
+                framework_search_results,
+                document_text=text
+            )
+            framework_results[framework_name] = framework_analysis
+            logger.info(f"✓ {framework_name}: {framework_analysis.get('score', 0)}/100 ({framework_analysis.get('status', 'Unknown')})")
+        except Exception as e:
+            logger.error(f"Error analyzing {framework_name}: {e}")
+            framework_results[framework_name] = {
+                'framework': framework_name,
+                'score': 0,
+                'status': 'Error',
+                'findings': [],
+                'recommendation': f'Error analyzing against {framework_name}: {str(e)}'
+            }
+
+    all_scores = [fr.get('score', 0) for fr in framework_results.values()]
+    overall_score = int(np.mean(all_scores)) if all_scores else 0
+
+    if overall_score >= 80:
+        overall_status = 'Compliant'
+    elif overall_score >= 60:
+        overall_status = 'Partial'
+    else:
+        overall_status = 'Non-Compliant'
+
+    source_descriptor = "uploaded document" if source_type == "document" else "fetched Azure settings snapshot"
+    framework_list = ', '.join(framework_results.keys())
+
+    analysis = {
+        'overall_score': overall_score,
+        'overall_status': overall_status,
+        'frameworks': framework_results,
+        'framework_scores': {name: result.get('score', 0) for name, result in framework_results.items()},
+        'document_name': document_name,
+        'analyzed_at': datetime.utcnow().isoformat(),
+        'analyzed_by': current_user.email,
+        'frameworks_analyzed': len(framework_results),
+        'summary': (
+            f"Multi-framework compliance analysis of the {source_descriptor}. "
+            f"Overall score: {overall_score}/100 ({overall_status}). "
+            f"Analyzed frameworks: {framework_list or 'None'}."
+        ),
+        'source_type': source_type,
+        'source_metadata': source_metadata,
+        'cached': False
+    }
+
+    # Persist for future reference/caching
+    try:
+        organization_id = getattr(current_user, "organization_id", None)
+        if not organization_id:
+            user_doc = await db.users.find_one({"_id": current_user.id})
+            if user_doc:
+                organization_id = user_doc.get("organization_id")
+
+        result_document = {
+            'user_id': current_user.id,
+            'user_email': current_user.email,
+            'organization_id': organization_id,
+            'document_name': document_name,
+            'document_hash': document_hash,
+            'overall_score': analysis['overall_score'],
+            'overall_status': analysis['overall_status'],
+            'frameworks': analysis['frameworks'],
+            'framework_scores': analysis['framework_scores'],
+            'frameworks_analyzed': analysis['frameworks_analyzed'],
+            'summary': analysis['summary'],
+            'created_at': datetime.utcnow(),
+            'analyzed_at': analysis['analyzed_at'],
+            'source_type': source_type,
+            'source_metadata': source_metadata,
+        }
+
+        snapshot_id = source_metadata.get('snapshot_id')
+        if snapshot_id:
+            result_document['snapshot_id'] = snapshot_id
+
+        result = await db.azure_compliance_results.insert_one(result_document)
+        analysis['result_id'] = str(result.inserted_id)
+        logger.info(f"Compliance result saved (source={source_type}) with ID: {analysis['result_id']}")
+    except Exception as e:
+        logger.error(f"Error saving compliance result to MongoDB: {e}")
+
+    return analysis
+
+
 @router.post("/analyze")
 async def analyze_azure_document(
     file: UploadFile = File(...),
@@ -540,172 +705,27 @@ async def analyze_azure_document(
         
         logger.info(f"Document relevance check passed. Type: {relevance_validation.get('document_type', 'Unknown')}, Score: {relevance_validation.get('relevance_score', 0.0):.2f}")
         
-        # Clean and chunk text
         text = clean_text(text)
-        
-        # Limit text processing to prevent memory issues (max 50k chars for uploaded docs)
         max_text_length = 50000
         if len(text) > max_text_length:
             logger.info(f"Text length {len(text)} exceeds limit, using first {max_text_length} chars")
             text = text[:max_text_length]
         
-        # Create document fingerprint (hash) for caching
         document_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
         logger.info(f"Document fingerprint: {document_hash[:16]}...")
-        
-        # Check for cached analysis result
-        db = database.db
-        try:
-            cached_result = await db.azure_compliance_results.find_one({
-                'document_hash': document_hash,
-                'user_id': current_user.id
-            })
-            
-            if cached_result:
-                # Check if cache is still valid (within 7 days)
-                cache_age = (datetime.utcnow() - cached_result.get('created_at', datetime.utcnow())).days
-                if cache_age < 7:
-                    logger.info(f"Returning cached analysis result (age: {cache_age} days)")
-                    # Return cached result in expected format
-                    return {
-                        'overall_score': cached_result.get('overall_score', 0),
-                        'overall_status': cached_result.get('overall_status', 'Partial'),
-                        'frameworks': cached_result.get('frameworks', {}),
-                        'framework_scores': cached_result.get('framework_scores', {}),
-                        'document_name': file.filename,
-                        'analyzed_at': cached_result.get('analyzed_at', datetime.utcnow().isoformat()),
-                        'analyzed_by': cached_result.get('user_email', current_user.email),
-                        'frameworks_analyzed': cached_result.get('frameworks_analyzed', 0),
-                        'summary': cached_result.get('summary', ''),
-                        'result_id': str(cached_result['_id']),
-                        'cached': True
-                    }
-                else:
-                    logger.info(f"Cache expired (age: {cache_age} days), performing fresh analysis")
-        except Exception as e:
-            logger.warning(f"Error checking cache: {e}, proceeding with fresh analysis")
-        
-        chunks = chunk_text(text, chunk_size=1000, overlap=100)
-        
-        logger.info(f"Extracted {len(text)} characters, created {len(chunks)} chunks")
-        
-        if len(chunks) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Document is too short or contains no analyzable content. Please upload a document with sufficient text content for compliance analysis."
-            )
-        
-        # Get all framework engines
-        framework_engines = get_all_framework_engines()
-        
-        # Increased from 5 to 10 chunks for better consistency and coverage
-        chunks_to_analyze = chunks[:10]
-        logger.info(f"Analyzing {len(chunks_to_analyze)} chunks across {len(framework_engines)} frameworks")
-        
-        # Initialize analyzer
-        analyzer = AzureComplianceAnalyzer()
-        
-        # Analyze against each framework
-        framework_results = {}
-        
-        for framework_name, engine_data in framework_engines.items():
-            logger.info(f"\nAnalyzing against {framework_name}...")
-            
-            try:
-                # Search for similar chunks in this framework
-                framework_search_results = []
-                
-                for i, chunk in enumerate(chunks_to_analyze):
-                    try:
-                        results = engine_data['engine'].search_similar(
-                            chunk,
-                            engine_data['index'],
-                            engine_data['chunks'],
-                            engine_data['metadata'],
-                            top_k=3
-                        )
-                        framework_search_results.extend(results)
-                    except Exception as e:
-                        logger.warning(f"Error searching {framework_name} chunk {i+1}: {e}")
-                        continue
-                
-                # Analyze compliance for this framework using AI
-                framework_analysis = analyzer.analyze_framework(
-                    framework_name,
-                    framework_search_results,
-                    document_text=text
-                )
-                
-                framework_results[framework_name] = framework_analysis
-                logger.info(f"✓ {framework_name}: {framework_analysis['score']}/100 ({framework_analysis['status']})")
-                
-            except Exception as e:
-                logger.error(f"Error analyzing {framework_name}: {e}")
-                framework_results[framework_name] = {
-                    'framework': framework_name,
-                    'score': 0,
-                    'status': 'Error',
-                    'findings': [],
-                    'recommendation': f'Error analyzing against {framework_name}: {str(e)}'
-                }
-        
-        # Calculate overall compliance score (average across all frameworks)
-        all_scores = [fr['score'] for fr in framework_results.values()]
-        overall_score = int(np.mean(all_scores)) if all_scores else 0
-        
-        # Determine overall status
-        if overall_score >= 80:
-            overall_status = 'Compliant'
-        elif overall_score >= 60:
-            overall_status = 'Partial'
-        else:
-            overall_status = 'Non-Compliant'
-        
-        # Compile comprehensive analysis
-        analysis = {
-            'overall_score': overall_score,
-            'overall_status': overall_status,
-            'frameworks': framework_results,
-            'framework_scores': {name: result['score'] for name, result in framework_results.items()},
-            'document_name': file.filename,
-            'analyzed_at': datetime.utcnow().isoformat(),
-            'analyzed_by': current_user.email,
-            'frameworks_analyzed': len(framework_results),
-            'summary': f"Multi-framework compliance analysis complete. Overall score: {overall_score}/100 ({overall_status}). "
-                      f"Analyzed against {len(framework_results)} frameworks: {', '.join(framework_results.keys())}."
-        }
-        
-        # Save to MongoDB with document hash for caching
-        try:
-            # Get user's organization_id if available
-            user_doc = await db.users.find_one({"_id": current_user.id})
-            organization_id = user_doc.get('organization_id') if user_doc else None
-            
-            result_document = {
-                'user_id': current_user.id,
-                'user_email': current_user.email,
-                'organization_id': organization_id,
-                'document_name': file.filename,
-                'document_hash': document_hash,  # Store hash for caching
-                'overall_score': analysis['overall_score'],
-                'overall_status': analysis['overall_status'],
-                'frameworks': analysis['frameworks'],
-                'framework_scores': analysis['framework_scores'],
-                'frameworks_analyzed': analysis['frameworks_analyzed'],
-                'summary': analysis['summary'],
-                'created_at': datetime.utcnow(),
-                'analyzed_at': analysis['analyzed_at']
+
+        analysis = await _perform_compliance_analysis(
+            text=text,
+            document_name=file.filename,
+            current_user=current_user,
+            document_hash=document_hash,
+            source_type="document",
+            source_metadata={
+                "filename": file.filename,
+                "uploaded_at": datetime.utcnow().isoformat()
             }
-            
-            result = await db.azure_compliance_results.insert_one(result_document)
-            logger.info(f"Multi-framework compliance result saved to MongoDB with ID: {result.inserted_id} (hash: {document_hash[:16]}...)")
-            analysis['result_id'] = str(result.inserted_id)
-        except Exception as e:
-            logger.error(f"Error saving compliance result to MongoDB: {e}")
-            # Continue even if save fails
-        
-        logger.info(f"Analysis complete. Overall Score: {analysis['overall_score']}/100")
-        
+        )
+
         return analysis
         
     except HTTPException:
@@ -716,6 +736,72 @@ async def analyze_azure_document(
             status_code=500,
             detail=f"Error analyzing document: {str(e)}"
         )
+
+
+@router.post("/analyze-snapshot")
+async def analyze_azure_snapshot(current_user: UserInDB = Depends(get_current_user)):
+    """
+    Analyze the latest sanitized Azure configuration snapshot stored from Graph fetches.
+    """
+    if not current_user.organization_id:
+        raise HTTPException(
+            status_code=400,
+            detail="User is not associated with an organization"
+        )
+
+    db = database.db
+    snapshot = await db.azure_config_snapshots.find_one(
+        {"organization_id": current_user.organization_id},
+        sort=[("timestamp", -1)]
+    )
+
+    if not snapshot:
+        raise HTTPException(
+            status_code=404,
+            detail="No Azure configuration snapshot found. Please fetch Azure settings first."
+        )
+
+    settings = snapshot.get("settings")
+    if not settings:
+        raise HTTPException(
+            status_code=400,
+            detail="Snapshot does not contain sanitized settings."
+        )
+
+    settings_text = json.dumps(settings, indent=2)
+    if not settings_text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Snapshot settings are empty."
+        )
+
+    text = clean_text(settings_text)
+    max_text_length = 60000
+    if len(text) > max_text_length:
+        logger.info(f"Snapshot text length {len(text)} exceeds limit, using first {max_text_length} chars")
+        text = text[:max_text_length]
+
+    snapshot_id = snapshot.get("_id")
+    snapshot_timestamp = snapshot.get("timestamp")
+    snapshot_iso = snapshot_timestamp.isoformat() if isinstance(snapshot_timestamp, datetime) else str(snapshot_timestamp)
+
+    document_name = f"Azure Config Snapshot ({snapshot_iso})"
+    document_hash = hashlib.sha256(f"{snapshot_id}-{text}".encode('utf-8')).hexdigest()
+
+    analysis = await _perform_compliance_analysis(
+        text=text,
+        document_name=document_name,
+        current_user=current_user,
+        document_hash=document_hash,
+        source_type="snapshot",
+        source_metadata={
+            "snapshot_id": str(snapshot_id),
+            "snapshot_timestamp": snapshot_iso
+        },
+        max_chunks=12
+    )
+
+    return analysis
 
 
 @router.post("/generate-checklist/{result_id}")

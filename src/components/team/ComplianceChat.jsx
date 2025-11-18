@@ -27,7 +27,9 @@ import {
   FormControl,
   InputLabel,
   Tooltip,
-  Chip
+  Chip,
+  Fade,
+  Zoom
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -37,6 +39,8 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import DeleteIcon from '@mui/icons-material/Delete';
 import MenuIcon from '@mui/icons-material/Menu';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import PolicyIcon from '@mui/icons-material/Policy';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -44,6 +48,8 @@ import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import ThumbUpOffAltIcon from '@mui/icons-material/ThumbUpOffAlt';
 import ThumbDownOffAltIcon from '@mui/icons-material/ThumbDownOffAlt';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SecurityIcon from '@mui/icons-material/Security';
 import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -362,6 +368,7 @@ const ComplianceChat = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Desktop sidebar state
   const [allChatHistory, setAllChatHistory] = useState([]);
   const messagesEndRef = useRef(null);
   const { authToken, fetchWithRetry } = useAuth();
@@ -380,7 +387,7 @@ const ComplianceChat = () => {
   const [messageFeedback, setMessageFeedback] = useState({}); // Track feedback for each message
   const [pendingAttachment, setPendingAttachment] = useState(null); // File attached to next send
   
-  const DRAWER_WIDTH = 280;
+  const DRAWER_WIDTH = 320;
 
   const frameworks = [
     'GDPR',
@@ -764,40 +771,49 @@ const ComplianceChat = () => {
       <Box sx={{ 
         display: 'flex', 
         gap: 1, 
-        mt: 1, 
+        mt: 1.5, 
         justifyContent: 'flex-start',
         opacity: 0.7,
-        '&:hover': { opacity: 1 }
+        '&:hover': { opacity: 1 },
+        transition: 'opacity 0.2s ease'
       }}>
-        <Tooltip title={currentFeedback === true ? "You found this helpful" : "Mark as helpful"}>
+        <Tooltip title={currentFeedback === true ? "You found this helpful" : "Mark as helpful"} arrow>
           <IconButton 
             size="small"
             onClick={() => handleFeedback(messageIndex, true, originalQuery)}
             disabled={currentFeedback !== undefined}
             sx={{ 
-              color: currentFeedback === true ? theme.palette.success.main : theme.palette.text.secondary,
+              color: currentFeedback === true ? theme.palette.success.main : 'inherit',
+              bgcolor: currentFeedback === true ? alpha(theme.palette.success.main, 0.1) : 'transparent',
+              border: `1px solid ${currentFeedback === true ? theme.palette.success.main : 'transparent'}`,
               '&:hover': { 
                 bgcolor: currentFeedback === true 
-                  ? alpha(theme.palette.success.main, 0.1)
-                  : alpha(theme.palette.text.secondary, 0.1)
-              }
+                  ? alpha(theme.palette.success.main, 0.2)
+                  : alpha(theme.palette.action.hover, 0.05),
+                borderColor: currentFeedback === true ? theme.palette.success.main : theme.palette.divider
+              },
+              transition: 'all 0.2s ease'
             }}
           >
             {currentFeedback === true ? <ThumbUpIcon fontSize="small" /> : <ThumbUpOffAltIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
-        <Tooltip title={currentFeedback === false ? "You marked this as not helpful" : "Mark as not helpful"}>
+        <Tooltip title={currentFeedback === false ? "You marked this as not helpful" : "Mark as not helpful"} arrow>
           <IconButton 
             size="small"
             onClick={() => handleFeedback(messageIndex, false, originalQuery)}
             disabled={currentFeedback !== undefined}
             sx={{ 
-              color: currentFeedback === false ? theme.palette.error.main : theme.palette.text.secondary,
+              color: currentFeedback === false ? theme.palette.error.main : 'inherit',
+              bgcolor: currentFeedback === false ? alpha(theme.palette.error.main, 0.1) : 'transparent',
+              border: `1px solid ${currentFeedback === false ? theme.palette.error.main : 'transparent'}`,
               '&:hover': { 
                 bgcolor: currentFeedback === false 
-                  ? alpha(theme.palette.error.main, 0.1)
-                  : alpha(theme.palette.text.secondary, 0.1)
-              }
+                  ? alpha(theme.palette.error.main, 0.2)
+                  : alpha(theme.palette.action.hover, 0.05),
+                borderColor: currentFeedback === false ? theme.palette.error.main : theme.palette.divider
+              },
+              transition: 'all 0.2s ease'
             }}
           >
             {currentFeedback === false ? <ThumbDownIcon fontSize="small" /> : <ThumbDownOffAltIcon fontSize="small" />}
@@ -1002,58 +1018,73 @@ const ComplianceChat = () => {
   };
 
   const ChatSidebar = () => (
-    <Drawer
-      variant={isMobile ? "temporary" : "permanent"}
-      open={isMobile ? drawerOpen : true}
-      onClose={() => setDrawerOpen(false)}
-      sx={{
-        width: DRAWER_WIDTH,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
+    <Box sx={{ position: 'relative' }}>
+      <Drawer
+        variant={isMobile ? "temporary" : "persistent"}
+        open={isMobile ? drawerOpen : sidebarOpen}
+        onClose={() => isMobile ? setDrawerOpen(false) : setSidebarOpen(false)}
+        sx={{
           width: DRAWER_WIDTH,
-          position: 'relative',
-          height: '100%',
-          boxSizing: 'border-box',
-          bgcolor: theme.palette.background.default,
-          border: 'none',
-          borderRight: `1px solid ${theme.palette.divider}`,
-        },
-      }}
-    >
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: DRAWER_WIDTH,
+            position: 'relative',
+            height: '100%',
+            boxSizing: 'border-box',
+            background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.95)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
+            backdropFilter: 'blur(20px)',
+            border: 'none',
+            borderRight: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            boxShadow: `inset -1px 0 0 ${alpha(theme.palette.primary.main, 0.05)}`,
+          },
+        }}
+      >
       <Box sx={{ 
-        p: 2, 
-        borderBottom: `1px solid ${theme.palette.divider}`,
-        bgcolor: theme.palette.background.default,
+        px: 2,
+        py: 2.2,
+        height: '80.44px',
+        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
         display: 'flex',
-        flexDirection: 'column',
-        gap: 1
+        flexDirection: 'row',
+        gap: 1.5,
+        alignItems: 'center',
+        boxSizing: 'border-box'
       }}>
-        <Button
-          fullWidth
-          variant="outlined"
-          startIcon={<ArrowBackIcon />}
-          onClick={handleBackToDashboard}
-          sx={{ 
-            fontFamily: 'Montserrat, sans-serif',
-            fontWeight: 600,
-            mb: 1
-          }}
-        >
-          Back to Dashboard
-        </Button>
+        <Tooltip title="Back to Dashboard" arrow>
+          <IconButton
+            onClick={handleBackToDashboard}
+            sx={{ 
+              border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
+              color: theme.palette.primary.main,
+              '&:hover': {
+                borderColor: theme.palette.primary.main,
+                bgcolor: alpha(theme.palette.primary.main, 0.05)
+              }
+            }}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+        </Tooltip>
         <Button
           fullWidth
           variant="contained"
           startIcon={<RefreshIcon />}
           onClick={handleReset}
           sx={{ 
-            bgcolor: theme.palette.primary.main,
+            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             color: 'white',
             fontFamily: 'Montserrat, sans-serif',
             fontWeight: 600,
+            textTransform: 'none',
+            py: 1,
+            boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
             '&:hover': {
-              bgcolor: theme.palette.primary.dark,
-            }
+              background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+              boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
+              transform: 'translateY(-1px)'
+            },
+            transition: 'all 0.3s ease'
           }}
         >
           New Chat
@@ -1064,23 +1095,28 @@ const ComplianceChat = () => {
         flex: 1, 
         p: 2,
         '&::-webkit-scrollbar': {
-          width: '4px',
+          width: '6px',
         },
         '&::-webkit-scrollbar-track': {
           background: 'transparent',
         },
         '&::-webkit-scrollbar-thumb': {
-          background: theme.palette.divider,
-          borderRadius: '2px',
+          background: alpha(theme.palette.primary.main, 0.2),
+          borderRadius: '3px',
+          '&:hover': {
+            background: alpha(theme.palette.primary.main, 0.3),
+          }
         },
       }}>
         <Typography
           variant="overline"
           sx={{
             color: theme.palette.text.secondary,
-            fontWeight: 500,
+            fontWeight: 700,
             pl: 2,
             fontFamily: 'Montserrat, sans-serif',
+            letterSpacing: 1.2,
+            fontSize: '0.7rem'
           }}
         >
           Current Session
@@ -1090,16 +1126,22 @@ const ComplianceChat = () => {
           return firstQuery && (
             <ListItem
               sx={{
-                borderRadius: 1,
+                borderRadius: 2,
                 mb: 0.5,
-                bgcolor: alpha(theme.palette.primary.main, 0.1),
+                mt: 1,
+                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.15)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                 '&:hover': {
-                  bgcolor: alpha(theme.palette.primary.main, 0.2),
-                }
+                  background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.2)} 0%, ${alpha(theme.palette.secondary.main, 0.15)} 100%)`,
+                  transform: 'translateX(4px)',
+                  boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.2)}`
+                },
+                transition: 'all 0.3s ease',
+                cursor: 'pointer'
               }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>
-                <SmartToyIcon fontSize="small" color="primary" />
+                <SmartToyIcon fontSize="small" sx={{ color: theme.palette.primary.main }} />
               </ListItemIcon>
               <ListItemText
                 primary={firstQuery.query.substring(0, 30) + (firstQuery.query.length > 30 ? '...' : '')}
@@ -1111,8 +1153,9 @@ const ComplianceChat = () => {
                   fontWeight: 600
                 }}
                 secondaryTypographyProps={{
-                  fontSize: '0.75rem',
-                  fontFamily: 'DM Sans, sans-serif'
+                  fontSize: '0.7rem',
+                  fontFamily: 'DM Sans, sans-serif',
+                  color: theme.palette.text.secondary
                 }}
               />
             </ListItem>
@@ -1125,12 +1168,14 @@ const ComplianceChat = () => {
               variant="overline"
               sx={{
                 color: theme.palette.text.secondary,
-                fontWeight: 500,
+                fontWeight: 700,
                 pl: 2,
                 mt: 3,
                 mb: 2,
                 fontFamily: 'Montserrat, sans-serif',
-                display: 'block'
+                display: 'block',
+                letterSpacing: 1.2,
+                fontSize: '0.7rem'
               }}
             >
               Previous Chats
@@ -1147,12 +1192,17 @@ const ComplianceChat = () => {
                     sx={{ 
                       mb: 2,
                       cursor: 'pointer',
-                      borderRadius: 1,
+                      borderRadius: 2,
                       overflow: 'hidden',
-                      bgcolor: alpha(theme.palette.background.paper, 0.1),
+                      background: alpha(theme.palette.background.paper, 0.4),
+                      border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
                       '&:hover': {
-                        bgcolor: alpha(theme.palette.background.paper, 0.3),
-                      }
+                        background: alpha(theme.palette.background.paper, 0.7),
+                        borderColor: alpha(theme.palette.primary.main, 0.3),
+                        transform: 'translateX(4px)',
+                        boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.1)}`
+                      },
+                      transition: 'all 0.3s ease'
                     }}
                     onClick={() => handleLoadPreviousSession(session)}
                   >
@@ -1164,7 +1214,9 @@ const ComplianceChat = () => {
                         pt: 1,
                         fontFamily: 'DM Sans, sans-serif',
                         display: 'block',
-                        mb: 1
+                        mb: 0.5,
+                        fontSize: '0.7rem',
+                        fontWeight: 500
                       }}
                     >
                       {new Date(session.timestamp).toLocaleDateString()}
@@ -1173,10 +1225,7 @@ const ComplianceChat = () => {
                       sx={{
                         borderRadius: 1,
                         mb: 0.5,
-                        bgcolor: alpha(theme.palette.background.paper, 0.3),
-                        '&:hover': {
-                          bgcolor: alpha(theme.palette.background.paper, 0.6),
-                        }
+                        pt: 0
                       }}
                     >
                       <ListItemIcon sx={{ minWidth: 36 }}>
@@ -1192,7 +1241,7 @@ const ComplianceChat = () => {
                           fontWeight: 500
                         }}
                         secondaryTypographyProps={{
-                          fontSize: '0.75rem',
+                          fontSize: '0.7rem',
                           fontFamily: 'DM Sans, sans-serif'
                         }}
                       />
@@ -1204,10 +1253,39 @@ const ComplianceChat = () => {
         )}
       </List>
     </Drawer>
+    
+    {/* Sidebar Collapse Button - Only on Desktop */}
+    {!isMobile && (
+      <IconButton
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        sx={{
+          position: 'fixed',
+          left: sidebarOpen ? DRAWER_WIDTH - 20 : 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 10000,
+          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+          color: 'white',
+          width: 40,
+          height: 40,
+          boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.4)}`,
+          border: `2px solid ${alpha('#ffffff', 0.2)}`,
+          '&:hover': {
+            background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+            boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.6)}`,
+            transform: 'translateY(-50%) scale(1.1)',
+          },
+          transition: 'all 0.3s ease',
+        }}
+      >
+        {sidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+      </IconButton>
+    )}
+  </Box>
   );
 
   const renderInputArea = () => (
-    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-end' }}>
       <input
         type="file"
         accept=".pdf,.docx"
@@ -1215,39 +1293,64 @@ const ComplianceChat = () => {
         ref={fileInputRef}
         onChange={handleFileUpload}
       />
-      <Tooltip title="Upload document (PDF/DOCX)">
+      <Tooltip title="Upload document (PDF/DOCX)" arrow placement="top">
         <IconButton
           onClick={() => fileInputRef.current?.click()}
           disabled={loading || isTyping || uploading}
           sx={{
-            bgcolor: theme.palette.background.default,
+            background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
+            border: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+            width: 48,
+            height: 48,
             '&:hover': {
-              bgcolor: alpha(theme.palette.background.default, 0.9),
+              background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.2)} 0%, ${alpha(theme.palette.secondary.main, 0.2)} 100%)`,
+              borderColor: theme.palette.primary.main,
+              transform: 'translateY(-2px)',
+              boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.3)}`
             },
+            '&:disabled': {
+              opacity: 0.5
+            },
+            transition: 'all 0.3s ease'
           }}
         >
           {uploading ? (
-            <CircularProgress size={24} />
+            <CircularProgress size={24} sx={{ color: theme.palette.primary.main }} />
           ) : (
-            <UploadFileIcon />
+            <UploadFileIcon sx={{ color: theme.palette.primary.main }} />
           )}
         </IconButton>
       </Tooltip>
       <Box sx={{ flex: 1 }}>
         {pendingAttachment && (
-          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Chip
-              label={`${pendingAttachment.filename} (${pendingAttachment.doc_type || 'document'})`}
-              onDelete={() => setPendingAttachment(null)}
-              color="primary"
-              variant="outlined"
-            />
-          </Box>
+          <Fade in={true}>
+            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Chip
+                label={`${pendingAttachment.filename} (${pendingAttachment.doc_type || 'document'})`}
+                onDelete={() => setPendingAttachment(null)}
+                color="primary"
+                variant="outlined"
+                icon={<DescriptionIcon />}
+                sx={{
+                  fontFamily: 'DM Sans, sans-serif',
+                  borderRadius: 2,
+                  background: alpha(theme.palette.primary.main, 0.05),
+                  borderColor: alpha(theme.palette.primary.main, 0.3),
+                  '& .MuiChip-deleteIcon': {
+                    color: theme.palette.primary.main,
+                    '&:hover': {
+                      color: theme.palette.error.main
+                    }
+                  }
+                }}
+              />
+            </Box>
+          </Fade>
         )}
         <TextField
         fullWidth
         variant="outlined"
-        placeholder="Ask about the uploaded document, request analysis, or ask to generate a new document..."
+        placeholder="Ask me anything about compliance, frameworks, or security standards..."
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
@@ -1257,15 +1360,25 @@ const ComplianceChat = () => {
         size="small"
         sx={{
           '& .MuiOutlinedInput-root': {
-            bgcolor: theme.palette.background.default,
-            borderRadius: 2,
-            fontSize: '0.9rem',
+            background: alpha(theme.palette.background.default, 0.5),
+            backdropFilter: 'blur(10px)',
+            borderRadius: 3,
+            fontSize: '0.95rem',
             fontFamily: 'DM Sans, sans-serif',
+            padding: '12px 16px',
+            border: `2px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+            transition: 'all 0.3s ease',
             '&:hover': {
-              bgcolor: alpha(theme.palette.background.default, 0.9),
+              background: alpha(theme.palette.background.default, 0.7),
+              borderColor: alpha(theme.palette.primary.main, 0.3),
+            },
+            '&.Mui-focused': {
+              background: alpha(theme.palette.background.default, 0.9),
+              borderColor: theme.palette.primary.main,
+              boxShadow: `0 0 0 4px ${alpha(theme.palette.primary.main, 0.1)}`
             },
             '& fieldset': {
-              borderColor: theme.palette.divider,
+              border: 'none',
             },
           },
         }}
@@ -1276,16 +1389,30 @@ const ComplianceChat = () => {
         onClick={handleSend}
         disabled={loading || isTyping || !input.trim() || uploading}
         sx={{ 
-          px: 3,
-          minWidth: '100px',
-          height: '40px',
+          px: 4,
+          minWidth: '120px',
+          height: '48px',
+          borderRadius: 3,
           textTransform: 'none',
           fontFamily: 'DM Sans, sans-serif',
-          fontWeight: 500,
+          fontWeight: 600,
+          fontSize: '0.95rem',
+          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+          boxShadow: `0 4px 14px ${alpha(theme.palette.primary.main, 0.4)}`,
+          '&:hover': {
+            background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+            boxShadow: `0 6px 20px ${alpha(theme.palette.primary.main, 0.5)}`,
+            transform: 'translateY(-2px)'
+          },
+          '&:disabled': {
+            background: alpha(theme.palette.action.disabled, 0.12),
+            color: theme.palette.action.disabled
+          },
+          transition: 'all 0.3s ease'
         }}
         endIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
       >
-        Send
+        {loading ? 'Sending' : 'Send'}
       </Button>
     </Box>
   );
@@ -1423,7 +1550,7 @@ const ComplianceChat = () => {
         position: 'fixed',
         top: 0,
         left: 0,
-        bgcolor: theme.palette.background.default,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.98)} 0%, ${alpha(theme.palette.background.paper, 0.98)} 100%)`,
         zIndex: 9999,
       }}
     >
@@ -1437,9 +1564,12 @@ const ComplianceChat = () => {
           flexDirection: 'column',
           position: 'relative',
           overflow: 'hidden',
+          transition: 'all 0.3s ease',
+          width: isMobile ? '100%' : (sidebarOpen ? `calc(100% - ${DRAWER_WIDTH}px)` : '100%'),
+          marginLeft: isMobile ? 0 : (sidebarOpen ? 0 : `-${DRAWER_WIDTH}px`)
         }}
       >
-        {/* Header */}
+        {/* Modern Header with Gradient */}
         <Box
           component={motion.div}
           initial={{ y: -20, opacity: 0 }}
@@ -1447,29 +1577,59 @@ const ComplianceChat = () => {
           transition={{ delay: 0.2 }}
           sx={{
             width: '100%',
-            p: 2,
-            bgcolor: theme.palette.primary.main,
-            color: 'white',
-            borderBottom: `1px solid ${alpha(theme.palette.common.white, 0.1)}`,
+            px: 2,
+            py: 2.2,
+            height: '80.44px',
+            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+            boxShadow: `0 4px 24px ${alpha(theme.palette.primary.main, 0.4)}`,
             display: 'flex',
             alignItems: 'center',
             gap: 2,
             zIndex: 1,
+            position: 'relative',
+            boxSizing: 'border-box',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: `radial-gradient(circle at 20% 50%, ${alpha(theme.palette.secondary.main, 0.2)} 0%, transparent 50%)`,
+              pointerEvents: 'none'
+            }
           }}
         >
           {isMobile && (
-            <IconButton onClick={() => setDrawerOpen(true)} sx={{ color: 'white' }}>
+            <IconButton onClick={() => setDrawerOpen(true)} sx={{ color: 'white', zIndex: 1 }}>
               <MenuIcon />
             </IconButton>
           )}
-          <SmartToyIcon sx={{ fontSize: 24 }} />
-          <Box>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              background: alpha('#ffffff', 0.15),
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1
+            }}
+          >
+            <SmartToyIcon sx={{ fontSize: 24, color: 'white' }} />
+          </Box>
+          <Box sx={{ zIndex: 1 }}>
             <Typography 
-              variant="h6" 
+              variant="h5" 
               sx={{ 
-                fontWeight: 600,
+                fontWeight: 700,
                 fontFamily: 'Montserrat, sans-serif',
-                fontSize: '1.1rem',
+                fontSize: '1.2rem',
+                color: 'white',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2
               }}
             >
               Compliance Assistant
@@ -1477,29 +1637,42 @@ const ComplianceChat = () => {
             <Typography 
               variant="body2" 
               sx={{ 
-                opacity: 0.8,
+                opacity: 0.9,
                 fontFamily: 'DM Sans, sans-serif',
-                fontSize: '0.85rem',
+                fontSize: '0.75rem',
+                color: 'white',
+                mt: 0.2,
+                lineHeight: 1.3
               }}
             >
-              Your AI-powered compliance expert
+              <SecurityIcon sx={{ fontSize: 12, mr: 0.5, verticalAlign: 'middle' }} />
+              Your intelligent compliance & security expert
             </Typography>
           </Box>
           <Box sx={{ flex: 1 }} />
-          <IconButton 
-            onClick={handleReset} 
-            sx={{ 
-              color: 'white',
-              '&:hover': {
-                bgcolor: alpha(theme.palette.common.white, 0.1),
-              },
-            }}
-          >
-            <DeleteIcon />
-          </IconButton>
+          <Tooltip title="Clear conversation" arrow>
+            <IconButton 
+              onClick={handleReset} 
+              sx={{ 
+                color: 'white',
+                background: alpha('#ffffff', 0.1),
+                backdropFilter: 'blur(10px)',
+                border: `1px solid ${alpha('#ffffff', 0.2)}`,
+                '&:hover': {
+                  background: alpha('#ffffff', 0.2),
+                  transform: 'rotate(180deg)',
+                  borderColor: alpha('#ffffff', 0.4)
+                },
+                transition: 'all 0.4s ease',
+                zIndex: 1
+              }}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
 
-        {/* Chat Messages */}
+        {/* Chat Messages with Enhanced Design */}
         <Box 
           sx={{ 
             flex: 1,
@@ -1507,16 +1680,21 @@ const ComplianceChat = () => {
             overflow: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            p: 3,
+            p: 4,
+            background: `radial-gradient(ellipse at top, ${alpha(theme.palette.primary.main, 0.02)} 0%, transparent 50%)`,
             '&::-webkit-scrollbar': {
-              width: '4px',
+              width: '8px',
             },
             '&::-webkit-scrollbar-track': {
-              background: 'transparent',
+              background: alpha(theme.palette.background.paper, 0.3),
+              borderRadius: '4px',
             },
             '&::-webkit-scrollbar-thumb': {
-              background: theme.palette.divider,
-              borderRadius: '2px',
+              background: alpha(theme.palette.primary.main, 0.3),
+              borderRadius: '4px',
+              '&:hover': {
+                background: alpha(theme.palette.primary.main, 0.5),
+              }
             },
           }}
         >
@@ -1525,9 +1703,10 @@ const ComplianceChat = () => {
               <Box
                 component={motion.div}
                 key="empty-state"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.5 }}
                 sx={{ 
                   flex: 1,
                   width: '100%',
@@ -1541,150 +1720,247 @@ const ComplianceChat = () => {
               >
                 <motion.div
                   animate={{ 
-                    y: [0, -10, 0],
-                    rotate: [0, 5, 0]
+                    y: [0, -15, 0],
+                    rotate: [0, 5, -5, 0]
                   }}
                   transition={{ 
-                    duration: 2,
+                    duration: 3,
                     repeat: Infinity,
-                    repeatType: "reverse"
+                    repeatType: "reverse",
+                    ease: "easeInOut"
                   }}
                 >
-                  <SmartToyIcon sx={{ fontSize: 64, mb: 2, opacity: 0.5 }} />
+                  <Box
+                    sx={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: 4,
+                      background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mb: 3,
+                      boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.2)}`,
+                      border: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`
+                    }}
+                  >
+                    <SmartToyIcon sx={{ fontSize: 64, color: theme.palette.primary.main, opacity: 0.8 }} />
+                  </Box>
                 </motion.div>
                 <Typography 
-                  variant="h5"
+                  variant="h4"
                   sx={{ 
-                    mb: 1,
+                    mb: 2,
                     fontFamily: 'Montserrat, sans-serif',
-                    fontWeight: 600,
+                    fontWeight: 700,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    letterSpacing: '-0.02em'
                   }}
                 >
                   Welcome to Compliance Assistant
                 </Typography>
                 <Typography
+                  variant="h6"
                   sx={{ 
-                    maxWidth: '500px',
+                    maxWidth: '600px',
                     fontFamily: 'DM Sans, sans-serif',
+                    color: theme.palette.text.secondary,
+                    lineHeight: 1.6,
+                    mb: 3
                   }}
                 >
-                  Ask questions about compliance frameworks, security controls, and regulatory requirements.
+                  Your intelligent expert for compliance frameworks, security controls, and regulatory requirements
                 </Typography>
-              </Box>
-            ) : (
-              messages.map((message, index) => (
-                <Box
-                  component={motion.div}
-                  key={`${message.type}-${index}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  sx={{
-                    width: '100%',
-                    display: 'flex',
-                    flexDirection: message.type === 'user' ? 'row-reverse' : 'row',
-                    gap: 2,
-                    mb: 3,
-                  }}
-                >
-                  <Avatar 
-                    sx={{ 
-                      bgcolor: message.type === 'user' ? theme.palette.primary.main : theme.palette.secondary.main,
-                      width: 32,
-                      height: 32,
-                    }}
-                  >
-                    {message.type === 'user' ? <PersonIcon /> : <SmartToyIcon />}
-                  </Avatar>
-                  <Box 
-                    sx={{ 
-                      maxWidth: '70%',
-                      minWidth: '200px',
-                    }}
-                  >
-                    <Paper
-                      elevation={1}
-                      sx={{
-                        p: 2,
-                        bgcolor: message.type === 'user' 
-                          ? theme.palette.primary.main 
-                          : theme.palette.background.paper,
-                        color: message.type === 'user' ? 'white' : 'text.primary',
-                        borderRadius: 2,
-                      }}
-                    >
-                      {message.type === 'response' && message.isTyping ? (
-                        <TypewriterText 
-                          text={message.content} 
-                          onComplete={() => handleTypingComplete(index)}
-                        />
-                      ) : (
-                        <FormattedResponse content={message.content} />
-                      )}
-              {message.attachments && message.attachments.length > 0 && (
-                <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  {message.attachments.map((att, i) => (
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center', mt: 2 }}>
+                  {['GDPR', 'HIPAA', 'ISO 27001', 'SOC 2'].map((framework) => (
                     <Chip
-                      key={i}
-                      label={`${att.filename}${att.doc_type ? ` • ${att.doc_type}` : ''}`}
-                      variant="outlined"
-                      size="small"
-                      onClick={() => {
-                        // optionally open a sidebar or just ignore
+                      key={framework}
+                      label={framework}
+                      sx={{
+                        background: alpha(theme.palette.primary.main, 0.08),
+                        color: theme.palette.primary.main,
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        px: 1,
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                        '&:hover': {
+                          background: alpha(theme.palette.primary.main, 0.15),
+                          transform: 'translateY(-2px)',
+                          boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.2)}`
+                        },
+                        transition: 'all 0.3s ease'
                       }}
                     />
                   ))}
                 </Box>
-              )}
-              {message.experts && !message.isTyping && (
-                        <Box sx={{ mt: 1, pt: 1, borderTop: `1px solid ${theme.palette.divider}` }}>
-                          <Typography 
-                            variant="caption"
-                            sx={{ 
-                              color: theme.palette.text.secondary,
-                              fontFamily: 'DM Sans, sans-serif',
-                            }}
-                          >
-                            Consulted experts: {message.experts.join(', ')}
-                          </Typography>
-                        </Box>
-                      )}
-                      {/* Add feedback buttons for bot responses */}
-                      {message.type === 'response' && !message.isTyping && message.originalQuery && (
-                        <Box sx={{ mt: 1 }}>
-                          {getFeedbackButtons(index, message.originalQuery)}
-                        </Box>
-                      )}
-                    </Paper>
-                    <Typography 
-                      variant="caption" 
+              </Box>
+            ) : (
+              messages.map((message, index) => (
+                <Zoom in={true} key={`${message.type}-${index}`} style={{ transitionDelay: `${index * 50}ms` }}>
+                  <Box
+                    component={motion.div}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.4 }}
+                    sx={{
+                      width: '100%',
+                      display: 'flex',
+                      flexDirection: message.type === 'user' ? 'row-reverse' : 'row',
+                      gap: 2,
+                      mb: 3,
+                    }}
+                  >
+                    <Avatar 
                       sx={{ 
-                        display: 'block',
-                        mt: 0.5,
-                        color: theme.palette.text.secondary,
-                        textAlign: message.type === 'user' ? 'right' : 'left',
+                        background: message.type === 'user' 
+                          ? `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`
+                          : `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.secondary.dark} 100%)`,
+                        width: 40,
+                        height: 40,
+                        boxShadow: message.type === 'user'
+                          ? `0 4px 14px ${alpha(theme.palette.primary.main, 0.4)}`
+                          : `0 4px 14px ${alpha(theme.palette.secondary.main, 0.4)}`,
+                        border: `2px solid ${alpha('#ffffff', 0.1)}`
                       }}
                     >
-                      {message.timestamp.toLocaleTimeString()}
-                    </Typography>
+                      {message.type === 'user' ? <PersonIcon /> : <SmartToyIcon />}
+                    </Avatar>
+                    <Box 
+                      sx={{ 
+                        maxWidth: '75%',
+                        minWidth: '200px',
+                      }}
+                    >
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 2.5,
+                          background: message.type === 'user' 
+                            ? `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`
+                            : `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.default, 0.9)} 100%)`,
+                          backdropFilter: 'blur(10px)',
+                          color: message.type === 'user' ? 'white' : 'text.primary',
+                          borderRadius: 3,
+                          border: message.type === 'user' 
+                            ? `1px solid ${alpha('#ffffff', 0.1)}`
+                            : `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                          boxShadow: message.type === 'user'
+                            ? `0 8px 24px ${alpha(theme.palette.primary.main, 0.3)}`
+                            : `0 8px 24px ${alpha(theme.palette.divider, 0.1)}`,
+                          position: 'relative',
+                          overflow: 'hidden',
+                          '&::before': message.type !== 'user' ? {
+                            content: '""',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '4px',
+                            height: '100%',
+                            background: `linear-gradient(180deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`
+                          } : {}
+                        }}
+                      >
+                        {message.type === 'response' && message.isTyping ? (
+                          <TypewriterText 
+                            text={message.content} 
+                            onComplete={() => handleTypingComplete(index)}
+                          />
+                        ) : (
+                          <FormattedResponse content={message.content} />
+                        )}
+                {message.attachments && message.attachments.length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {message.attachments.map((att, i) => (
+                      <Chip
+                        key={i}
+                        label={`${att.filename}${att.doc_type ? ` • ${att.doc_type}` : ''}`}
+                        variant="outlined"
+                        size="small"
+                        icon={<DescriptionIcon />}
+                        onClick={() => {
+                          // optionally open a sidebar or just ignore
+                        }}
+                        sx={{
+                          borderColor: message.type === 'user' ? alpha('#ffffff', 0.3) : alpha(theme.palette.primary.main, 0.3),
+                          color: message.type === 'user' ? 'white' : theme.palette.text.primary,
+                          '& .MuiChip-icon': {
+                            color: message.type === 'user' ? 'white' : theme.palette.primary.main
+                          }
+                        }}
+                      />
+                    ))}
                   </Box>
-                </Box>
+                )}
+                {message.experts && !message.isTyping && (
+                          <Box sx={{ 
+                            mt: 2, 
+                            pt: 2, 
+                            borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }}>
+                            <AutoAwesomeIcon sx={{ fontSize: 14, color: theme.palette.primary.main, opacity: 0.7 }} />
+                            <Typography 
+                              variant="caption"
+                              sx={{ 
+                                color: theme.palette.text.secondary,
+                                fontFamily: 'DM Sans, sans-serif',
+                                fontSize: '0.75rem',
+                                fontStyle: 'italic'
+                              }}
+                            >
+                              Consulted experts: {message.experts.join(', ')}
+                            </Typography>
+                          </Box>
+                        )}
+                        {/* Add feedback buttons for bot responses */}
+                        {message.type === 'response' && !message.isTyping && message.originalQuery && (
+                          <Box sx={{ mt: 1.5 }}>
+                            {getFeedbackButtons(index, message.originalQuery)}
+                          </Box>
+                        )}
+                      </Paper>
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          display: 'block',
+                          mt: 1,
+                          ml: message.type === 'user' ? 0 : 1,
+                          mr: message.type === 'user' ? 1 : 0,
+                          color: theme.palette.text.secondary,
+                          textAlign: message.type === 'user' ? 'right' : 'left',
+                          fontFamily: 'DM Sans, sans-serif',
+                          fontSize: '0.7rem'
+                        }}
+                      >
+                        {message.timestamp.toLocaleTimeString()}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Zoom>
               ))
             )}
           </AnimatePresence>
           <div ref={messagesEndRef} />
         </Box>
 
-        {/* Input Area */}
+        {/* Enhanced Input Area */}
         <Box
           component={motion.div}
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           sx={{ 
             width: '100%',
-            p: 2,
-            borderTop: `1px solid ${theme.palette.divider}`,
-            bgcolor: theme.palette.background.paper,
+            p: 3,
+            background: `linear-gradient(180deg, transparent 0%, ${alpha(theme.palette.background.paper, 0.8)} 20%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
+            backdropFilter: 'blur(10px)',
+            borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            boxShadow: `0 -4px 24px ${alpha(theme.palette.divider, 0.1)}`
           }}
         >
           {renderInputArea()}
@@ -1697,4 +1973,4 @@ const ComplianceChat = () => {
   );
 };
 
-export default ComplianceChat; 
+export default ComplianceChat;

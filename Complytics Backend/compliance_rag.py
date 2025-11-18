@@ -621,10 +621,18 @@ def process_documents(new_document_path: Optional[str] = None) -> Tuple[List[str
     # If we have cached embeddings, use them as a base
     if cached_embeddings is not None and cached_doc_map is not None:
         logger.info(f"Loaded {len(cached_embeddings)} embeddings from cache")
-        all_segments = [doc["text"] for doc in cached_doc_map]
+        # Extract segments from document map (not full text!)
+        all_segments = []
+        for doc in cached_doc_map:
+            if "segments" in doc and isinstance(doc["segments"], list):
+                all_segments.extend(doc["segments"])
+            else:
+                # Fallback: if segments not in map, use full text as single segment
+                logger.warning(f"Document '{doc.get('filename', 'unknown')}' has no segments, using full text")
+                all_segments.append(doc["text"])
         all_embeddings = list(cached_embeddings)
         document_map = cached_doc_map.copy()
-        logger.info("Found existing embeddings!")
+        logger.info(f"Found existing embeddings! Extracted {len(all_segments)} segments from {len(cached_doc_map)} documents")
     
     # If a new document path is provided, only process that document
     if new_document_path:
@@ -927,30 +935,56 @@ def expert_audit_compliance(query: str, context: str, conversation_context: str 
     print("="*80 + "\n")
     logger.info(f"📄 AUDIT EXPERT triggered for query: {query[:100]}")
     
-    prompt = (
-        "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
-        f"Previous conversation context:\n{conversation_context}\n\n"
-        f"Current Query: {query}\n\n"
-        f"COMPLIANCE FRAMEWORK DOCUMENTS:\n{context}\n\n"
-        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
-        "For EVERY requirement, recommendation, or claim you make, you MUST:\n"
-        "1. ✅ Quote the EXACT text from the framework documents above that supports your statement\n"
-        "2. ✅ Use this format: [Your statement] (📄 Evidence: \"exact quote from documents\")\n"
-        "3. ✅ If information is NOT in the provided documents, explicitly state: \"⚠️ Not found in provided frameworks - based on industry best practices\"\n"
-        "4. ✅ Never make claims without citing supporting evidence from the context\n\n"
-        "EXAMPLE FORMAT:\n"
-        "ISO 27001 requires organizations to establish an information security management system (📄 Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
-        "Provide a comprehensive analysis focusing on:\n"
-        "1. **Audit Requirements**: Specific audit standards and procedures (with citations)\n"
-        "2. **Evidence Collection**: Documentation and artifacts needed (with framework references)\n"
-        "3. **Compliance Verification**: Methods to assess and validate compliance (with citations)\n"
-        "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks (with evidence)\n"
-        "5. **Control Testing**: Procedures to test control effectiveness (with citations)\n"
-        "6. **Remediation Planning**: Steps to address findings and gaps (with evidence)\n"
-        "7. **Continuous Monitoring**: Ongoing compliance assurance processes (with citations)\n\n"
-        "Think step by step, cite evidence for each point, and be explicit about what comes from the documents vs. general knowledge.\n\n"
-        "Response with mandatory evidence citations:"
-    )
+    # Check if we have substantial framework context
+    has_framework_docs = context and len(context.strip()) > 200
+    
+    if has_framework_docs:
+        # When we have framework documents, cite them
+        prompt = (
+            "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
+            f"Previous conversation context:\n{conversation_context}\n\n"
+            f"Current Query: {query}\n\n"
+            f"COMPLIANCE FRAMEWORK DOCUMENTS:\n{context}\n\n"
+            "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+            "For EVERY requirement, recommendation, or claim you make, you MUST:\n"
+            "1. ✅ Quote the EXACT text from the framework documents above that supports your statement\n"
+            "2. ✅ Use this format: [Your statement] (📄 Evidence: \"exact quote from documents\")\n"
+            "3. ✅ If specific details are NOT in the provided documents, state: \"Based on {framework_name} standards\" without warnings\n"
+            "4. ✅ Never make claims without citing supporting evidence from the context\n\n"
+            "EXAMPLE FORMAT:\n"
+            "ISO 27001 requires organizations to establish an information security management system (📄 Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
+            "Provide a comprehensive analysis focusing on:\n"
+            "1. **Audit Requirements**: Specific audit standards and procedures (with citations)\n"
+            "2. **Evidence Collection**: Documentation and artifacts needed (with framework references)\n"
+            "3. **Compliance Verification**: Methods to assess and validate compliance (with citations)\n"
+            "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks (with evidence)\n"
+            "5. **Control Testing**: Procedures to test control effectiveness (with citations)\n"
+            "6. **Remediation Planning**: Steps to address findings and gaps (with evidence)\n"
+            "7. **Continuous Monitoring**: Ongoing compliance assurance processes (with citations)\n\n"
+            "Think step by step, cite evidence for each point, and be explicit about what comes from the documents.\n\n"
+            "Response with mandatory evidence citations:"
+        )
+    else:
+        # When no framework documents are provided, answer based on general knowledge
+        prompt = (
+            "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
+            f"Previous conversation context:\n{conversation_context}\n\n"
+            f"Current Query: {query}\n\n"
+            "Provide a comprehensive, professional analysis of the requested compliance framework or topic.\n\n"
+            "Structure your response with:\n"
+            "1. **Overview**: Brief introduction to the framework or compliance area\n"
+            "2. **Key Requirements**: Main compliance requirements and standards\n"
+            "3. **Audit Requirements**: Specific audit standards and procedures\n"
+            "4. **Evidence Collection**: Documentation and artifacts typically needed\n"
+            "5. **Compliance Verification**: Common methods to assess and validate compliance\n"
+            "6. **Risk Assessment Framework**: How to identify, analyze, and prioritize risks\n"
+            "7. **Control Testing**: Methods to test and validate control effectiveness\n"
+            "8. **Remediation Planning**: Best practices for addressing gaps and findings\n"
+            "9. **Continuous Monitoring**: Strategies for ongoing compliance maintenance\n\n"
+            "Format your response with clear headings (using ##) and bullet points. Be specific, actionable, and professional.\n"
+            "Provide comprehensive information based on established compliance standards and best practices.\n"
+        )
+    
     return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
@@ -997,12 +1031,13 @@ def expert_healthcare_compliance(query: str, context: str, conversation_context:
     
     is_concise = detect_concise_request(query)
     max_tokens = get_concise_max_tokens(query)
+    has_framework_docs = context and len(context.strip()) > 200
     
     if is_concise:
         prompt = (
             "Provide a CONCISE, bullet-point response for HIPAA/healthcare compliance.\n\n"
             f"Query: {query}\n"
-            f"Context: {context[:500]}\n\n"
+            f"Context: {context[:500] if has_framework_docs else 'General HIPAA knowledge'}\n\n"
             "Format as:\n"
             "**HIPAA Compliance Steps:**\n"
             "• Step 1\n"
@@ -1010,20 +1045,42 @@ def expert_healthcare_compliance(query: str, context: str, conversation_context:
             "• Step 3\n\n"
             "Keep it under 150 words total. Focus on actionable steps only."
         )
-    else:
+    elif has_framework_docs:
+        # When we have documents, cite them
         prompt = (
-            "As a healthcare compliance expert, analyze the following query:\n\n"
-            f"{conversation_context}"
-            f"Query: {query}\n"
-            f"Context: {context}\n\n"
+            "You are a healthcare compliance expert specializing in HIPAA and healthcare regulations.\n\n"
+            f"Previous conversation context:\n{conversation_context}\n\n"
+            f"Query: {query}\n\n"
+            f"HEALTHCARE COMPLIANCE DOCUMENTS:\n{context}\n\n"
+            "Provide comprehensive analysis with evidence from the documents when available.\n\n"
             "Focus on:\n"
-            "1. HIPAA Privacy and Security Rules\n"
-            "2. Healthcare data protection and PHI handling\n"
-            "3. Medical device regulations (FDA, CE marking)\n"
-            "4. Clinical trial compliance (GCP, ICH guidelines)\n"
-            "5. Healthcare IT security requirements\n"
-            "6. Patient consent and data rights\n"
-            "Chain-of-Thought Analysis:"
+            "1. **HIPAA Privacy and Security Rules**: Cite specific requirements from documents\n"
+            "2. **PHI Protection**: Data handling and security measures\n"
+            "3. **Compliance Requirements**: Key obligations and standards\n"
+            "4. **Risk Management**: Healthcare-specific risks and controls\n"
+            "5. **Best Practices**: Implementation guidance\n\n"
+            "Format with clear headings and cite document evidence where applicable."
+        )
+    else:
+        # When no documents are provided, answer based on general knowledge
+        prompt = (
+            "You are a healthcare compliance expert specializing in HIPAA and healthcare regulations.\n\n"
+            f"Previous conversation context:\n{conversation_context}\n\n"
+            f"Query: {query}\n\n"
+            "Provide a comprehensive, professional analysis of the healthcare compliance topic.\n\n"
+            "Focus on:\n"
+            "1. **Overview**: Introduction to the framework or compliance area\n"
+            "2. **HIPAA Privacy and Security Rules**: Key requirements and standards\n"
+            "3. **PHI Protection**: How to protect Protected Health Information\n"
+            "4. **Covered Entities & Business Associates**: Obligations and requirements\n"
+            "5. **Risk Assessment**: Healthcare-specific security risk management\n"
+            "6. **Technical Safeguards**: Access controls, encryption, audit controls\n"
+            "7. **Administrative Safeguards**: Policies, procedures, training\n"
+            "8. **Physical Safeguards**: Facility access and device/media controls\n"
+            "9. **Breach Notification**: Requirements and procedures\n"
+            "10. **Compliance Verification**: Methods to assess and maintain compliance\n\n"
+            "Format your response with clear headings (using ##) and bullet points. Be specific and actionable.\n"
+            "Provide comprehensive information based on HIPAA standards and healthcare compliance best practices.\n"
         )
     return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
@@ -1114,6 +1171,28 @@ def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> st
     is_concise = detect_concise_request(query)
     max_tokens = get_concise_max_tokens(query)
     
+    # Detect if this is a simple informational query (what is X, explain X, define X)
+    query_lower = query.lower().strip()
+    is_simple_info_query = any([
+        query_lower.startswith('what is '),
+        query_lower.startswith('what are '),
+        query_lower.startswith('explain '),
+        query_lower.startswith('define '),
+        query_lower.startswith('describe '),
+        'tell me about' in query_lower,
+        'give me an overview' in query_lower,
+        'brief overview' in query_lower
+    ]) and not any([
+        'how to implement' in query_lower,
+        'how to achieve' in query_lower,
+        'how should we' in query_lower,
+        'help us implement' in query_lower,
+        'guide us' in query_lower,
+        'steps to' in query_lower,
+        'how do i' in query_lower,
+        'how can i' in query_lower
+    ])
+    
     # Create a comprehensive synthesis prompt
     expert_analyses_text = ""
     for i, output in enumerate(outputs, 1):
@@ -1138,37 +1217,73 @@ Provide response as:
 
 Keep total response under 200 words. Focus only on actionable steps.
 """
-    else:
+    elif is_simple_info_query:
+        # For simple informational queries, provide a clean, direct response
         prompt = f"""
-You are a senior compliance consultant tasked with synthesizing multiple expert analyses into a comprehensive, actionable response.
+You are a compliance expert explaining a compliance concept or framework to a professional audience.
+
+Original Query: {query}
+
+Multiple expert perspectives on this topic:{expert_analyses_text}
+
+**CRITICAL INSTRUCTIONS:**
+Synthesize the information above into ONE unified, cohesive explanation. DO NOT reference "Expert 1", "Expert 2", or compare different analyses. Present the information as if you are the single authoritative source.
+
+Structure your response with:
+
+1. **Overview**: Start with a clear definition and purpose of the framework/concept
+2. **Key Components**: Explain the main components, rules, or requirements
+3. **Who It Applies To**: Covered entities, organizations, or industries affected
+4. **Main Requirements**: Core compliance obligations and standards
+5. **Key Takeaways**: Important points to remember
+
+Guidelines:
+- Merge all expert insights into a single, unified voice
+- DO NOT mention "experts", "analyses", "perspectives", or compare viewpoints
+- Use clear, professional language as if this is YOUR direct knowledge
+- Format with headings (using ##) and bullet points for readability
+- Eliminate all redundancy and present information once
+- Keep it informative but accessible
+- Focus on understanding the concept, not implementation details
+- Use a logical flow from general to specific
+
+Provide a comprehensive, unified explanation:
+"""
+    else:
+        # For implementation/how-to queries, use the detailed format
+        prompt = f"""
+You are a senior compliance consultant providing comprehensive guidance to help implement compliance requirements.
 
 Original Query: {query}
 Context: {context}
 
-Expert Analyses:{expert_analyses_text}
+Multiple expert perspectives on this topic:{expert_analyses_text}
 
-Synthesize these expert analyses into a cohesive response that:
+**CRITICAL INSTRUCTIONS:**
+Synthesize all the information above into ONE unified, cohesive response. DO NOT reference "Expert 1", "Expert 2", "both experts", or compare different analyses. Present the information as if you are the single authoritative consultant.
 
-1. **Executive Summary**: Provide a clear, concise overview of the key findings
-2. **Comprehensive Analysis**: Integrate insights from all experts, highlighting:
-   - Common themes and recommendations
-   - Complementary perspectives
-   - Any conflicting viewpoints and how to resolve them
-3. **Cross-Domain Considerations**: Identify how different compliance areas interact
-4. **Prioritized Recommendations**: List actionable steps in order of importance
-5. **Implementation Timeline**: Suggest phases for implementation where applicable
-6. **Risk Assessment**: Highlight critical risks and mitigation strategies
-7. **Next Steps**: Specific actions the user should take
+Structure your response with:
+
+1. **Executive Summary**: Provide a clear, concise overview of the key findings and approach
+2. **Key Requirements**: Integrated overview of all compliance obligations and standards
+3. **Implementation Approach**: Consolidated recommendations and best practices presented as a unified strategy
+4. **Prioritized Action Plan**: Specific, actionable steps in order of importance
+5. **Risk Considerations**: Critical risks and mitigation strategies
+6. **Implementation Timeline**: Suggested phases for rollout
+7. **Next Steps**: Immediate actions to take
 
 Guidelines:
-- Eliminate redundancy while preserving important details
-- Use clear headings and bullet points for readability
-- Provide specific, actionable guidance
+- Merge all insights into a single, unified voice - DO NOT mention experts or analyses
+- Present information as YOUR direct recommendations
+- Eliminate all redundancy - if multiple sources say the same thing, mention it once
+- Use clear headings (using ##) and bullet points for readability
+- Provide specific, actionable guidance with concrete steps
 - Include relevant regulatory citations and standards
 - Maintain technical accuracy while being accessible
 - Address both immediate needs and long-term compliance strategy
+- Flow naturally from one section to the next without meta-commentary
 
-Synthesized Response:
+Provide a comprehensive, unified response:
 """
     
     return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)

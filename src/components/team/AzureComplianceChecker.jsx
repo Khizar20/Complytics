@@ -32,6 +32,10 @@ const AzureComplianceChecker = () => {
   const [checklist, setChecklist] = useState(null);
   const [generatingChecklist, setGeneratingChecklist] = useState(false);
   const [selectedFramework, setSelectedFramework] = useState(null);
+  const [snapshot, setSnapshot] = useState(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState(null);
+  const [analyzingSnapshot, setAnalyzingSnapshot] = useState(false);
 
   // Check if Azure Checker is ready
   useEffect(() => {
@@ -50,6 +54,44 @@ const AzureComplianceChecker = () => {
     };
     if (authToken) {
       checkStatus();
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    const fetchSnapshot = async () => {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+      try {
+        const response = await fetch('http://localhost:8000/api/azure/config/snapshot/latest', {
+          headers: authToken ? {
+            'Authorization': `Bearer ${authToken}`
+          } : {}
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || errorData.message || 'Failed to load Azure snapshot');
+        }
+
+        const data = await response.json();
+        if (data.exists) {
+          setSnapshot(data.snapshot);
+        } else {
+          setSnapshot(null);
+        }
+      } catch (err) {
+        console.error('Error fetching Azure snapshot:', err);
+        setSnapshot(null);
+        setSnapshotError(err.message || 'Unable to load Azure snapshot');
+      } finally {
+        setSnapshotLoading(false);
+      }
+    };
+
+    if (authToken) {
+      fetchSnapshot();
+    } else {
+      setSnapshot(null);
     }
   }, [authToken]);
 
@@ -111,6 +153,45 @@ const AzureComplianceChecker = () => {
       setError(error.message || 'Failed to analyze document');
     } finally {
       setUploading(false);
+      setAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeSnapshot = async () => {
+    if (!snapshot) {
+      setError('No fetched Azure settings snapshot is available. Please fetch settings from Azure first.');
+      return;
+    }
+
+    setAnalyzingSnapshot(true);
+    setAnalyzing(true);
+    setError(null);
+    setChecklist(null);
+    setSelectedFramework(null);
+    setAnalysis(null);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/azure-checker/analyze-snapshot', {
+        method: 'POST',
+        headers: authToken ? {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        } : {}
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to analyze fetched settings');
+      }
+
+      const data = await response.json();
+      setAnalysis(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error analyzing fetched settings:', err);
+      setError(err.message || 'Failed to analyze fetched settings');
+    } finally {
+      setAnalyzingSnapshot(false);
       setAnalyzing(false);
     }
   };
@@ -365,6 +446,71 @@ const AzureComplianceChecker = () => {
           </div>
         )}
 
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 bg-white rounded-2xl shadow-lg p-6 border border-blue-100"
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <FaCloud className="text-2xl text-indigo-600" />
+            <h2 className="text-2xl font-bold text-gray-900">Fetched Azure Settings Snapshot</h2>
+          </div>
+
+          {snapshotLoading ? (
+            <div className="flex items-center gap-2 text-gray-600">
+              <FaSpinner className="animate-spin" />
+              Loading snapshot...
+            </div>
+          ) : snapshot ? (
+            <div>
+              <p className="text-gray-700">
+                <strong>Last fetched:</strong>{' '}
+                {snapshot.timestamp ? new Date(snapshot.timestamp).toLocaleString() : 'Unknown'}
+              </p>
+              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
+                We captured these Azure settings automatically via Microsoft Graph. Due to API and licensing limitations
+                this snapshot may not include every Azure control. You can analyze this partial snapshot for quick insights,
+                or upload a full Azure configuration document for a comprehensive review.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleAnalyzeSnapshot}
+                  disabled={analyzingSnapshot || checkerStatus?.status !== 'ready'}
+                  className="flex items-center gap-2 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {analyzingSnapshot ? (
+                    <>
+                      <FaSpinner className="animate-spin" />
+                      Analyzing Snapshot...
+                    </>
+                  ) : (
+                    <>
+                      <FaShieldAlt />
+                      Analyze Fetched Settings
+                    </>
+                  )}
+                </button>
+                <span className="text-xs text-gray-500 italic">
+                  Tip: Upload a detailed configuration file for deeper analysis.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-gray-700">
+                No Azure settings snapshot is stored yet. Run the Azure configuration fetch to capture the latest
+                tenant settings, or upload a configuration document below for analysis.
+              </p>
+            </div>
+          )}
+
+          {snapshotError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700">{snapshotError}</p>
+            </div>
+          )}
+        </motion.div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Upload Section */}
           <motion.div
@@ -518,6 +664,18 @@ const AzureComplianceChecker = () => {
                   <div className="text-gray-700">
                     <strong>Frameworks Analyzed:</strong> {analysis.frameworks_analyzed || 1}
                   </div>
+                  {analysis.source_type && (
+                    <div className="text-gray-700">
+                      <strong>Source:</strong>{' '}
+                      {analysis.source_type === 'snapshot' ? 'Fetched Azure settings snapshot' : 'Uploaded document'}
+                    </div>
+                  )}
+                  {analysis.source_metadata?.snapshot_timestamp && (
+                    <div className="text-gray-700">
+                      <strong>Snapshot Captured:</strong>{' '}
+                      {new Date(analysis.source_metadata.snapshot_timestamp).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
 

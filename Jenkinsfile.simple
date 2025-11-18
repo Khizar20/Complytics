@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKERHUB_USER = 'khizarahmed123'
+        DOCKERHUB_IMAGE_BACKEND = 'khizarahmed123/complytics-backend'
+        DOCKERHUB_IMAGE_FRONTEND = 'khizarahmed123/complytics-frontend'
+        AZURE_SUBSCRIPTION_ID = 'e7057718-109b-4459-9a1e-8acfe7595e3b'
+        AZURE_RESOURCE_GROUP = 'complytics-rg'
+        AZURE_BACKEND_APP = 'complytics-backend'
+        AZURE_FRONTEND_APP = 'complytics-frontend'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📦 Checking out code...'
+                checkout scm
+            }
+        }
+        
+        stage('Build & Push Backend') {
+            steps {
+                echo '🔨 Building backend image...'
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                            echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                            docker build -f Dockerfile.backend -t ${DOCKERHUB_IMAGE_BACKEND}:latest .
+                            docker push ${DOCKERHUB_IMAGE_BACKEND}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Build & Push Frontend') {
+            steps {
+                echo '🔨 Building frontend image...'
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                            echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                            docker build -f Dockerfile.frontend -t ${DOCKERHUB_IMAGE_FRONTEND}:latest .
+                            docker push ${DOCKERHUB_IMAGE_FRONTEND}:latest
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Azure') {
+            steps {
+                echo '🚀 Deploying to Azure...'
+                script {
+                    withCredentials([azureServicePrincipal(credentialsId: 'azure-service-principal')]) {
+                        sh """
+                            az login --service-principal \
+                                -u \${AZURE_CLIENT_ID} \
+                                -p \${AZURE_CLIENT_SECRET} \
+                                --tenant \${AZURE_TENANT_ID}
+                            
+                            az account set --subscription ${AZURE_SUBSCRIPTION_ID}
+                            
+                            echo 'Updating backend...'
+                            az containerapp update \
+                                --name ${AZURE_BACKEND_APP} \
+                                --resource-group ${AZURE_RESOURCE_GROUP} \
+                                --image ${DOCKERHUB_IMAGE_BACKEND}:latest
+                            
+                            echo 'Updating frontend...'
+                            az containerapp update \
+                                --name ${AZURE_FRONTEND_APP} \
+                                --resource-group ${AZURE_RESOURCE_GROUP} \
+                                --image ${DOCKERHUB_IMAGE_FRONTEND}:latest
+                            
+                            echo '✅ Deployment complete!'
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed!'
+        }
+        always {
+            sh 'docker system prune -f || true'
+        }
+    }
+}
+

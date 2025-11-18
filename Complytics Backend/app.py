@@ -31,19 +31,10 @@ async def custom_swagger_ui_html():
         oauth2_redirect_url=None
     )
     
-# CORS setup
-origins = [
-    "http://localhost:5173",  # React development server
-    "http://localhost:3000",  # Alternative React port
-    "http://127.0.0.1:5173",  # Alternative localhost format
-    "http://127.0.0.1:3000",  # Alternative localhost format
-    "http://localhost:5174",  # Additional React port
-    "http://127.0.0.1:5174",  # Additional localhost format
-]
-
+# CORS setup - Allow all origins for flexibility
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=r".*",  # Allow all origins via regex (works with credentials)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

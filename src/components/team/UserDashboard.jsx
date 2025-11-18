@@ -1683,11 +1683,12 @@ const AzureADChangeLogs = () => {
       });
       
       if (filters.date) {
+        // Set start_date to the beginning of the selected date (00:00:00)
+        // Use the date string directly to avoid timezone conversion issues
         params.append('start_date', filters.date);
-        // Add end_date as the same date + 1 day to get all logs for that day
-        const nextDay = new Date(filters.date);
-        nextDay.setDate(nextDay.getDate() + 1);
-        params.append('end_date', nextDay.toISOString().split('T')[0]);
+        // Send the same date as end_date - backend will add 1 day to it
+        // This ensures we get logs only for the selected date
+        params.append('end_date', filters.date);
       }
       if (filters.userEmail) params.append('user_email', filters.userEmail);
       if (filters.changeType) params.append('change_type', filters.changeType);
@@ -1722,10 +1723,9 @@ const AzureADChangeLogs = () => {
     try {
       const params = new URLSearchParams();
       if (filters.date) {
+        // Send the same date for both start and end - backend will add 1 day to end_date
         params.append('start_date', filters.date);
-        const nextDay = new Date(filters.date);
-        nextDay.setDate(nextDay.getDate() + 1);
-        params.append('end_date', nextDay.toISOString().split('T')[0]);
+        params.append('end_date', filters.date);
       }
       if (filters.userEmail) params.append('user_email', filters.userEmail);
       if (filters.changeType) params.append('change_type', filters.changeType);
@@ -1862,7 +1862,6 @@ const AzureADChangeLogs = () => {
               >
                 <option value="">All Types</option>
                 <option value="config_fetch">Config Fetch</option>
-                <option value="config_update">Config Update</option>
                 <option value="connection">Connection</option>
               </select>
             </div>
@@ -1938,38 +1937,76 @@ const AzureADChangeLogs = () => {
                     <th className="text-left p-3 text-sm font-semibold">Timestamp</th>
                     <th className="text-left p-3 text-sm font-semibold">User</th>
                     <th className="text-left p-3 text-sm font-semibold">Change Type</th>
+                    <th className="text-left p-3 text-sm font-semibold">Details</th>
                     <th className="text-left p-3 text-sm font-semibold">Status</th>
                     <th className="text-left p-3 text-sm font-semibold">Error</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map((log, index) => (
-                    <motion.tr
-                      key={log._id || index}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="border-b border-border hover:bg-secondary/50 transition-colors"
-                    >
-                      <td className="p-3 text-sm">{formatTimestamp(log.timestamp)}</td>
-                      <td className="p-3 text-sm">{log.user_email || 'N/A'}</td>
-                      <td className="p-3 text-sm">
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 rounded text-xs">
-                          {log.change_type || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="p-3">{getStatusBadge(log.status)}</td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {log.error_message ? (
-                          <span className="text-red-600 dark:text-red-400" title={log.error_message}>
-                            {log.error_message.length > 50 ? `${log.error_message.substring(0, 50)}...` : log.error_message}
-                          </span>
-                        ) : (
-                          <span className="text-green-600 dark:text-green-400">—</span>
+                  {logs.map((log, index) => {
+                    // Extract connection details for connection type logs
+                    const isConnection = log.change_type === 'connection';
+                    const details = log.details || {};
+                    const connectionDetails = isConnection ? (
+                      <div className="space-y-1">
+                        {details.tenant_id && (
+                          <div className="text-xs">
+                            <span className="font-medium">Tenant ID: </span>
+                            <span className="text-muted-foreground">{details.tenant_id}</span>
+                          </div>
                         )}
-                      </td>
-                    </motion.tr>
-                  ))}
+                        {details.action && (
+                          <div className="text-xs">
+                            <span className="font-medium">Action: </span>
+                            <span className="text-muted-foreground capitalize">{details.action.replace('_', ' ')}</span>
+                          </div>
+                        )}
+                        {details.connection_time && (
+                          <div className="text-xs">
+                            <span className="font-medium">Connection Time: </span>
+                            <span className="text-muted-foreground">{formatTimestamp(details.connection_time)}</span>
+                          </div>
+                        )}
+                        {details.disconnection_time && (
+                          <div className="text-xs">
+                            <span className="font-medium">Disconnection Time: </span>
+                            <span className="text-muted-foreground">{formatTimestamp(details.disconnection_time)}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    );
+
+                    return (
+                      <motion.tr
+                        key={log._id || index}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="border-b border-border hover:bg-secondary/50 transition-colors"
+                      >
+                        <td className="p-3 text-sm">{formatTimestamp(log.timestamp)}</td>
+                        <td className="p-3 text-sm">{log.user_email || 'N/A'}</td>
+                        <td className="p-3 text-sm">
+                          <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 rounded text-xs">
+                            {log.change_type || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-sm">{connectionDetails}</td>
+                        <td className="p-3">{getStatusBadge(log.status)}</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {log.error_message ? (
+                            <span className="text-red-600 dark:text-red-400" title={log.error_message}>
+                              {log.error_message.length > 50 ? `${log.error_message.substring(0, 50)}...` : log.error_message}
+                            </span>
+                          ) : (
+                            <span className="text-green-600 dark:text-green-400">—</span>
+                          )}
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -33,7 +33,9 @@ from compliance_rag import (
     classify_document_type,
     detect_document_analysis_request,
     detect_document_reference,
-    analyze_general_documentation_compliance
+    analyze_general_documentation_compliance,
+    QUERY_CACHE,
+    save_query_cache
 )
 from compliance_rag_refined import (
     analyze_refined_intent,
@@ -1087,10 +1089,49 @@ The improved document addresses all the compliance gaps identified in the analys
                     query_embedding = get_embedding_optimized(query)
                     if query_embedding is not None:
                         query_embedding = np.expand_dims(query_embedding, axis=0)
+                        
+                        # Debug: Log before FAISS search
+                        logger.info(f"🔍 FAISS Search Debug:")
+                        logger.info(f"  - Total segments available: {len(segments)}")
+                        logger.info(f"  - FAISS index total vectors: {index.ntotal}")
+                        logger.info(f"  - Query embedding shape: {query_embedding.shape}")
+                        
                         distances, idxs = index.search(query_embedding, 3)
-                        retrieved_context = " ".join([segments[idx] for idx in idxs[0] if idx < len(segments)])
+                        
+                        # Debug: Log FAISS results
+                        logger.info(f"  - FAISS returned indices: {idxs[0]}")
+                        logger.info(f"  - FAISS returned distances: {distances[0]}")
+                        
+                        # Retrieve segments with detailed debugging
+                        retrieved_segments = []
+                        for i, idx in enumerate(idxs[0]):
+                            logger.info(f"  - Processing index {i}: idx={idx}, len(segments)={len(segments)}, valid={idx >= 0 and idx < len(segments)}")
+                            if idx >= 0 and idx < len(segments):
+                                retrieved_segments.append(segments[idx])
+                            else:
+                                logger.warning(f"  ⚠️ Invalid index {idx} (must be 0-{len(segments)-1})")
+                        
+                        retrieved_context = " ".join(retrieved_segments)
+                        
+                        # Log retrieved context for verification
+                        logger.info("="*80)
+                        logger.info("📚 RETRIEVED CONTEXT FROM FRAMEWORK EMBEDDINGS")
+                        logger.info("="*80)
+                        logger.info(f"Query: {query}")
+                        logger.info(f"Number of segments retrieved: {len(retrieved_segments)}")
+                        logger.info(f"Total context length: {len(retrieved_context)} characters")
+                        logger.info("-"*80)
+                        if len(retrieved_segments) > 0:
+                            for i, segment in enumerate(retrieved_segments, 1):
+                                logger.info(f"\n📄 Segment {i} (Distance: {distances[0][i-1]:.4f}):")
+                                logger.info(f"Preview: {segment[:500]}...")
+                        else:
+                            logger.error("❌ NO SEGMENTS RETRIEVED! Evidence-based approach will NOT work!")
+                            logger.error("   This means experts will use general knowledge instead of framework citations.")
+                        logger.info("="*80)
                     else:
                         retrieved_context = ""
+                        logger.error("❌ Query embedding is None! Cannot search FAISS index.")
 
                     # Use optimized query processing
                     logger.info("Using optimized query processing...")
@@ -1162,6 +1203,34 @@ async def reset_compliance_chat(
         return {"message": "Chat history reset successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/clear-cache")
+async def clear_query_cache(
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Clear all cached responses to force fresh answers from experts.
+    This clears the query cache without affecting the caching system logic.
+    """
+    try:
+        cache_entries_before = len(QUERY_CACHE)
+        
+        # Clear the in-memory cache
+        QUERY_CACHE.clear()
+        
+        # Save the empty cache to disk
+        save_query_cache()
+        
+        logger.info(f"Cache cleared by user {current_user.id}: {cache_entries_before} entries removed")
+        
+        return {
+            "message": "Query cache cleared successfully",
+            "cache_entries_cleared": cache_entries_before,
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing cache: {str(e)}")
 
 @router.get("/history")
 async def get_compliance_chat_history(
