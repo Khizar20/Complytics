@@ -868,14 +868,14 @@ def expert_security_controls(query: str, context: str, conversation_context: str
             f"Previous conversation context:\n{conversation_context}\n\n"
             f"Current Query: {query}\n\n"
             f"SECURITY FRAMEWORK DOCUMENTS:\n{context}\n\n"
-            "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+            "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
             "For EVERY security control, requirement, or technical recommendation you make, you MUST:\n"
-            "1. ✅ Quote the EXACT text from the framework documents that supports your recommendation\n"
-            "2. ✅ Use this format: [Your recommendation] (🔒 Source: \"exact quote\" - Framework Name)\n"
-            "3. ✅ If technical details are NOT in the provided documents, state: \"⚠️ Not in frameworks - industry best practice\"\n"
-            "4. ✅ For implementation steps, cite the framework requirement that mandates each step\n\n"
+            "1. Quote the EXACT text from the framework documents that supports your recommendation\n"
+            "2. Use this format: [Your recommendation] (Source: \"exact quote\" - Framework Name)\n"
+            "3. If technical details are NOT in the provided documents, state: \"Not in frameworks - industry best practice\"\n"
+            "4. For implementation steps, cite the framework requirement that mandates each step\n\n"
             "EXAMPLE FORMAT:\n"
-            "Organizations must implement multi-factor authentication for administrative access (🔒 Source: \"multi-factor authentication shall be required for all privileged user access\" - NIST 800-53 IA-2)\n\n"
+            "Organizations must implement multi-factor authentication for administrative access (Source: \"multi-factor authentication shall be required for all privileged user access\" - NIST 800-53 IA-2)\n\n"
             "Provide a comprehensive analysis focusing on:\n"
             "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS (with exact citations)\n"
             "2. **Implementation Guidelines**: Step-by-step technical implementation (cite framework requirements)\n"
@@ -903,15 +903,15 @@ def expert_privacy_regulations(query: str, context: str, conversation_context: s
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n\n"
         f"PRIVACY REGULATION DOCUMENTS:\n{context}\n\n"
-        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+        "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
         "For EVERY legal requirement, obligation, or compliance recommendation you make, you MUST:\n"
-        "1. ✅ Quote the EXACT legal text from the regulation documents that establishes this requirement\n"
-        "2. ✅ Use this format: [Legal requirement] (⚖️ Legal Basis: \"exact quote\" - Regulation Article/Section)\n"
-        "3. ✅ If specific implementation details are NOT in the regulations, state: \"⚠️ Not specified in regulations - recommended practice\"\n"
-        "4. ✅ For each data subject right, cite the exact article that grants that right\n"
-        "5. ✅ For penalties/fines, quote the exact text with amounts and conditions\n\n"
+        "1. Quote the EXACT legal text from the regulation documents that establishes this requirement\n"
+        "2. Use this format: [Legal requirement] (Legal Basis: \"exact quote\" - Regulation Article/Section)\n"
+        "3. If specific implementation details are NOT in the regulations, state: \"Not specified in regulations - recommended practice\"\n"
+        "4. For each data subject right, cite the exact article that grants that right\n"
+        "5. For penalties/fines, quote the exact text with amounts and conditions\n\n"
         "EXAMPLE FORMAT:\n"
-        "GDPR requires data controllers to notify supervisory authorities of breaches within 72 hours (⚖️ Legal Basis: \"the controller shall...notify the personal data breach to the supervisory authority...without undue delay and, where feasible, not later than 72 hours\" - GDPR Article 33(1))\n\n"
+        "GDPR requires data controllers to notify supervisory authorities of breaches within 72 hours (Legal Basis: \"the controller shall...notify the personal data breach to the supervisory authority...without undue delay and, where feasible, not later than 72 hours\" - GDPR Article 33(1))\n\n"
         "Provide a comprehensive analysis focusing on:\n"
         "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA (cite exact articles)\n"
         "2. **Data Subject Rights**: Individual rights and implementation (quote the article granting each right)\n"
@@ -945,14 +945,14 @@ def expert_audit_compliance(query: str, context: str, conversation_context: str 
             f"Previous conversation context:\n{conversation_context}\n\n"
             f"Current Query: {query}\n\n"
             f"COMPLIANCE FRAMEWORK DOCUMENTS:\n{context}\n\n"
-            "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+            "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
             "For EVERY requirement, recommendation, or claim you make, you MUST:\n"
-            "1. ✅ Quote the EXACT text from the framework documents above that supports your statement\n"
-            "2. ✅ Use this format: [Your statement] (📄 Evidence: \"exact quote from documents\")\n"
-            "3. ✅ If specific details are NOT in the provided documents, state: \"Based on {framework_name} standards\" without warnings\n"
-            "4. ✅ Never make claims without citing supporting evidence from the context\n\n"
+            "1. Quote the EXACT text from the framework documents above that supports your statement\n"
+            "2. Use this format: [Your statement] (Evidence: \"exact quote from documents\")\n"
+            "3. If specific details are NOT in the provided documents, state: \"Based on {framework_name} standards\" without warnings\n"
+            "4. Never make claims without citing supporting evidence from the context\n\n"
             "EXAMPLE FORMAT:\n"
-            "ISO 27001 requires organizations to establish an information security management system (📄 Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
+            "ISO 27001 requires organizations to establish an information security management system (Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
             "Provide a comprehensive analysis focusing on:\n"
             "1. **Audit Requirements**: Specific audit standards and procedures (with citations)\n"
             "2. **Evidence Collection**: Documentation and artifacts needed (with framework references)\n"
@@ -1001,14 +1001,14 @@ def expert_financial_compliance(query: str, context: str, conversation_context: 
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n\n"
         f"FINANCIAL REGULATION DOCUMENTS:\n{context}\n\n"
-        "🎯 CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
+        "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
         "For EVERY financial regulation, control, or requirement you reference, you MUST:\n"
-        "1. ✅ Quote the EXACT text from the regulation that establishes this requirement\n"
-        "2. ✅ Use this format: [Requirement] (💰 Regulation: \"exact quote\" - Standard/Section)\n"
-        "3. ✅ If implementation details are NOT in regulations, state: \"⚠️ Not in regulations - industry guidance\"\n"
-        "4. ✅ For penalties/fines, quote exact amounts and violation conditions\n\n"
+        "1. Quote the EXACT text from the regulation that establishes this requirement\n"
+        "2. Use this format: [Requirement] (Regulation: \"exact quote\" - Standard/Section)\n"
+        "3. If implementation details are NOT in regulations, state: \"Not in regulations - industry guidance\"\n"
+        "4. For penalties/fines, quote exact amounts and violation conditions\n\n"
         "EXAMPLE FORMAT:\n"
-        "PCI DSS requires organizations to maintain a firewall configuration to protect cardholder data (💰 Regulation: \"Install and maintain a firewall configuration to protect cardholder data\" - PCI DSS Requirement 1.1)\n\n"
+        "PCI DSS requires organizations to maintain a firewall configuration to protect cardholder data (Regulation: \"Install and maintain a firewall configuration to protect cardholder data\" - PCI DSS Requirement 1.1)\n\n"
         "Focus on:\n"
         "1. **Financial Regulations**: PCI DSS, SOX, Basel III requirements (cite exact control numbers)\n"
         "2. **AML/KYC**: Anti-money laundering and Know Your Customer procedures (quote regulatory text)\n"
@@ -2086,7 +2086,7 @@ def process_query_optimized(query: str, context: str, conversation_context: str,
     # Fast Path: Check for simple informational queries
     if detect_informational_query(query):
         logger.info("Detected informational query - using concise response")
-        response = generate_concise_informational_response(query)
+        response = generate_concise_informational_response(query, context)
         end_time = time.time()
         return response, end_time - start_time
     
@@ -3399,8 +3399,8 @@ def detect_informational_query(query: str) -> bool:
     
     return is_informational and mentions_framework and is_list_request
 
-def generate_concise_informational_response(query: str) -> str:
-    """Generate a concise, informational response for simple queries."""
+def generate_concise_informational_response(query: str, context: str = "") -> str:
+    """Generate a concise, informational response for simple queries with evidence citations when context is available."""
     try:
         # Extract the framework/topic
         query_lower = query.lower()
@@ -3419,13 +3419,34 @@ def generate_concise_informational_response(query: str) -> str:
         elif "pci" in query_lower:
             framework = "PCI DSS"
         
+        # Check if we have substantial framework context
+        has_framework_docs = context and len(context.strip()) > 200
+        
         # Check if user wants concise response
         is_concise = detect_concise_request(query)
         max_tokens = 512 if is_concise else 800
         
         if is_concise:
             # Generate a very brief response
-            prompt = f"""
+            if has_framework_docs:
+                prompt = f"""
+Provide a CONCISE answer to: "{query}"
+
+FRAMEWORK DOCUMENTS:
+{context[:1000]}
+
+CRITICAL: For each point, cite evidence from the documents using this format: (Evidence: "exact quote" - Source)
+
+Format as:
+**{framework} Compliance - Key Steps:**
+• Step 1 (Evidence: "quote" - Source)
+• Step 2 (Evidence: "quote" - Source)
+• Step 3 (Evidence: "quote" - Source)
+
+Keep under 100 words total. Focus only on essential actions with evidence citations.
+"""
+            else:
+                prompt = f"""
 Provide a CONCISE answer to: "{query}"
 
 Format as:
@@ -3439,8 +3460,35 @@ Format as:
 Keep under 100 words total. Focus only on essential actions.
 """
         else:
-            # Generate a focused, concise response (original logic)
-            prompt = f"""
+            # Generate a focused, concise response with evidence citations
+            if has_framework_docs:
+                prompt = f"""
+Provide a clear, concise response to this query: "{query}"
+
+FRAMEWORK DOCUMENTS:
+{context}
+
+CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:
+
+For EVERY requirement, rule, or claim you make, you MUST:
+1. Quote the EXACT text from the framework documents above that supports your statement
+2. Use this format: [Your statement] (Evidence: "exact quote from documents" - Source/Section)
+3. If specific details are NOT in the provided documents, state: "Based on {framework} standards" without warnings
+
+Structure your response as follows:
+1. **Brief Definition** (2-3 sentences about what {framework} is)
+2. **Top 10 Key Points/Rules/Requirements** (numbered list with brief explanations and evidence citations)
+3. **Quick Implementation Tip** (1-2 sentences)
+
+EXAMPLE FORMAT:
+Access Control: Implement technical policies and procedures that allow only authorized personnel to access ePHI (Evidence: "Implement technical policies and procedures that allow only authorized personnel to access ePHI" - HIPAA Security Rule §164.312(a)(1))
+
+Keep it informative but concise - aim for 300-500 words total.
+Use clear, professional language that's accessible to both beginners and experts.
+Focus on practical, actionable information with mandatory evidence citations.
+"""
+            else:
+                prompt = f"""
 Provide a clear, concise response to this query: "{query}"
 
 Structure your response as follows:

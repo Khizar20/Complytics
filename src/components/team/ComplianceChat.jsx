@@ -101,9 +101,12 @@ const FormattedResponse = ({ content }) => {
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       // Download links - special handling for /api/compliance/download/ links
-      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, '<a href="http://localhost:8000$2" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(25, 118, 210, 0.4)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px rgba(25, 118, 210, 0.3)\';">📥 $1</a>')
+      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, '<a href="http://localhost:8000$2" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(25, 118, 210, 0.4)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px rgba(25, 118, 210, 0.3)\';">$1</a>')
       // Regular markdown links - convert [text](url) to clickable links
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #1976d2; text-decoration: none; font-weight: 500; border-bottom: 1px solid #1976d2; padding-bottom: 1px;">$1</a>')
+      // Evidence-based citations - highlight with green background
+      // Matches patterns like: (Legal Basis: "quote" - Source) or (Evidence: "quote" - Framework)
+      .replace(/(\((?:Legal Basis|Evidence|Source|Regulation|Framework|Based on):\s*"[^"]+"\s*(?:-\s*[^)]+)?\))/gi, '<span class="evidence-citation" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.12) 0%, rgba(129, 199, 132, 0.12) 100%); border-left: 3px solid #4CAF50; padding: 4px 8px 4px 12px; border-radius: 6px; display: inline-block; margin: 2px 0; font-size: 0.9em; color: #2E7D32; font-weight: 500; box-shadow: 0 1px 3px rgba(76, 175, 80, 0.1);">$1</span>')
       // Bullet points
       .replace(/\*\s+/g, '\n* ')
       .replace(/-\s+/g, '\n- ')
