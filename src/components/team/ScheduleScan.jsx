@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
+import { buildApiUrl } from '@/lib/api';
 
 const ScheduleScan = () => {
   const { authToken } = useAuth();
-  const apiBase = 'http://localhost:8000/api';
+  const apiBase = buildApiUrl('/api');
   const [runAt, setRunAt] = useState(''); // HTML datetime-local value (local time)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

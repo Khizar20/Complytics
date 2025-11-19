@@ -1,6 +1,7 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { buildApiUrl } from '@/lib/api';
 
 const AuthContext = createContext();
 
@@ -27,7 +28,7 @@ export function AuthProvider({ children }) {
 
         try {
           // Verify token is still valid in the background
-          const response = await fetch('http://localhost:8000/auth/me', {
+          const response = await fetch(buildApiUrl('/auth/me'), {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -56,7 +57,7 @@ export function AuthProvider({ children }) {
 
   const fetchUserData = async (token) => {
     try {
-      const response = await fetch('http://localhost:8000/auth/me', {
+      const response = await fetch(buildApiUrl('/auth/me'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

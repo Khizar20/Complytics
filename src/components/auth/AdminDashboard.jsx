@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/toast";
+import { buildApiUrl } from "@/lib/api";
 
 // Animation variants
 const containerVariants = {
@@ -98,7 +99,7 @@ const AdminDashboard = () => {
     const fetchDeletionRequest = async () => {
       try {
         if (!authToken) return;
-        const res = await fetch('http://localhost:8000/admin/account-deletion-request', {
+        const res = await fetch(buildApiUrl('/admin/account-deletion-request'), {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (res.ok) {
@@ -114,7 +115,7 @@ const AdminDashboard = () => {
 
   const fetchTeamMembers = async () => {
     try {
-      const response = await fetch('http://localhost:8000/admin/team-members', {
+      const response = await fetch(buildApiUrl('/admin/team-members'), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -140,7 +141,7 @@ const AdminDashboard = () => {
 
     try {
       setIsAddingMember(true);
-      const response = await fetch('http://localhost:8000/admin/create-team-member', {
+      const response = await fetch(buildApiUrl('/admin/create-team-member'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -192,7 +193,7 @@ const AdminDashboard = () => {
   const handleDeleteMember = async (memberId) => {
     try {
       setIsDeleting(true);
-      const response = await fetch(`http://localhost:8000/admin/team-members/${memberId}`, {
+      const response = await fetch(buildApiUrl(`/admin/team-members/${memberId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`
@@ -223,7 +224,7 @@ const AdminDashboard = () => {
 
     try {
       setIsDeleting(true);
-      const response = await fetch('http://localhost:8000/admin/team-members/bulk-delete', {
+      const response = await fetch(buildApiUrl('/admin/team-members/bulk-delete'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -257,7 +258,7 @@ const AdminDashboard = () => {
 
     try {
       setIsEditingMember(true);
-      const response = await fetch(`http://localhost:8000/admin/team-members/${editingMember.id}`, {
+      const response = await fetch(buildApiUrl(`/admin/team-members/${editingMember.id}`), {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -874,7 +875,7 @@ const AdminDashboard = () => {
                 setSuccess('');
                 setIsRequestingDeletion(true);
                 try {
-                  const res = await fetch('http://localhost:8000/admin/request-account-deletion', {
+                  const res = await fetch(buildApiUrl('/admin/request-account-deletion'), {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',

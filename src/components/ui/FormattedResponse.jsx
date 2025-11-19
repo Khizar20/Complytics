@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Typography, Divider, List, ListItem, ListItemIcon, ListItemText, useTheme } from '@mui/material';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import { buildApiUrl } from '@/lib/api';
 
 const FormattedResponse = ({ content }) => {
   const theme = useTheme();
@@ -44,7 +45,7 @@ const FormattedResponse = ({ content }) => {
       .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, '<a href="http://localhost:8000$2" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(25, 118, 210, 0.4)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px rgba(25, 118, 210, 0.3)\';">📥 $1</a>')
+      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, (_match, label, path) => `<a href="${buildApiUrl(path)}" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(25, 118, 210, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(25, 118, 210, 0.3)';">📥 ${label}</a>`)
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #1976d2; text-decoration: none; font-weight: 500; border-bottom: 1px solid #1976d2; padding-bottom: 1px;">$1</a>')
       .replace(/\*\s+/g, '\n* ')
       .replace(/-\s+/g, '\n- ')

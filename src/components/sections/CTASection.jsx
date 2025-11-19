@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from "../ui/button.jsx";
 import { FaArrowRight, FaEnvelope, FaShieldAlt, FaClock } from 'react-icons/fa';
 import Modal from '../ui/Modal';
+import { buildApiUrl } from '@/lib/api';
 
 const CTASection = () => {
   const [formData, setFormData] = useState({
@@ -131,7 +132,7 @@ const CTASection = () => {
         password: Math.random().toString(36).slice(-8) // Generate a random password
       };
 
-      const response = await fetch('http://localhost:8000/registration/register', {
+      const response = await fetch(buildApiUrl('/registration/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

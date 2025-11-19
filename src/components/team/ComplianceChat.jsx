@@ -52,6 +52,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SecurityIcon from '@mui/icons-material/Security';
 import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { buildApiUrl } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 
 // Formatted response component
@@ -101,7 +102,7 @@ const FormattedResponse = ({ content }) => {
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       // Download links - special handling for /api/compliance/download/ links
-      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, '<a href="http://localhost:8000$2" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(25, 118, 210, 0.4)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px rgba(25, 118, 210, 0.3)\';">$1</a>')
+      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, (_match, label, path) => `<a href="${buildApiUrl(path)}" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(25, 118, 210, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(25, 118, 210, 0.3)';">${label}</a>`)
       // Regular markdown links - convert [text](url) to clickable links
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #1976d2; text-decoration: none; font-weight: 500; border-bottom: 1px solid #1976d2; padding-bottom: 1px;">$1</a>')
       // Evidence-based citations - highlight with green background
@@ -427,7 +428,7 @@ const ComplianceChat = () => {
 
   const loadSessionHistory = async (currentSessionId) => {
     try {
-      const response = await fetchWithRetry(`http://localhost:8000/api/compliance/history?session_id=${currentSessionId}`);
+      const response = await fetchWithRetry(buildApiUrl(`/api/compliance/history?session_id=${currentSessionId}`));
       const data = await response.json();
       
       if (!data.history || !Array.isArray(data.history) || data.history.length === 0) {
@@ -481,7 +482,7 @@ const ComplianceChat = () => {
 
   const loadAllChatHistory = async () => {
     try {
-      const response = await fetchWithRetry('http://localhost:8000/api/compliance/all-history');
+      const response = await fetchWithRetry(buildApiUrl('/api/compliance/all-history'));
       const data = await response.json();
       
       if (!data.history || !Array.isArray(data.history)) {
@@ -625,7 +626,7 @@ const ComplianceChat = () => {
     setIsTyping(true);
 
     try {
-      const response = await fetchWithRetry('http://localhost:8000/api/compliance/chat', {
+      const response = await fetchWithRetry(buildApiUrl('/api/compliance/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -710,7 +711,7 @@ const ComplianceChat = () => {
   const handleReset = async () => {
     if (!authToken) return;
     try {
-      await fetchWithRetry('http://localhost:8000/api/compliance/reset', {
+      await fetchWithRetry(buildApiUrl('/api/compliance/reset'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -743,7 +744,7 @@ const ComplianceChat = () => {
   // Add feedback handling functions
   const handleFeedback = async (messageIndex, isHelpful, originalQuery) => {
     try {
-      await fetchWithRetry('http://localhost:8000/api/compliance/feedback', {
+      await fetchWithRetry(buildApiUrl('/api/compliance/feedback'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -862,13 +863,14 @@ const ComplianceChat = () => {
   useEffect(() => {
     const handleLinkClick = (event) => {
       const target = event.target;
-      if (target.tagName === 'A' && target.href && 
-          (target.href.includes('/api/compliance/download/') || 
-           target.href.includes('localhost:8000/api/compliance/download/'))) {
+      if (target.tagName === 'A') {
+        const hrefAttr = target.getAttribute('href') || target.href;
+        if (hrefAttr && hrefAttr.includes('/api/compliance/download/')) {
         event.preventDefault();
-        const filename = target.href.split('/').pop();
-        const fullUrl = target.href.startsWith('http') ? target.href : `http://localhost:8000${target.href}`;
+        const filename = hrefAttr.split('/').pop();
+        const fullUrl = buildApiUrl(hrefAttr);
         handleDownload(fullUrl, filename);
+        }
       }
     };
 
@@ -898,7 +900,7 @@ const ComplianceChat = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/compliance/upload-document', {
+      const response = await fetch(buildApiUrl('/api/compliance/upload-document'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -954,7 +956,7 @@ const ComplianceChat = () => {
     formData.append('framework', selectedFramework);
 
     try {
-      const response = await fetchWithRetry('http://localhost:8000/api/compliance/analyze-privacy-policy', {
+      const response = await fetchWithRetry(buildApiUrl('/api/compliance/analyze-privacy-policy'), {
         method: 'POST',
         body: formData
       });
@@ -989,8 +991,8 @@ const ComplianceChat = () => {
 
     try {
       const endpoint = documentType === 'privacy' 
-        ? 'http://localhost:8000/api/compliance/generate-privacy-policy'
-        : 'http://localhost:8000/api/compliance/generate-terms';
+        ? buildApiUrl('/api/compliance/generate-privacy-policy')
+        : buildApiUrl('/api/compliance/generate-terms');
 
       const response = await fetchWithRetry(endpoint, {
         method: 'POST',

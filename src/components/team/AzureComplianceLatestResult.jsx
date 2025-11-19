@@ -10,6 +10,7 @@ import {
   FaSpinner,
   FaClock
 } from 'react-icons/fa';
+import { buildApiUrl } from '@/lib/api';
 
 // Compliance Gauge Component
 const ComplianceGauge = ({ score }) => {
@@ -69,7 +70,7 @@ const AzureComplianceLatestResult = () => {
     const fetchLatestResult = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/azure-checker/latest-result', {
+        const response = await fetch(buildApiUrl('/api/azure-checker/latest-result'), {
           headers: authToken ? {
             'Authorization': `Bearer ${authToken}`
           } : {}

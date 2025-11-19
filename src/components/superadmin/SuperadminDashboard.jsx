@@ -31,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { buildApiUrl } from "@/lib/api";
 
 // Animation variants
 const containerVariants = {
@@ -143,7 +144,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchRequests = async () => {
       try {
-        const response = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
+        const response = await fetchWithRetry(buildApiUrl('/registration/pending-registrations'));
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -168,7 +169,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchDeletionRequests = async () => {
       try {
-        const response = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+        const response = await fetchWithRetry(buildApiUrl('/superadmin/deletion-requests'));
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.detail || 'Failed to fetch deletion requests');
@@ -187,7 +188,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchOrganizations = async () => {
       try {
-        const response = await fetchWithRetry('http://localhost:8000/superadmin/organizations/active');
+        const response = await fetchWithRetry(buildApiUrl('/superadmin/organizations/active'));
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -212,7 +213,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchActiveUsers = async () => {
       try {
-        const response = await fetchWithRetry('http://localhost:8000/superadmin/active-users');
+        const response = await fetchWithRetry(buildApiUrl('/superadmin/active-users'));
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -244,7 +245,7 @@ const SuperadminDashboard = () => {
   useEffect(() => {
     const fetchFrameworks = async () => {
       try {
-        const response = await fetchWithRetry('http://localhost:8000/api/compliance/framework-documents');
+        const response = await fetchWithRetry(buildApiUrl('/api/compliance/framework-documents'));
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -271,7 +272,7 @@ const SuperadminDashboard = () => {
       setError('');
       setSuccess('');
 
-      const response = await fetchWithRetry(`http://localhost:8000/registration/approve-registration/${requestId}`, {
+      const response = await fetchWithRetry(buildApiUrl(`/registration/approve-registration/${requestId}`), {
         method: 'POST'
       });
 
@@ -282,7 +283,7 @@ const SuperadminDashboard = () => {
 
       toast({ title: 'Registration approved', variant: 'success' });
       // Refresh the requests list
-      const updatedResponse = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
+      const updatedResponse = await fetchWithRetry(buildApiUrl('/registration/pending-registrations'));
       if (updatedResponse.ok) {
         const updatedData = await updatedResponse.json();
         setRequests(updatedData);
@@ -303,7 +304,7 @@ const SuperadminDashboard = () => {
       setError('');
       setSuccess('');
 
-      const response = await fetchWithRetry(`http://localhost:8000/registration/reject-registration/${requestId}`, {
+      const response = await fetchWithRetry(buildApiUrl(`/registration/reject-registration/${requestId}`), {
         method: 'POST'
       });
 
@@ -314,7 +315,7 @@ const SuperadminDashboard = () => {
 
       toast({ title: 'Registration rejected', variant: 'success' });
       // Refresh the requests list
-      const updatedResponse = await fetchWithRetry('http://localhost:8000/registration/pending-registrations');
+      const updatedResponse = await fetchWithRetry(buildApiUrl('/registration/pending-registrations'));
       if (updatedResponse.ok) {
         const updatedData = await updatedResponse.json();
         setRequests(updatedData);
@@ -339,7 +340,7 @@ const SuperadminDashboard = () => {
       setSuccess('');
 
       const response = await fetchWithRetry(
-        `http://localhost:8000/superadmin/users/${selectedUser._id}`,
+        buildApiUrl(`/superadmin/users/${selectedUser._id}`),
         {
           method: 'DELETE'
         }
@@ -359,7 +360,7 @@ const SuperadminDashboard = () => {
       });
       
       // Refresh the users list
-      const updatedResponse = await fetchWithRetry('http://localhost:8000/superadmin/active-users');
+      const updatedResponse = await fetchWithRetry(buildApiUrl('/superadmin/active-users'));
       if (updatedResponse.ok) {
         const updatedData = await updatedResponse.json();
         setActiveUsers(updatedData);
@@ -367,7 +368,7 @@ const SuperadminDashboard = () => {
       
       // Refresh organizations list if organization was deleted
       if (result.deleted_organization_id) {
-        const orgsResponse = await fetchWithRetry('http://localhost:8000/superadmin/organizations/active');
+        const orgsResponse = await fetchWithRetry(buildApiUrl('/superadmin/organizations/active'));
         if (orgsResponse.ok) {
           const orgsData = await orgsResponse.json();
           setOrganizations(orgsData);
@@ -391,13 +392,13 @@ const SuperadminDashboard = () => {
   const handleApproveDeletion = async (requestId) => {
     try {
       setApprovingId(requestId);
-      const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${requestId}/approve`, { method: 'POST' });
+      const r = await fetchWithRetry(buildApiUrl(`/superadmin/deletion-requests/${requestId}/approve`), { method: 'POST' });
       if (!r.ok) {
         const e = await r.json();
         throw new Error(e.detail || 'Failed to approve deletion');
       }
       toast({ title: 'Deletion approved', variant: 'success' });
-      const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+      const refresh = await fetchWithRetry(buildApiUrl('/superadmin/deletion-requests'));
       if (refresh.ok) setDeletionRequests(await refresh.json());
     } catch (err) {
       toast({ title: 'Failed to approve deletion', description: err.message, variant: 'error' });
@@ -411,13 +412,13 @@ const SuperadminDashboard = () => {
   const handleRejectDeletion = async (requestId) => {
     try {
       setRejectingId(requestId);
-      const r = await fetchWithRetry(`http://localhost:8000/superadmin/deletion-requests/${requestId}/reject`, { method: 'POST' });
+      const r = await fetchWithRetry(buildApiUrl(`/superadmin/deletion-requests/${requestId}/reject`), { method: 'POST' });
       if (!r.ok) {
         const e = await r.json();
         throw new Error(e.detail || 'Failed to reject deletion');
       }
       toast({ title: 'Deletion rejected', variant: 'success' });
-      const refresh = await fetchWithRetry('http://localhost:8000/superadmin/deletion-requests');
+      const refresh = await fetchWithRetry(buildApiUrl('/superadmin/deletion-requests'));
       if (refresh.ok) setDeletionRequests(await refresh.json());
     } catch (err) {
       toast({ title: 'Failed to reject deletion', description: err.message, variant: 'error' });
@@ -472,7 +473,7 @@ const SuperadminDashboard = () => {
       formData.append('file', file);
 
       try {
-        const response = await fetchWithRetry('http://localhost:8000/api/compliance/upload-framework', {
+        const response = await fetchWithRetry(buildApiUrl('/api/compliance/upload-framework'), {
           method: 'POST',
           body: formData
         });

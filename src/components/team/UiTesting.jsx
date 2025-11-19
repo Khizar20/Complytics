@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import FormattedResponse from '@/components/ui/FormattedResponse';
 import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
+import { buildApiUrl } from '@/lib/api';
 
 const UiTesting = () => {
   const { authToken } = useAuth();
@@ -27,7 +28,7 @@ const UiTesting = () => {
   });
   const [authRequired, setAuthRequired] = useState(false);
 
-  const apiBase = 'http://localhost:8000/api';
+  const apiBase = buildApiUrl('/api');
 
   const runScan = async () => {
     const normalized = normalizeUrl(url);

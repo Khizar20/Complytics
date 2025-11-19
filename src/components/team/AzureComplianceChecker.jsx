@@ -19,6 +19,7 @@ import {
   FaCloud,
   FaServer
 } from 'react-icons/fa';
+import { buildApiUrl } from '@/lib/api';
 
 const AzureComplianceChecker = () => {
   const { authToken } = useAuth();
@@ -41,7 +42,7 @@ const AzureComplianceChecker = () => {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/azure-checker/status', {
+        const response = await fetch(buildApiUrl('/api/azure-checker/status'), {
           headers: authToken ? {
             'Authorization': `Bearer ${authToken}`
           } : {}
@@ -62,7 +63,7 @@ const AzureComplianceChecker = () => {
       setSnapshotLoading(true);
       setSnapshotError(null);
       try {
-        const response = await fetch('http://localhost:8000/api/azure/config/snapshot/latest', {
+        const response = await fetch(buildApiUrl('/api/azure/config/snapshot/latest'), {
           headers: authToken ? {
             'Authorization': `Bearer ${authToken}`
           } : {}
@@ -132,7 +133,7 @@ const AzureComplianceChecker = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/api/azure-checker/analyze', {
+      const response = await fetch(buildApiUrl('/api/azure-checker/analyze'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`
@@ -171,7 +172,7 @@ const AzureComplianceChecker = () => {
     setAnalysis(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/azure-checker/analyze-snapshot', {
+      const response = await fetch(buildApiUrl('/api/azure-checker/analyze-snapshot'), {
         method: 'POST',
         headers: authToken ? {
           'Authorization': `Bearer ${authToken}`,
@@ -202,7 +203,7 @@ const AzureComplianceChecker = () => {
     setGeneratingReport(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/azure-checker/generate-report', {
+      const response = await fetch(buildApiUrl('/api/azure-checker/generate-report'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -245,8 +246,8 @@ const AzureComplianceChecker = () => {
 
     try {
       const url = framework 
-        ? `http://localhost:8000/api/azure-checker/generate-checklist/${analysis.result_id}?framework=${framework}`
-        : `http://localhost:8000/api/azure-checker/generate-checklist/${analysis.result_id}`;
+        ? buildApiUrl(`/api/azure-checker/generate-checklist/${analysis.result_id}?framework=${framework}`)
+        : buildApiUrl(`/api/azure-checker/generate-checklist/${analysis.result_id}`);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -305,9 +306,9 @@ const AzureComplianceChecker = () => {
     }
 
     try {
-      const url = selectedFramework 
-        ? `http://localhost:8000/api/azure-checker/export-checklist-pdf/${analysis.result_id}?framework=${selectedFramework}`
-        : `http://localhost:8000/api/azure-checker/export-checklist-pdf/${analysis.result_id}`;
+      const url = selectedFramework
+        ? buildApiUrl(`/api/azure-checker/export-checklist-pdf/${analysis.result_id}?framework=${selectedFramework}`)
+        : buildApiUrl(`/api/azure-checker/export-checklist-pdf/${analysis.result_id}`);
       
       const response = await fetch(url, {
         method: 'POST',

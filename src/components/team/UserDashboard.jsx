@@ -55,6 +55,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import autoTable from 'jspdf-autotable';
 import { Document as DocxDocument, Packer, Paragraph, HeadingLevel, TextRun, ImageRun, Table, TableRow, TableCell, WidthType } from 'docx';
+import { buildApiUrl } from '@/lib/api';
 
 const ChatbotAnalytics = () => {
   const { authToken } = useAuth();
@@ -73,7 +74,7 @@ const ChatbotAnalytics = () => {
           throw new Error('No authentication token found');
         }
 
-        const response = await fetch('http://localhost:8000/api/compliance/analytics', {
+        const response = await fetch(buildApiUrl('/api/compliance/analytics'), {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
@@ -290,7 +291,7 @@ const UiTestingSummaryCards = () => {
     const load = async () => {
       // Try backend first for org-wide whole-site scan results
       try {
-        const resp = await fetch('http://localhost:8000/api/ui/site/latest', {
+        const resp = await fetch(buildApiUrl('/api/ui/site/latest'), {
           headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
         });
         if (resp.ok) {
@@ -701,7 +702,7 @@ const AzureConnectionMiniCard = () => {
     const fetchStatus = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/azure/status', {
+        const response = await fetch(buildApiUrl('/api/azure/status'), {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
@@ -807,7 +808,7 @@ const AzureADConfiguration = () => {
         setLoadingMessage(progressMessages[0].message);
         setLoadingProgress(progressMessages[0].progress);
         
-        const statusResponse = await fetch('http://localhost:8000/api/azure/status', {
+        const statusResponse = await fetch(buildApiUrl('/api/azure/status'), {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
@@ -825,7 +826,7 @@ const AzureADConfiguration = () => {
             setLoadingProgress(20);
             
             // Fetch Azure AD configuration
-            const configResponse = await fetch('http://localhost:8000/api/azure/config', {
+            const configResponse = await fetch(buildApiUrl('/api/azure/config'), {
               headers: {
                 'Authorization': `Bearer ${authToken}`
               }
@@ -1694,7 +1695,7 @@ const AzureADChangeLogs = () => {
       if (filters.changeType) params.append('change_type', filters.changeType);
       if (filters.statusFilter) params.append('status_filter', filters.statusFilter);
       
-      const response = await fetch(`http://localhost:8000/api/azure/logs?${params}`, {
+      const response = await fetch(buildApiUrl(`/api/azure/logs?${params}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -1731,7 +1732,7 @@ const AzureADChangeLogs = () => {
       if (filters.changeType) params.append('change_type', filters.changeType);
       if (filters.statusFilter) params.append('status_filter', filters.statusFilter);
       
-      const url = `http://localhost:8000/api/azure/logs/export/${format}?${params}`;
+      const url = buildApiUrl(`/api/azure/logs/export/${format}?${params}`);
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${authToken}`
@@ -2068,7 +2069,7 @@ const AzureADConnection = () => {
     const fetchStatus = async () => {
       try {
         setStatusLoading(true);
-        const response = await fetch('http://localhost:8000/api/azure/status', {
+        const response = await fetch(buildApiUrl('/api/azure/status'), {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
@@ -2105,7 +2106,7 @@ const AzureADConnection = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/azure/connect', {
+      const response = await fetch(buildApiUrl('/api/azure/connect'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2143,7 +2144,7 @@ const AzureADConnection = () => {
   const confirmDisconnect = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/azure/disconnect', {
+      const response = await fetch(buildApiUrl('/api/azure/disconnect'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`
@@ -2436,7 +2437,7 @@ const AzureComplianceReportsList = () => {
       try {
         setLoading(true);
         const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-        const response = await fetch('http://localhost:8000/api/azure-checker/results', { headers });
+        const response = await fetch(buildApiUrl('/api/azure-checker/results'), { headers });
         
         if (!response.ok) {
           throw new Error('Failed to fetch reports');
@@ -2476,7 +2477,7 @@ const AzureComplianceReportsList = () => {
   const handleDownloadReport = async (resultId) => {
     try {
       const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-      const reportResp = await fetch(`http://localhost:8000/api/azure-checker/generate-report/${resultId}`, {
+      const reportResp = await fetch(buildApiUrl(`/api/azure-checker/generate-report/${resultId}`), {
         headers,
         method: 'GET'
       });
@@ -2722,7 +2723,7 @@ const ComplianceLogs = () => {
       if (filters.activityType) params.append('activity_type', filters.activityType);
       if (filters.status) params.append('status', filters.status);
       
-      const response = await fetch(`http://localhost:8000/api/compliance/compliance-logs?${params}`, {
+      const response = await fetch(buildApiUrl(`/api/compliance/compliance-logs?${params}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -2794,7 +2795,7 @@ const ComplianceLogs = () => {
       if (filters.activityType) params.append('activity_type', filters.activityType);
       if (filters.status) params.append('status', filters.status);
       
-      const response = await fetch(`http://localhost:8000/api/compliance/compliance-logs?${params}`, {
+      const response = await fetch(buildApiUrl(`/api/compliance/compliance-logs?${params}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -3301,7 +3302,7 @@ const ManagementLogs = () => {
       if (filters.teamMember) params.append('team_member', filters.teamMember);
       if (filters.status) params.append('status', filters.status);
       
-      const response = await fetch(`http://localhost:8000/api/compliance/management-logs?${params}`, {
+      const response = await fetch(buildApiUrl(`/api/compliance/management-logs?${params}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -3387,7 +3388,7 @@ const ManagementLogs = () => {
       if (filters.teamMember) params.append('team_member', filters.teamMember);
       if (filters.status) params.append('status', filters.status);
       
-      const response = await fetch(`http://localhost:8000/api/compliance/management-logs?${params}`, {
+      const response = await fetch(buildApiUrl(`/api/compliance/management-logs?${params}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -3946,7 +3947,7 @@ const UserDashboard = () => {
           throw new Error('No authentication token found');
         }
 
-        const response = await fetch('http://localhost:8000/team/user-data', {
+        const response = await fetch(buildApiUrl('/team/user-data'), {
           headers: {
             'Authorization': `Bearer ${authToken}`
           }
@@ -4103,13 +4104,13 @@ const UserDashboard = () => {
                   
                   // Fetch all data including Azure compliance (if compliance_team, management_team, or it_team)
                   const fetchPromises = [
-                    fetch('http://localhost:8000/api/compliance/analytics', { headers }),
-                    fetch('http://localhost:8000/api/ui/site/latest', { headers })
+                    fetch(buildApiUrl('/api/compliance/analytics'), { headers }),
+                    fetch(buildApiUrl('/api/ui/site/latest'), { headers })
                   ];
                   
                   // Add Azure compliance fetch for compliance_team, management_team, and it_team
                   if (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') {
-                    fetchPromises.push(fetch('http://localhost:8000/api/azure-checker/latest-result', { headers }));
+                    fetchPromises.push(fetch(buildApiUrl('/api/azure-checker/latest-result'), { headers }));
                   }
                   
                   const [analyticsResp, uiResp, azureResp] = await Promise.all(fetchPromises);
@@ -4996,13 +4997,13 @@ const UserDashboard = () => {
                         
                   // Fetch all data including Azure compliance (if compliance_team, management_team, or it_team)
                   const fetchPromises = [
-                    fetch('http://localhost:8000/api/compliance/analytics', { headers }),
-                    fetch('http://localhost:8000/api/ui/site/latest', { headers })
+                    fetch(buildApiUrl('/api/compliance/analytics'), { headers }),
+                    fetch(buildApiUrl('/api/ui/site/latest'), { headers })
                   ];
                   
                   // Add Azure compliance fetch for compliance_team, management_team, and it_team
                   if (userData?.role === 'compliance_team' || userData?.role === 'management_team' || userData?.role === 'it_team') {
-                    fetchPromises.push(fetch('http://localhost:8000/api/azure-checker/latest-result', { headers }));
+                    fetchPromises.push(fetch(buildApiUrl('/api/azure-checker/latest-result'), { headers }));
                   }
                   
                   const [analyticsResp, uiResp, azureResp] = await Promise.all(fetchPromises);

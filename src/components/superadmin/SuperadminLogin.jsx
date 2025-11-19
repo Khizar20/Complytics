@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { FaLock, FaUserShield } from 'react-icons/fa';
+import { buildApiUrl } from '@/lib/api';
 
 export default function SuperadminLogin() {
   const [email, setEmail] = useState('superadmin@complytics.com');
@@ -23,7 +24,7 @@ export default function SuperadminLogin() {
       formData.append('username', email);
       formData.append('password', password);
 
-      const response = await fetch('http://localhost:8000/auth/login', {
+      const response = await fetch(buildApiUrl('/auth/login'), {
         method: 'POST',
         body: formData,
       });

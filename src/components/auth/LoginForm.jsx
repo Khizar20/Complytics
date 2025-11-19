@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FaUser, FaLock, FaSpinner } from 'react-icons/fa';
 import { Button } from '../ui/button';
 import { useAuth } from '../../context/AuthContext';
+import { buildApiUrl } from '@/lib/api';
 
 const LoginForm = () => {
   const [email, setEmail] = useState('');
@@ -33,7 +34,7 @@ const LoginForm = () => {
       formData.append('username', email);
       formData.append('password', password);
 
-      const response = await fetch('http://localhost:8000/auth/login', {
+      const response = await fetch(buildApiUrl('/auth/login'), {
         method: 'POST',
         body: formData,
       });
