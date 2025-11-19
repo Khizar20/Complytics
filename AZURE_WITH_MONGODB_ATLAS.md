@@ -459,3 +459,7 @@ az containerapp logs show --name complytics-backend --resource-group complytics-
 
 
 
+
+
+
+

@@ -61,18 +61,20 @@ pipeline {
                         string(credentialsId: 'azure-client-secret', variable: 'AZURE_CLIENT_SECRET'),
                         string(credentialsId: 'azure-tenant-id', variable: 'AZURE_TENANT_ID')
                     ]) {
-                        bat """
-                            az login --service-principal -u %AZURE_CLIENT_ID% -p %AZURE_CLIENT_SECRET% --tenant %AZURE_TENANT_ID%
-                            az account set --subscription %AZURE_SUBSCRIPTION_ID%
-                            
-                            echo Updating backend...
-                            az containerapp update --name %AZURE_BACKEND_APP% --resource-group %AZURE_RESOURCE_GROUP% --image %DOCKERHUB_IMAGE_BACKEND%:latest
-                            
-                            echo Updating frontend...
-                            az containerapp update --name %AZURE_FRONTEND_APP% --resource-group %AZURE_RESOURCE_GROUP% --image %DOCKERHUB_IMAGE_FRONTEND%:latest
-                            
-                            echo ✅ Deployment complete!
-                        """
+                        withEnv(["PATH=C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\CLI2\\wbin;${env.PATH}"]) {
+                            bat """
+                                az login --service-principal -u %AZURE_CLIENT_ID% -p %AZURE_CLIENT_SECRET% --tenant %AZURE_TENANT_ID%
+                                az account set --subscription %AZURE_SUBSCRIPTION_ID%
+                                
+                                echo Updating backend...
+                                az containerapp update --name %AZURE_BACKEND_APP% --resource-group %AZURE_RESOURCE_GROUP% --image %DOCKERHUB_IMAGE_BACKEND%:latest
+                                
+                                echo Updating frontend...
+                                az containerapp update --name %AZURE_FRONTEND_APP% --resource-group %AZURE_RESOURCE_GROUP% --image %DOCKERHUB_IMAGE_FRONTEND%:latest
+                                
+                                echo ✅ Deployment complete!
+                            """
+                        }
                     }
                 }
             }
