@@ -162,8 +162,8 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             Dict containing crawl results
         """
         try:
-            # First, try standard crawling
-            logger.info("Starting standard crawl...")
+            # Step 1: Always crawl first to discover URLs
+            logger.info("Starting standard crawl to discover URLs...")
             crawl_result = await crawl_website(
                 start_url,
                 max_pages=self.max_pages,
@@ -171,27 +171,31 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
                 use_selenium=use_selenium_crawler
             )
             
-            # Check if we need authentication
-            if self.credentials and self._detect_authentication_requirement(crawl_result):
-                logger.info("🔐 Authentication required - attempting login")
+            # Step 2: If credentials provided, look for login pages in crawled URLs
+            if self.credentials:
                 self.login_required = True
+                logger.info("🔐 Credentials provided - searching crawled URLs for login pages")
                 
-                # Try to authenticate
-                try:
-                    auth_success = await self._authenticate_and_continue_crawling(start_url, crawl_result)
-                    if auth_success:
-                        logger.info("✅ Authentication successful - continuing with authenticated crawl")
-                        # Re-crawl with authenticated session
-                        crawl_result = await self._authenticated_crawl(start_url, use_selenium_crawler)
-                    else:
-                        logger.warning("❌ Authentication failed - continuing with public pages only")
-                        # Continue with the original crawl_result (public pages)
-                        # The scan will proceed with whatever URLs were discovered
-                except Exception as e:
-                    logger.error(f"Authentication error: {str(e)} - continuing with public pages")
-                    # Continue with public pages even if auth fails
+                # Find login pages from crawled URLs
+                login_pages = self._find_login_pages_in_crawl(crawl_result)
+                
+                if login_pages:
+                    logger.info(f"Found {len(login_pages)} login page(s) in crawl: {login_pages}")
+                    # Try to authenticate on discovered login pages
+                    try:
+                        auth_success = await self._authenticate_on_login_pages(login_pages)
+                        if auth_success:
+                            logger.info("✅ Authentication successful - re-crawling with authenticated session")
+                            # Re-crawl with authenticated session
+                            crawl_result = await self._authenticated_crawl(start_url, use_selenium_crawler)
+                        else:
+                            logger.warning("❌ Authentication failed on all login pages - continuing with public pages only")
+                    except Exception as e:
+                        logger.error(f"Authentication error: {str(e)} - continuing with public pages")
+                else:
+                    logger.info("ℹ️ No login pages found in crawled URLs - scanning public pages")
             else:
-                logger.info("ℹ️ No authentication required or detected - scanning public pages")
+                logger.info("ℹ️ No credentials provided - scanning public pages")
             
             return crawl_result
             
@@ -199,76 +203,154 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             logger.error(f"Error during authenticated crawl: {str(e)}")
             return {"urls": [], "stats": {}, "error": str(e)}
     
-    def _detect_authentication_requirement(self, crawl_result: Dict[str, Any]) -> bool:
+    def _find_login_pages_in_crawl(self, crawl_result: Dict[str, Any]) -> List[str]:
         """
-        Detect if authentication is required based on crawl results.
-        Only flags as requiring auth if we have strong indicators.
+        Find login pages from crawled URLs by matching URL patterns and regex.
+        
+        Uses both specific patterns and regex to detect login-related keywords anywhere in URL.
         
         Args:
             crawl_result: Results from initial crawl
             
         Returns:
-            bool: True if authentication appears required
+            List of URLs that match login page patterns
         """
+        import re
+        
         try:
             urls = crawl_result.get("urls", [])
+            login_pages = []
+            seen_urls = set()  # Track URLs to avoid duplicates
             
-            # Check for login indicators in discovered URLs
-            login_url_patterns = [
-                "/login", "/signin", "/auth", "/sign-in", "/log-in",
-                "/authenticate", "/admin/login", "/user/login"
+            # Specific login URL patterns - exact matches for common paths
+            specific_patterns = [
+                "/login", "/signin", "/auth", "/sign-in", "/log-in", "/log_in",
+                "/authenticate", "/admin/login", "/user/login", "/account/login",
+                "/practice-test-login", "/test-login", "/login-test",
+                "/sign-in", "/sign_in", "/signin",
+                "/authentication", "/authenticate", "/auth",
+                "/wp-login", "/wp-admin", "/admin", "/dashboard/login",
+                "/portal/login", "/app/login", "/web/login", "/site/login",
+                "/member/login", "/users/login", "/accounts/login", "/account/signin",
+                "/user/signin", "/members/signin", "/client/login", "/customer/login",
+                "/employee/login", "/staff/login", "/admin-panel", "/admin-panel/login",
+                "/cms/login", "/backend/login", "/api/login", "/oauth/login",
+                "/sso/login", "/saml/login", "/ldap/login", "/ad/login"
             ]
             
-            login_page_found = False
+            # Regex patterns to match login-related keywords anywhere in URL
+            # Matches: login, signin, sign-in, sign_in, authenticate, auth, etc.
+            login_regex_patterns = [
+                r'/([^/]*)?login([^/]*)?/?$',  # Matches /anything-login, /login-anything, /login
+                r'/([^/]*)?sign[_-]?in([^/]*)?/?$',  # Matches /signin, /sign-in, /sign_in, /anything-signin
+                r'/([^/]*)?authenticate([^/]*)?/?$',  # Matches /authenticate, /anything-authenticate
+                r'/([^/]*)?auth([^/]*)?/?$',  # Matches /auth, /anything-auth, /auth-anything
+                r'/([^/]*)?log[_-]?in([^/]*)?/?$',  # Matches /login, /log-in, /log_in variations
+                r'/([^/]*)?sign[_-]?on([^/]*)?/?$',  # Matches /signon, /sign-on, /sign_on
+                r'/([^/]*)?access([^/]*)?/?$',  # Matches /access, /access-control, etc.
+                r'/([^/]*)?credential([^/]*)?/?$',  # Matches /credential, /credentials
+                r'/([^/]*)?session([^/]*)?/?$',  # Matches /session, /sessions
+                r'/([^/]*)?password([^/]*)?/?$',  # Matches /password, /password-reset
+            ]
+            
+            # Compile regex patterns for better performance
+            compiled_regexes = [re.compile(pattern, re.IGNORECASE) for pattern in login_regex_patterns]
+            
             for url in urls:
+                if url in seen_urls:
+                    continue
+                    
                 url_lower = url.lower()
-                for pattern in login_url_patterns:
+                matched = False
+                matched_pattern = None
+                
+                # First, check specific patterns (faster)
+                for pattern in specific_patterns:
                     if pattern in url_lower:
-                        logger.info(f"Login page detected in URL: {url}")
-                        login_page_found = True
+                        matched_pattern = pattern
+                        matched = True
                         break
-                if login_page_found:
-                    break
+                
+                # If no specific pattern matched, try regex patterns
+                if not matched:
+                    for regex in compiled_regexes:
+                        if regex.search(url_lower):
+                            matched_pattern = f"regex: {regex.pattern}"
+                            matched = True
+                            break
+                
+                # Additional check: look for login-related keywords anywhere in URL path
+                if not matched:
+                    # Extract path from URL (everything after domain)
+                    try:
+                        from urllib.parse import urlparse
+                        parsed = urlparse(url_lower)
+                        path = parsed.path
+                        
+                        # Check if path contains login-related keywords
+                        login_keywords = ['login', 'signin', 'sign-in', 'sign_in', 'authenticate', 'auth', 'log-in', 'log_in']
+                        for keyword in login_keywords:
+                            if keyword in path:
+                                matched_pattern = f"keyword: {keyword}"
+                                matched = True
+                                break
+                    except Exception:
+                        pass
+                
+                if matched:
+                    logger.info(f"Login page detected - Pattern: '{matched_pattern}' | URL: {url}")
+                    login_pages.append(url)
+                    seen_urls.add(url)
             
-            # Only require authentication if we found a login page
-            # Don't require auth just because few pages were found (could be small site)
-            if login_page_found:
-                return True
-            
-            # If no login page found, don't require authentication
-            # Even if credentials are provided, if no login page exists, scan as public
-            logger.info("No login page detected in crawled URLs - will scan as public pages")
-            return False
+            logger.info(f"Found {len(login_pages)} login page(s) from {len(urls)} crawled URLs")
+            return login_pages
             
         except Exception as e:
-            logger.error(f"Error detecting authentication requirement: {str(e)}")
-            return False
+            logger.error(f"Error finding login pages: {str(e)}")
+            return []
     
-    async def _authenticate_and_continue_crawling(self, start_url: str, crawl_result: Dict[str, Any]) -> bool:
+    async def _authenticate_on_login_pages(self, login_pages: List[str]) -> bool:
         """
-        Attempt to authenticate and continue crawling.
+        Attempt to authenticate on discovered login pages.
+        Only authenticates on URLs that match login patterns, not on start URL.
         
         Args:
-            start_url: Original URL
-            crawl_result: Current crawl results
+            login_pages: List of URLs that match login page patterns
             
         Returns:
             bool: True if authentication successful
         """
         try:
-            # Use the interaction scanner to test authentication
-            auth_result = run_interactive_test_with_auth(start_url, self.credentials)
-            
-            if auth_result.get("authentication_successful", False):
-                self.authenticated_session = auth_result.get("session_info", {})
-                # Extract cookies for passing to WCAG scans
-                self.session_cookies = self.authenticated_session.get("cookies", []) if self.authenticated_session else None
-                logger.info("Authentication successful - session established")
-                logger.info(f"Session cookies extracted: {len(self.session_cookies) if self.session_cookies else 0} cookies")
-                return True
-            else:
-                logger.warning("Authentication failed")
+            if not login_pages:
+                logger.warning("No login pages provided for authentication")
                 return False
+            
+            # Try authenticating on each discovered login page
+            for login_url in login_pages:
+                try:
+                    logger.info(f"🔐 Attempting authentication on login page: {login_url}")
+                    auth_result = run_interactive_test_with_auth(login_url, self.credentials)
+                    
+                    if auth_result.get("authentication_successful", False):
+                        self.authenticated_session = auth_result.get("session_info", {})
+                        # Extract cookies for passing to WCAG scans
+                        self.session_cookies = self.authenticated_session.get("cookies", []) if self.authenticated_session else None
+                        logger.info(f"✅ Authentication successful on login page: {login_url}")
+                        logger.info(f"Session cookies extracted: {len(self.session_cookies) if self.session_cookies else 0} cookies")
+                        return True
+                    else:
+                        logger.warning(f"❌ Authentication failed on login page: {login_url}")
+                        if auth_result.get("login_form_detected", False):
+                            logger.warning("Login form was detected but authentication failed - check credentials")
+                        else:
+                            logger.warning("No login form detected on this page")
+                            
+                except Exception as e:
+                    logger.error(f"Error authenticating on {login_url}: {str(e)}")
+                    continue
+            
+            logger.warning("❌ Authentication failed on all login pages")
+            return False
                 
         except Exception as e:
             logger.error(f"Authentication error: {str(e)}")

@@ -37,6 +37,8 @@ _ACTIVE_GEMINI_INDEX: Optional[int] = None
 for key_candidate in (
     os.getenv("GOOGLE_API_KEY1"),
     os.getenv("GOOGLE_API_KEY2"),
+    os.getenv("GOOGLE_API_KEY3"),
+    os.getenv("GOOGLE_API_KEY4"),
 ):
     if key_candidate:
         value = key_candidate.strip()
@@ -67,20 +69,28 @@ for directory in [EMBEDDING_DIR, INDEX_DIR, CACHE_DIR]:
 QUERY_CACHE = {}
 if os.path.exists(QUERY_CACHE_FILE):
     try:
-        with open(QUERY_CACHE_FILE, 'r') as f:
+        with open(QUERY_CACHE_FILE, 'r', encoding='utf-8') as f:
             QUERY_CACHE = json.load(f)
-        logger.info(f"Loaded {len(QUERY_CACHE)} cached queries")
+        logger.info(f"✅ Loaded {len(QUERY_CACHE)} cached queries from {QUERY_CACHE_FILE}")
     except Exception as e:
-        logger.error(f"Error loading query cache: {e}")
+        logger.error(f"❌ Error loading query cache: {e}")
+        QUERY_CACHE = {}  # Start with empty cache if loading fails
+else:
+    logger.info(f"📝 No existing cache file found. Starting with empty cache.")
 
 def save_query_cache():
-    """Save query cache to disk"""
+    """Save query cache to disk immediately"""
     try:
-        with open(QUERY_CACHE_FILE, 'w') as f:
-            json.dump(QUERY_CACHE, f)
-        logger.info(f"Saved {len(QUERY_CACHE)} queries to cache")
+        # Create cache directory if it doesn't exist
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        
+        # Save with proper formatting
+        with open(QUERY_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(QUERY_CACHE, f, indent=2, ensure_ascii=False)
+        logger.info(f"💾 Saved {len(QUERY_CACHE)} queries to cache file: {QUERY_CACHE_FILE}")
     except Exception as e:
-        logger.error(f"Error saving query cache: {e}")
+        logger.error(f"❌ Error saving query cache: {e}")
+        raise
 
 def classify_document_type(text: str, allow_general_docs: bool = False) -> str:
     """Classify uploaded document content with hybrid rules + LLM fallback.
@@ -312,7 +322,7 @@ def _ensure_model_initialized() -> bool:
         if _configure_model_for_index(idx):
             return True
     if not _GEMINI_KEYS:
-        logger.warning("Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)")
+        logger.warning("Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4)")
     else:
         logger.warning("Gemini not configured: all provided API keys failed")
     return False
@@ -836,7 +846,7 @@ def get_concise_max_tokens(query: str) -> int:
     """Return appropriate max_tokens based on whether user wants concise response."""
     if detect_concise_request(query):
         return 512  # Much shorter for concise requests
-    return 2500  # Full length for detailed requests
+    return 4000  # Increased for comprehensive lifecycle and detailed responses
 
 @timing_decorator
 def expert_security_controls(query: str, context: str, conversation_context: str = "") -> str:
@@ -868,24 +878,53 @@ def expert_security_controls(query: str, context: str, conversation_context: str
             f"Previous conversation context:\n{conversation_context}\n\n"
             f"Current Query: {query}\n\n"
             f"SECURITY FRAMEWORK DOCUMENTS:\n{context}\n\n"
-            "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
-            "For EVERY security control, requirement, or technical recommendation you make, you MUST:\n"
-            "1. Quote the EXACT text from the framework documents that supports your recommendation\n"
-            "2. Use this format: [Your recommendation] (Source: \"exact quote\" - Framework Name)\n"
-            "3. If technical details are NOT in the provided documents, state: \"Not in frameworks - industry best practice\"\n"
-            "4. For implementation steps, cite the framework requirement that mandates each step\n\n"
+            "CRITICAL INSTRUCTIONS - HYBRID EVIDENCE-BASED RESPONSE:\n\n"
+            "**FOLLOW-UP QUESTION HANDLING:**\n"
+            "If the current query is a follow-up question (references previous conversation, uses pronouns like 'it', 'that', 'those', 'this', or asks for clarification/expansion):\n"
+            "1. FIRST, review the previous conversation context above to understand what was discussed\n"
+            "2. Reference the previous answer when responding (e.g., 'As mentioned earlier...', 'Building on the previous discussion about...')\n"
+            "3. If the user asks about something from a previous answer, provide additional details or clarification\n"
+            "4. Maintain continuity with the previous conversation while answering the new question\n"
+            "5. If the follow-up is about a specific framework/control mentioned earlier, focus on that context\n\n"
+            "You MUST provide a COMPLETE answer. Structure your response as follows:\n\n"
+            "**Framework Requirements**\n"
+            "1. If relevant information exists in the framework documents, quote the EXACT text using format: [Your statement] (Evidence: <span style=\"color:#008000\">\"exact quote\"</span> - <span style=\"color:#008000\">Framework Name/Control ID</span>)\n"
+            "2. ALWAYS highlight document-derived evidence AND control IDs/article numbers in green using <span style=\"color:#008000\">text</span>\n"
+            "3. If no relevant information exists in the documents, skip this section entirely and proceed with the next section.\n\n"
+            "**Implementation Guidance**\n"
+            "1. Provide complete information about the query topic using your expert knowledge.\n"
+            "2. Provide comprehensive details, implementation guidance, and best practices.\n"
+            "3. When mentioning control IDs, article numbers, or framework requirements, ALWAYS highlight them in green: <span style=\"color:#008000\">ISO 27001 A.9.2.1</span> or <span style=\"color:#008000\">Article 17 GDPR</span>\n"
+            "4. Use this format: [Information] (Based on <span style=\"color:#008000\">{Framework} Control/Article</span> standards and industry best practices)\n\n"
+            "**RESPONSE STRUCTURE:**\n"
+            "1. Start with a brief overview\n"
+            "2. **Framework Requirements:** (Cite exact quotes from context if available, otherwise skip)\n"
+            "3. **Implementation Guidance:** (Use your knowledge to provide complete answer with practical steps)\n\n"
             "EXAMPLE FORMAT:\n"
-            "Organizations must implement multi-factor authentication for administrative access (Source: \"multi-factor authentication shall be required for all privileged user access\" - NIST 800-53 IA-2)\n\n"
-            "Provide a comprehensive analysis focusing on:\n"
-            "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS (with exact citations)\n"
-            "2. **Implementation Guidelines**: Step-by-step technical implementation (cite framework requirements)\n"
-            "3. **Risk Assessment**: Threats, vulnerabilities, and risk levels (reference framework risk tables)\n"
-            "4. **Monitoring & Validation**: Methods to verify control effectiveness (cite verification procedures)\n"
+            "**Framework Requirements:**\n"
+            "ISO 27001 requires access control policies (Evidence: <span style=\"color:#008000\">\"Access control policy\"</span> - <span style=\"color:#008000\">ISO 27001 A.9.1.1</span>)\n\n"
+            "**Implementation Guidance:**\n"
+            "Control <span style=\"color:#008000\">A.9.2.1</span> specifically covers user access management requirements.\n\n"
+            "**Implementation Guidance (Based on ISO 27001 Standards):**\n"
+            "Control A.9 specifically covers Access Control and includes:\n"
+            "- A.9.1: Business requirements of access control\n"
+            "- A.9.2: User access management\n"
+            "- A.9.3: User responsibilities\n"
+            "- A.9.4: System and application access control\n"
+            "Organizations need to implement user access management processes including user registration, privilege management, and access review procedures. (Based on ISO 27001 standards and industry best practices)\n\n"
+            "Provide a comprehensive analysis covering:\n"
+            "1. **Security Controls & Requirements**: Specific controls from NIST, ISO 27001, CIS (cite documents first, then supplement)\n"
+            "2. **Implementation Guidelines**: Step-by-step technical implementation (cite framework requirements, add practical steps)\n"
+            "3. **Risk Assessment**: Threats, vulnerabilities, and risk levels (reference documents, add expert insights)\n"
+            "4. **Monitoring & Validation**: Methods to verify control effectiveness (cite verification procedures, add best practices)\n"
             "5. **Best Practices**: Industry-proven measures (distinguish framework requirements vs. best practices)\n"
-            "6. **Compliance Mapping**: How controls map to regulations (cite specific control mappings)\n\n"
-            "Structure your response with clear headings, actionable recommendations, and MANDATORY evidence citations.\n"
-            "Think step by step and verify each claim is supported by the provided framework documents.\n\n"
-            "Response with evidence-based citations:"
+            "6. **Compliance Mapping**: How controls map to regulations (cite specific control mappings, add context)\n\n"
+            "IMPORTANT RULES:\n"
+            "- DO NOT say 'not in documents', 'not available', 'there is no direct mention', or explain what's missing. Simply provide the information.\n"
+            "- DO NOT explain your approach or methodology. Just provide the answer directly.\n"
+            "- Always provide a COMPLETE answer. Never leave the user with incomplete information.\n"
+            "- If documents have partial information, cite it first, then supplement with your knowledge to provide a full answer.\n\n"
+            "Provide a direct, complete answer without meta-commentary:"
         )
     return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
 
@@ -899,30 +938,40 @@ def expert_privacy_regulations(query: str, context: str, conversation_context: s
     logger.info(f"⚖️ PRIVACY EXPERT triggered for query: {query[:100]}")
     
     prompt = (
-        "You are a data privacy and protection expert with deep knowledge of global privacy regulations and data governance.\n\n"
+        "You are a data privacy and protection expert with deep knowledge of GDPR, CCPA, and global data governance.\n\n"
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n\n"
         f"PRIVACY REGULATION DOCUMENTS:\n{context}\n\n"
-        "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
-        "For EVERY legal requirement, obligation, or compliance recommendation you make, you MUST:\n"
-        "1. Quote the EXACT legal text from the regulation documents that establishes this requirement\n"
-        "2. Use this format: [Legal requirement] (Legal Basis: \"exact quote\" - Regulation Article/Section)\n"
-        "3. If specific implementation details are NOT in the regulations, state: \"Not specified in regulations - recommended practice\"\n"
-        "4. For each data subject right, cite the exact article that grants that right\n"
-        "5. For penalties/fines, quote the exact text with amounts and conditions\n\n"
-        "EXAMPLE FORMAT:\n"
-        "GDPR requires data controllers to notify supervisory authorities of breaches within 72 hours (Legal Basis: \"the controller shall...notify the personal data breach to the supervisory authority...without undue delay and, where feasible, not later than 72 hours\" - GDPR Article 33(1))\n\n"
-        "Provide a comprehensive analysis focusing on:\n"
-        "1. **Regulatory Requirements**: Specific obligations under GDPR, CCPA, PIPEDA (cite exact articles)\n"
-        "2. **Data Subject Rights**: Individual rights and implementation (quote the article granting each right)\n"
-        "3. **Legal Basis & Consent**: Lawful processing grounds (cite legal basis articles with exact wording)\n"
-        "4. **Data Protection Measures**: Required safeguards (reference specific security requirements)\n"
-        "5. **Cross-Border Transfers**: Transfer mechanisms (cite adequacy decisions and transfer articles)\n"
-        "6. **Breach Response**: Notification timelines and procedures (exact regulatory quotes)\n"
-        "7. **Documentation**: Required records and assessments (cite documentation requirements)\n\n"
-        "Include specific regulatory citations with article numbers and exact legal text.\n"
-        "Distinguish between legal requirements (must cite) vs. operational best practices.\n\n"
-        "Response with mandatory legal citations:"
+        "CRITICAL INSTRUCTIONS - OPERATIONALIZING PRIVACY:\n"
+        "1. **Lifecycle Alignment:** If the user asks for a data lifecycle (Collection -> Deletion), structure your answer exactly in that order.\n"
+        "2. **Tech-Specific Implementation:** When discussing privacy controls (e.g., Right to Erasure), provide the technical method relevant to the user's stack found in context (e.g., 'Use AWS S3 Lifecycle Policies for automated deletion').\n"
+        "3. **Ignore Irrelevant Stack Info:** Do not recommend tools from cloud providers the user is not using unless explicitly comparing them.\n\n"
+        "You MUST provide a COMPLETE answer. Structure your response as follows:\n\n"
+            "**Regulatory Requirements**\n"
+            "1. If relevant legal text exists in the regulation documents, quote it using format: [Legal requirement] (Legal Basis: <span style=\"color:#008000\">\"exact quote\"</span> - <span style=\"color:#008000\">Regulation Article/Section</span>).\n"
+            "2. ALWAYS highlight article numbers and section references in green: <span style=\"color:#008000\">Article 17 GDPR</span> or <span style=\"color:#008000\">CCPA Section 1798.105</span>\n"
+            "3. CRITICAL: If no relevant information exists in the documents, DO NOT include this section at all. Do not write 'There is no direct mention', 'not in documents', or any explanation about missing information. Simply skip this section and go directly to the next section.\n\n"
+            "**Technical Implementation**\n"
+            "1. Provide complete information about the query topic using your expert knowledge.\n"
+            "2. Translate legal requirements into 'Technical Action' matching the user's cloud provider.\n"
+            "3. Provide comprehensive details on how to execute the right/obligation technically.\n"
+            "4. When mentioning article numbers or regulation sections, ALWAYS highlight them in green: <span style=\"color:#008000\">Article 17</span>, <span style=\"color:#008000\">Article 32</span>\n"
+            "5. Use format: [Technical Action] (Based on <span style=\"color:#008000\">{Regulation} Article/Control</span> standards and {Cloud Provider} best practices).\n\n"
+        "**RESPONSE STRUCTURE:**\n"
+        "1. **Regulatory Requirements**: Cite Article numbers and legal text (highlight quotes in green span). SKIP THIS SECTION ENTIRELY if no relevant information exists in the documents - do not mention its absence.\n"
+        "2. **Technical Implementation**: Provide privacy configurations and technical actions for the user's tech stack.\n"
+        "3. **Data Subject Rights**: Explain how to handle specific requests (Access, Deletion) with evidence citations.\n"
+        "4. **Documentation**: Outline RoPA or record-keeping requirements.\n\n"
+            "ADDITIONAL RULES:\n"
+            "- CRITICAL: If the 'Regulatory Requirements' section has no content from documents, DO NOT include that section header at all. Do not write 'There is no direct mention', 'not in documents', 'not available', or any explanation about missing information. Simply skip that section entirely and start directly with 'Technical Implementation'.\n"
+            "- DO NOT say 'not in documents', 'not available', 'there is no direct mention', or explain what's missing. Simply provide the information or skip the section.\n"
+            "- DO NOT explain your approach or methodology. Just provide the answer directly.\n"
+            "- Maintain continuity with conversation context for follow-up questions.\n"
+            "- ALWAYS highlight ALL article numbers, control IDs, and framework references in green: <span style=\"color:#008000\">Article 17 GDPR</span>, <span style=\"color:#008000\">Article 32</span>, <span style=\"color:#008000\">CCPA Section 1798.105</span>\n"
+            "- Highlight document-derived evidence quotes using <span style=\"color:#008000\">\"quote\"</span> and include Article references in green.\n"
+            "- Example: Data subjects have the right to erasure (\"right to be forgotten\") (<span style=\"color:#008000\">Article 17 GDPR</span>).\n"
+            "- Ensure each legal obligation is paired with a concrete technical execution path for the specified stack.\n\n"
+            "Provide a direct, complete answer without meta-commentary. If no document information exists, skip the 'Regulatory Requirements' section entirely:"
     )
     return rate_limited_generate_content_optimized(prompt)
 
@@ -941,28 +990,52 @@ def expert_audit_compliance(query: str, context: str, conversation_context: str 
     if has_framework_docs:
         # When we have framework documents, cite them
         prompt = (
-            "You are an audit and compliance expert with expertise in enterprise risk management and regulatory compliance frameworks.\n\n"
+            "You are an audit and compliance expert with deep expertise in enterprise risk management, ISO 27001, SOC 2, and cloud security.\n\n"
             f"Previous conversation context:\n{conversation_context}\n\n"
             f"Current Query: {query}\n\n"
             f"COMPLIANCE FRAMEWORK DOCUMENTS:\n{context}\n\n"
-            "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
-            "For EVERY requirement, recommendation, or claim you make, you MUST:\n"
-            "1. Quote the EXACT text from the framework documents above that supports your statement\n"
-            "2. Use this format: [Your statement] (Evidence: \"exact quote from documents\")\n"
-            "3. If specific details are NOT in the provided documents, state: \"Based on {framework_name} standards\" without warnings\n"
-            "4. Never make claims without citing supporting evidence from the context\n\n"
-            "EXAMPLE FORMAT:\n"
-            "ISO 27001 requires organizations to establish an information security management system (Evidence: \"establish, implement, maintain and continually improve an information security management system\" - ISO 27001 Clause 4.4)\n\n"
-            "Provide a comprehensive analysis focusing on:\n"
-            "1. **Audit Requirements**: Specific audit standards and procedures (with citations)\n"
-            "2. **Evidence Collection**: Documentation and artifacts needed (with framework references)\n"
-            "3. **Compliance Verification**: Methods to assess and validate compliance (with citations)\n"
-            "4. **Risk Assessment Framework**: Identify, analyze, and prioritize risks (with evidence)\n"
-            "5. **Control Testing**: Procedures to test control effectiveness (with citations)\n"
-            "6. **Remediation Planning**: Steps to address findings and gaps (with evidence)\n"
-            "7. **Continuous Monitoring**: Ongoing compliance assurance processes (with citations)\n\n"
-            "Think step by step, cite evidence for each point, and be explicit about what comes from the documents.\n\n"
-            "Response with mandatory evidence citations:"
+            "CRITICAL INSTRUCTIONS:\n"
+            "1. **Tech Stack Validation:** Check the 'Current Query' and 'Previous conversation context' for the user's specific technology stack (e.g., AWS, Azure, GCP, On-Prem).\n"
+            "2. **Filter Retrieved Docs:** IF the user specifies a technology (e.g., AWS), you must IGNORE or contextualize information from 'COMPLIANCE FRAMEWORK DOCUMENTS' that refers to competing technologies unless explicitly comparing them.\n"
+            "3. **Specific Control Mapping:** When referencing ISO 27001 or other frameworks, cite the specific alphanumeric Control ID (e.g., 'Control A.12.3.1', 'Article 32').\n\n"
+            "You MUST provide a COMPLETE answer. Structure your response as follows:\n\n"
+            "**Control Requirements**\n"
+            "1. If relevant information exists in the documents, provide a NATURAL, PARAPHRASED statement explaining the requirement, then cite the exact quote as evidence.\n"
+            "2. Format: [Natural paraphrased statement explaining the requirement in your own words] (Evidence: <span style=\"color:#008000\">\"exact quote from document\"</span> - <span style=\"color:#008000\">Control ID A.X.Y</span>).\n"
+            "3. CRITICAL: The statement before the evidence MUST be a natural explanation or summary, NOT an exact copy of the evidence quote. Paraphrase the requirement in clear, natural language.\n"
+            "4. Example of CORRECT format:\n"
+            "   Organizations must include cloud providers in their supplier security policies to manage risks from third-party data access (Evidence: <span style=\"color:#008000\">\"The cloud service customer should include the cloud service provider as a type of supplier in its information security policy for supplier relationships.\"</span> - <span style=\"color:#008000\">ISO 27001 A.15.1.2</span>).\n"
+            "5. Example of INCORRECT format (DO NOT USE):\n"
+            "   The cloud service customer should include the cloud service provider as a type of supplier in its information security policy for supplier relationships (Evidence: <span style=\"color:#008000\">\"The cloud service customer should include the cloud service provider as a type of supplier in its information security policy for supplier relationships.\"</span>).\n"
+            "6. ALWAYS highlight control IDs in green: <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>, <span style=\"color:#008000\">A.12.3.1</span>\n"
+            "7. If no relevant information exists in the documents, skip this section entirely and proceed with the next section.\n\n"
+            "**Implementation Details**\n"
+            "1. Provide complete information about the query topic using your expert knowledge.\n"
+            "2. Map the compliance requirement to the user's specific tools.\n"
+            "3. Example: If the user is on AWS and the requirement is 'Encryption', recommend 'AWS KMS' and 'S3 Server-Side Encryption'.\n"
+            "4. When mentioning control IDs or article numbers, ALWAYS highlight them in green: <span style=\"color:#008000\">ISO 27001 Control A.9.2.1</span>, <span style=\"color:#008000\">Article 32</span>\n"
+            "5. Use format: [Technical Implementation] (Standard: <span style=\"color:#008000\">ISO 27001 Control A.X.Y</span>, Best Practice for [User's Tech Stack]).\n\n"
+            "**RESPONSE STRUCTURE:**\n"
+            "1. **Audit Scope**: Identify the specific controls relevant to the query.\n"
+            "2. **Control Requirements**: Provide natural, paraphrased statements explaining the requirements, then cite exact quotes as evidence with Control IDs (use green-highlight format). The statement should NOT be an exact copy of the evidence quote - paraphrase it naturally. Otherwise, provide requirements from your knowledge.\n"
+            "3. **Technical Implementation**: Map controls to the user's specific cloud/tech stack.\n"
+            "4. **Evidence for Auditors**: List the specific logs/artifacts the user must produce.\n"
+            "   - CRITICAL: Format this section as a numbered list with each item on a separate line.\n"
+            "   - Use HTML ordered list tags: <ol><li>Item 1</li><li>Item 2</li></ol> OR use numbered format with line breaks.\n"
+            "   - Each evidence item must be on its own line, not in paragraph form.\n"
+            "   - Example format:\n"
+            "     1. Backup Policy: A documented backup policy that defines...\n"
+            "     2. Backup Configuration: Configuration details of the backup systems...\n"
+            "     3. Backup Logs: Logs showing that backups are being performed...\n\n"
+            "ADDITIONAL RULES:\n"
+            "- DO NOT say 'there is no direct mention', 'the document focuses on', 'not in documents', or explain what's missing. Simply provide the information.\n"
+            "- DO NOT explain your approach or methodology. Just provide the answer directly.\n"
+            "- Never leave the user with generic advice. If they use AWS, provide AWS-specific audit procedures.\n"
+            "- ALWAYS highlight ALL control IDs, article numbers, and framework references in green: <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>, <span style=\"color:#008000\">Article 32</span>, <span style=\"color:#008000\">SOC 2 CC6.1</span>\n"
+            "- Highlight document-derived evidence quotes using <span style=\"color:#008000\">\"quote\"</span> and include the control ID/article number in green.\n"
+            "- Example: Organizations must implement access controls (<span style=\"color:#008000\">ISO 27001 A.9.2.1</span>).\n"
+            "- Maintain continuity for follow-up questions by referencing the conversation context when applicable.\n\n"
+            "Provide a direct, complete answer without meta-commentary:"
         )
     else:
         # When no framework documents are provided, answer based on general knowledge
@@ -1001,22 +1074,49 @@ def expert_financial_compliance(query: str, context: str, conversation_context: 
         f"Previous conversation context:\n{conversation_context}\n\n"
         f"Current Query: {query}\n\n"
         f"FINANCIAL REGULATION DOCUMENTS:\n{context}\n\n"
-        "CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:\n\n"
-        "For EVERY financial regulation, control, or requirement you reference, you MUST:\n"
-        "1. Quote the EXACT text from the regulation that establishes this requirement\n"
-        "2. Use this format: [Requirement] (Regulation: \"exact quote\" - Standard/Section)\n"
-        "3. If implementation details are NOT in regulations, state: \"Not in regulations - industry guidance\"\n"
-        "4. For penalties/fines, quote exact amounts and violation conditions\n\n"
+        "CRITICAL INSTRUCTIONS - HYBRID EVIDENCE-BASED RESPONSE:\n\n"
+        "**FOLLOW-UP QUESTION HANDLING:**\n"
+        "If the current query is a follow-up question (references previous conversation, uses pronouns like 'it', 'that', 'those', 'this', or asks for clarification/expansion):\n"
+        "1. FIRST, review the previous conversation context above to understand what was discussed\n"
+        "2. Reference the previous answer when responding (e.g., 'As mentioned earlier...', 'Building on the previous discussion about...')\n"
+        "3. If the user asks about something from a previous answer, provide additional details or clarification\n"
+        "4. Maintain continuity with the previous conversation while answering the new question\n"
+        "5. If the follow-up is about a specific regulation/requirement mentioned earlier, focus on that context\n\n"
+            "You MUST provide a COMPLETE answer. Structure your response as follows:\n\n"
+            "**Regulatory Requirements**\n"
+            "1. If relevant information exists in the regulation documents, quote the EXACT text using format: [Requirement] (Regulation: <span style=\"color:#008000\">\"exact quote\"</span> - <span style=\"color:#008000\">Standard/Section</span>)\n"
+            "2. ALWAYS highlight document-derived evidence AND regulation sections/requirements in green using <span style=\"color:#008000\">text</span>\n"
+            "3. If no relevant information exists in the documents, skip this section entirely and proceed with the next section.\n\n"
+            "**Implementation Guidance**\n"
+            "1. Provide complete information about the query topic using your expert knowledge.\n"
+            "2. Provide comprehensive details, implementation guidance, and best practices.\n"
+            "3. When mentioning regulation requirements, sections, or control IDs, ALWAYS highlight them in green: <span style=\"color:#008000\">PCI DSS Requirement 1.1</span>, <span style=\"color:#008000\">SOX Section 404</span>\n"
+            "4. Use this format: [Information] (Based on <span style=\"color:#008000\">{Regulation} Requirement/Section</span> standards and industry best practices)\n\n"
+        "**RESPONSE STRUCTURE:**\n"
+        "1. Start with a brief overview\n"
+        "2. **Information from Regulation Documents:** (Cite exact quotes from context)\n"
+        "3. **Additional Information:** (Use your knowledge to complete the answer)\n"
+        "4. **Implementation Guidance:** (Practical steps and recommendations)\n\n"
         "EXAMPLE FORMAT:\n"
-        "PCI DSS requires organizations to maintain a firewall configuration to protect cardholder data (Regulation: \"Install and maintain a firewall configuration to protect cardholder data\" - PCI DSS Requirement 1.1)\n\n"
+        "**Information from Regulation Documents:**\n"
+        "PCI DSS requires organizations to maintain a firewall configuration to protect cardholder data (Regulation: <span style=\"color:#008000\">\"Install and maintain a firewall configuration to protect cardholder data\"</span> - <span style=\"color:#008000\">PCI DSS Requirement 1.1</span>)\n\n"
+        "**Additional Information Example:**\n"
+        "Organizations must implement encryption for cardholder data (<span style=\"color:#008000\">PCI DSS Requirement 3.4</span>).\n\n"
+        "**Additional Information (Based on PCI DSS Standards):**\n"
+        "Requirement 1.1 includes establishing formal procedures for approving and testing network connections, documenting firewall rules, and reviewing firewall configurations at least every six months. Organizations must also restrict inbound and outbound traffic to only what is necessary for business purposes. (Based on PCI DSS standards and industry best practices)\n\n"
         "Focus on:\n"
-        "1. **Financial Regulations**: PCI DSS, SOX, Basel III requirements (cite exact control numbers)\n"
-        "2. **AML/KYC**: Anti-money laundering and Know Your Customer procedures (quote regulatory text)\n"
-        "3. **Payment Standards**: Card industry standards and requirements (cite PCI DSS sections)\n"
-        "4. **Banking Compliance**: Financial services regulatory requirements (reference specific regulations)\n"
-        "5. **Financial Reporting**: Disclosure and reporting requirements (cite exact reporting standards)\n"
-        "6. **Risk Management**: COSO, Basel frameworks (quote framework requirements)\n\n"
-        "Chain-of-Thought Analysis with Evidence Citations:"
+        "1. **Financial Regulations**: PCI DSS, SOX, Basel III requirements (cite documents first, then supplement)\n"
+        "2. **AML/KYC**: Anti-money laundering and Know Your Customer procedures (quote documents, add practical steps)\n"
+        "3. **Payment Standards**: Card industry standards and requirements (cite documents, add implementation details)\n"
+        "4. **Banking Compliance**: Financial services regulatory requirements (reference documents, add best practices)\n"
+        "5. **Financial Reporting**: Disclosure and reporting requirements (cite documents, add reporting procedures)\n"
+        "6. **Risk Management**: COSO, Basel frameworks (quote documents, add risk assessment methods)\n\n"
+            "IMPORTANT RULES:\n"
+            "- DO NOT say 'not in regulations', 'not available', 'there is no direct mention', or explain what's missing. Simply provide the information.\n"
+            "- DO NOT explain your approach or methodology. Just provide the answer directly.\n"
+            "- Always provide a COMPLETE answer. Never leave the user with incomplete information.\n"
+            "- If documents have partial information, cite it first, then supplement with your knowledge to provide a full answer.\n\n"
+            "Provide a direct, complete answer without meta-commentary:"
     )
     return rate_limited_generate_content_optimized(prompt)
 
@@ -1052,14 +1152,40 @@ def expert_healthcare_compliance(query: str, context: str, conversation_context:
             f"Previous conversation context:\n{conversation_context}\n\n"
             f"Query: {query}\n\n"
             f"HEALTHCARE COMPLIANCE DOCUMENTS:\n{context}\n\n"
-            "Provide comprehensive analysis with evidence from the documents when available.\n\n"
+            "CRITICAL INSTRUCTIONS - HYBRID EVIDENCE-BASED RESPONSE:\n\n"
+            "**FOLLOW-UP QUESTION HANDLING:**\n"
+            "If the current query is a follow-up question (references previous conversation, uses pronouns like 'it', 'that', 'those', 'this', or asks for clarification/expansion):\n"
+            "1. FIRST, review the previous conversation context above to understand what was discussed\n"
+            "2. Reference the previous answer when responding (e.g., 'As mentioned earlier...', 'Building on the previous discussion about...')\n"
+            "3. If the user asks about something from a previous answer, provide additional details or clarification\n"
+            "4. Maintain continuity with the previous conversation while answering the new question\n"
+            "5. If the follow-up is about a specific HIPAA rule/safeguard mentioned earlier, focus on that context\n\n"
+            "You MUST provide a COMPLETE answer. Structure your response as follows:\n\n"
+            "**Regulatory Requirements**\n"
+            "1. If relevant information exists in the healthcare compliance documents, quote the EXACT text using format: [Requirement] (Evidence: <span style=\"color:#008000\">\"exact quote\"</span> - <span style=\"color:#008000\">HIPAA/Regulation Section</span>)\n"
+            "2. ALWAYS highlight document-derived evidence AND section references in green using <span style=\"color:#008000\">text</span>\n"
+            "3. If no relevant information exists in the documents, skip this section entirely and proceed with the next section.\n\n"
+            "**Implementation Guidance**\n"
+            "1. Provide complete information about the query topic using your expert knowledge.\n"
+            "2. Provide comprehensive details, implementation guidance, and best practices.\n"
+            "3. When mentioning HIPAA sections, safeguards, or regulation references, ALWAYS highlight them in green: <span style=\"color:#008000\">HIPAA §164.312(a)(1)</span>, <span style=\"color:#008000\">Technical Safeguard</span>\n"
+            "4. Use this format: [Information] (Based on <span style=\"color:#008000\">HIPAA Section/Safeguard</span> standards and industry best practices)\n\n"
+            "**RESPONSE STRUCTURE:**\n"
+            "1. Start with a brief overview\n"
+            "2. **Regulatory Requirements:** (Cite exact quotes from context if available, otherwise skip)\n"
+            "3. **Implementation Guidance:** (Use your knowledge to provide complete answer with practical steps)\n\n"
             "Focus on:\n"
-            "1. **HIPAA Privacy and Security Rules**: Cite specific requirements from documents\n"
-            "2. **PHI Protection**: Data handling and security measures\n"
-            "3. **Compliance Requirements**: Key obligations and standards\n"
-            "4. **Risk Management**: Healthcare-specific risks and controls\n"
-            "5. **Best Practices**: Implementation guidance\n\n"
-            "Format with clear headings and cite document evidence where applicable."
+            "1. **HIPAA Privacy and Security Rules**: Cite documents first if available, then supplement with complete requirements\n"
+            "2. **PHI Protection**: Data handling and security measures (cite documents if available, add technical safeguards)\n"
+            "3. **Compliance Requirements**: Key obligations and standards (cite documents if available, add implementation details)\n"
+            "4. **Risk Management**: Healthcare-specific risks and controls (cite documents if available, add risk assessment methods)\n"
+            "5. **Best Practices**: Implementation guidance (cite documents if available, add practical steps)\n\n"
+            "IMPORTANT RULES:\n"
+            "- DO NOT say 'not in documents', 'not available', 'there is no direct mention', or explain what's missing. Simply provide the information.\n"
+            "- DO NOT explain your approach or methodology. Just provide the answer directly.\n"
+            "- Always provide a COMPLETE answer. Never leave the user with incomplete information.\n"
+            "- If documents have partial information, cite it first, then supplement with your knowledge to provide a full answer.\n\n"
+            "Provide a direct, complete answer without meta-commentary:"
         )
     else:
         # When no documents are provided, answer based on general knowledge
@@ -1160,7 +1286,7 @@ def expert_industry_specific(query: str, context: str, conversation_context: str
     return rate_limited_generate_content_optimized(prompt)
 
 @timing_decorator
-def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> str:
+def aggregate_expert_outputs(outputs: List[str], query: str, context: str, conversation_context: str = "") -> str:
     """Advanced aggregation and synthesis of expert outputs with cross-domain insights."""
     if not outputs:
         return "No expert analysis available."
@@ -1202,31 +1328,56 @@ def aggregate_expert_outputs(outputs: List[str], query: str, context: str) -> st
         prompt = f"""
 Synthesize these expert analyses into a CONCISE, actionable response.
 
+Previous conversation context:
+{conversation_context}
+
 Original Query: {query}
 Expert Analyses:{expert_analyses_text[:1000]}
 
+**FOLLOW-UP HANDLING:** If this is a follow-up question, reference the previous conversation context above.
+
+**CRITICAL OUTPUT FORMAT - HTML REQUIRED:**
+Format your response in valid HTML. Use:
+- <h2> for headings
+- <ul><li> for bullet points
+- <p> for paragraphs
+- Do NOT use markdown (no ##, *, etc.) - use HTML only
+
 Provide response as:
-**Key Steps:**
-• Action 1
-• Action 2  
-• Action 3
+<h2>Key Steps</h2>
+<ul>
+<li>Action 1 (cite evidence if from documents)</li>
+<li>Action 2</li>
+<li>Action 3</li>
+</ul>
 
-**Critical Requirements:**
-• Requirement 1
-• Requirement 2
+<h2>Critical Requirements</h2>
+<ul>
+<li>Requirement 1 (cite evidence if from documents)</li>
+<li>Requirement 2</li>
+</ul>
 
-Keep total response under 200 words. Focus only on actionable steps.
+**MANDATORY HIGHLIGHTING RULES:**
+- ALL control IDs, article numbers, and framework references MUST be highlighted in green: <span style=\"color:#008000\">Article 17 GDPR</span>, <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>
+- Evidence quotes from documents MUST be highlighted: <span style=\"color:#008000\">\"exact quote\"</span>
+- Example: Data subjects have the right to erasure (<span style=\"color:#008000\">Article 17 GDPR</span>).
+
+Keep total response under 200 words. Focus only on actionable steps. Output in HTML format.
 """
     elif is_simple_info_query:
         # For simple informational queries, provide a clean, direct response
         prompt = f"""
 You are a compliance expert explaining a compliance concept or framework to a professional audience.
 
+Previous conversation context:
+{conversation_context}
+
 Original Query: {query}
 
 Multiple expert perspectives on this topic:{expert_analyses_text}
 
 **CRITICAL INSTRUCTIONS:**
+**FOLLOW-UP HANDLING:** If this is a follow-up question, review the previous conversation context above and reference it when relevant.
 Synthesize the information above into ONE unified, cohesive explanation. DO NOT reference "Expert 1", "Expert 2", or compare different analyses. Present the information as if you are the single authoritative source.
 
 Structure your response with:
@@ -1237,53 +1388,141 @@ Structure your response with:
 4. **Main Requirements**: Core compliance obligations and standards
 5. **Key Takeaways**: Important points to remember
 
+**CRITICAL OUTPUT FORMAT - HTML REQUIRED:**
+Format your entire response in valid HTML. Use:
+- <h2> for main headings, <h3> for subheadings
+- <ul><li> for bullet points
+- <p> for paragraphs
+- <strong> for bold, <em> for italic
+- Do NOT use markdown (no ##, *, etc.) - use HTML only
+
 Guidelines:
 - Merge all expert insights into a single, unified voice
 - DO NOT mention "experts", "analyses", "perspectives", or compare viewpoints
 - Use clear, professional language as if this is YOUR direct knowledge
-- Format with headings (using ##) and bullet points for readability
 - Eliminate all redundancy and present information once
 - Keep it informative but accessible
 - Focus on understanding the concept, not implementation details
 - Use a logical flow from general to specific
+- **MANDATORY HIGHLIGHTING RULES:**
+  * ALL control IDs, article numbers, and framework references MUST be highlighted in green: <span style=\"color:#008000\">Article 17 GDPR</span>, <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>, <span style=\"color:#008000\">HIPAA §164.312</span>
+  * Evidence quotes from documents MUST be highlighted: <span style=\"color:#008000\">\"exact quote\"</span>
+  * Example: Organizations must implement access controls (<span style=\"color:#008000\">ISO 27001 A.9.2.1</span>).
 
-Provide a comprehensive, unified explanation:
+Provide a comprehensive, unified explanation in HTML format:
 """
     else:
-        # For implementation/how-to queries, use the detailed format
+        # For implementation/how-to queries, use the Gatekeeper format
         prompt = f"""
-You are a senior compliance consultant providing comprehensive guidance to help implement compliance requirements.
+You are a Senior Compliance Architect acting as a Quality Gatekeeper and Technical Lead.
+
+Previous conversation context:
+{conversation_context}
 
 Original Query: {query}
 Context: {context}
 
-Multiple expert perspectives on this topic:{expert_analyses_text}
+Expert Analyses to Synthesize:{expert_analyses_text}
 
-**CRITICAL INSTRUCTIONS:**
-Synthesize all the information above into ONE unified, cohesive response. DO NOT reference "Expert 1", "Expert 2", "both experts", or compare different analyses. Present the information as if you are the single authoritative consultant.
+**INPUT ANALYSIS:**
+User's Technology Stack: [DETECT FROM CONTEXT: e.g., AWS, Azure, GCP]
 
-Structure your response with:
+**CRITICAL SYNTHESIS INSTRUCTIONS (The "Gatekeeper" Rules):**
+1. **Sanity Check the Tech Stack:**
+   - Review the "Expert Analyses".
+   - IF the user uses AWS and an expert recommends Azure-specific tooling, REMOVE/replace it with the equivalent AWS control (e.g., replace "Azure Sentinel" with "AWS Security Hub") or keep it vendor-neutral.
+   - Do not allow hallucinated tools or mismatched vendors into the final response.
+2. **Conflict Resolution:**
+   - If Privacy guidance says "Delete Data" and Audit guidance says "Retain Logs", explain how to balance both (e.g., retain logs but anonymize personal data).
+3. **Citation & Highlight Preservation (CRITICAL):**
+   - Retain the specific Article numbers / Control IDs supplied by experts (e.g., GDPR Article 17, ISO 27001 A.9.2.1).
+   - ALWAYS preserve green highlighting for ALL document-derived evidence: <span style=\"color:#008000\">\"exact quote from framework\"</span>
+   - **MANDATORY:** ALL control IDs, article numbers, and framework references MUST be highlighted in green containers, whether from documents or general knowledge:
+     * <span style=\"color:#008000\">Article 17 GDPR</span>
+     * <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>
+     * <span style=\"color:#008000\">HIPAA §164.312(a)(1)</span>
+     * <span style=\"color:#008000\">PCI DSS Requirement 1.1</span>
+   - Example format: Data subjects have the right to erasure ("right to be forgotten") (<span style=\"color:#008000\">Article 17 GDPR</span>).
+   - When experts cite evidence from documents, ensure it appears in green in the final response.
+   - Any mention of framework requirements, control IDs, or regulation articles MUST be highlighted in green, regardless of source.
 
-1. **Executive Summary**: Provide a clear, concise overview of the key findings and approach
-2. **Key Requirements**: Integrated overview of all compliance obligations and standards
-3. **Implementation Approach**: Consolidated recommendations and best practices presented as a unified strategy
-4. **Prioritized Action Plan**: Specific, actionable steps in order of importance
-5. **Risk Considerations**: Critical risks and mitigation strategies
-6. **Implementation Timeline**: Suggested phases for rollout
-7. **Next Steps**: Immediate actions to take
+**FINAL RESPONSE STRUCTURE:**
+1. **Executive Summary**: A clear, direct answer to the user's strategy.
+2. **Key Compliance & Control Mapping**:
+   **CRITICAL - THIS SECTION MUST USE HTML TABLE TAGS (NOT MARKDOWN):**
+   - For the "Key Compliance & Control Mapping" section ONLY, you MUST use HTML table tags
+   - DO NOT use markdown table syntax (no | separators, no |---|---|)
+   - **DO NOT wrap the HTML table in markdown code blocks** (no ```html ... ```)
+   - Output the HTML table tags directly in your response
+   - The table will have proper borders and styling applied automatically
+   - Use this EXACT HTML structure:
+   
+   <table>
+     <thead>
+       <tr>
+         <th>Regulation/Control ID</th>
+         <th>Requirement</th>
+         <th>Specific Tool/Action in User's Tech Stack</th>
+       </tr>
+     </thead>
+     <tbody>
+       <tr>
+         <td><span style="color:#008000">Article 17 GDPR</span></td>
+         <td>Right to erasure ("right to be forgotten")</td>
+         <td>Implement automated deletion using AWS S3 Lifecycle Policies</td>
+       </tr>
+       <tr>
+         <td><span style="color:#008000">ISO 27001 A.9.2.1</span></td>
+         <td>User access management</td>
+         <td>Implement strict IAM roles and policies following least privilege</td>
+       </tr>
+     </tbody>
+   </table>
+   
+   **Requirements for this table:**
+   - Use <table>, <thead>, <tbody>, <tr>, <th>, <td> tags
+   - DO NOT use markdown table syntax (no | separators)
+   - DO NOT wrap in markdown code blocks (no ```html or ```)
+   - Output raw HTML table tags directly
+   - Each row must be a <tr> with <td> cells inside
+   - Control IDs and Article numbers MUST be in green: <span style="color:#008000">Article 17 GDPR</span>
+   - All three columns are required: Regulation/Control ID, Requirement, Specific Tool/Action
+   - Preserve green-highlighted evidence for any direct quotes
+   - The table will automatically have borders and proper styling - you don't need to add inline styles
 
-Guidelines:
-- Merge all insights into a single, unified voice - DO NOT mention experts or analyses
-- Present information as YOUR direct recommendations
-- Eliminate all redundancy - if multiple sources say the same thing, mention it once
-- Use clear headings (using ##) and bullet points for readability
-- Provide specific, actionable guidance with concrete steps
-- Include relevant regulatory citations and standards
-- Maintain technical accuracy while being accessible
-- Address both immediate needs and long-term compliance strategy
-- Flow naturally from one section to the next without meta-commentary
+3. **Detailed Implementation Plan (SCOPE-ADAPTIVE)**:
+   - **CRITICAL FORMATTING RULE:** Adopt the structure that best fits the User's Query Scope.
+   - **Scenario A (Broad Process):** If the user asks for a full workflow (e.g., "How do I handle data?", "GDPR Guide"), you MUST use the Data Lifecycle stages (Collection → Processing → Storage → Deletion).
+   - **Scenario B (Specific Control):** If the user asks for a specific topic (e.g., "How to encrypt", "Audit Logs"), structure the response by Configuration Steps (e.g., Planning → Configuration → Verification).
+   - **Constraint:** Do NOT force a lifecycle structure on a narrow technical question.
+4. **Risk & Governance**: Critical risks and specific mitigation steps.
+5. **Evidence for Auditors** (if applicable): When listing evidence items, artifacts, or documentation requirements:
+   - **CRITICAL FORMATTING:** Format as a numbered list with each item on a separate line.
+   - Use HTML ordered list tags: <ol><li>Item 1</li><li>Item 2</li></ol> OR format with line breaks between numbered items.
+   - Each evidence item must be on its own line, NOT in paragraph form.
+   - Example of CORRECT format:
+     <ol>
+     <li>Backup Policy: A documented backup policy that defines the scope, frequency, retention, and testing procedures.</li>
+     <li>Backup Configuration: Configuration details of the backup systems, including schedules and storage locations.</li>
+     <li>Backup Logs: Logs showing that backups are being performed according to the defined schedule.</li>
+     </ol>
+   - Example of INCORRECT format (DO NOT USE):
+     "1. Backup Policy: ... 2. Backup Configuration: ... 3. Backup Logs: ..." (all in one paragraph)
 
-Provide a comprehensive, unified response:
+ADDITIONAL RULES:
+- DO NOT say 'not in documents', 'not available', 'there is no direct mention', 'the document focuses on', or explain what's missing. Simply provide the information.
+- DO NOT explain your approach, methodology, or what you're doing. Just provide the answer directly.
+- DO NOT include phrases like "I will provide", "I will proceed", "focusing on a two-part approach", or similar meta-commentary.
+- Reference previous conversation details when this is a follow-up.
+- Remove redundancy; present one aligned strategy in a single authoritative voice.
+- **MANDATORY:** ALL control IDs, article numbers, regulation sections, and framework references MUST be highlighted in green containers: <span style=\"color:#008000\">Article 17 GDPR</span>, <span style=\"color:#008000\">ISO 27001 A.9.2.1</span>, <span style=\"color:#008000\">HIPAA §164.312</span>
+- **MANDATORY:** All evidence quotes from framework documents MUST be highlighted in green: <span style=\"color:#008000\">\"exact quote\"</span>
+- Example: Organizations must implement access controls (<span style=\"color:#008000\">ISO 27001 A.9.2.1</span>).
+- Example: Data subjects have the right to erasure ("right to be forgotten") (<span style=\"color:#008000\">Article 17 GDPR</span>).
+- Clearly distinguish document-based evidence (with green highlight + citation) from supplemental guidance.
+- When mentioning Control IDs, Article numbers, or regulation sections, ALWAYS wrap them in green highlighting, regardless of whether they came from documents or general knowledge.
+
+Generate a unified, technically accurate, vendor-consistent response without meta-commentary:
 """
     
     return rate_limited_generate_content_optimized(prompt, max_tokens=max_tokens)
@@ -2001,6 +2240,325 @@ def is_compliance_related_optimized(query: str, conversation_context: str = "") 
         return result
 
 @timing_decorator
+def detect_ambiguous_query(query: str, conversation_context: str = "") -> Tuple[bool, str]:
+    """
+    Detect if a query is ambiguous and requires clarification using LLM analysis.
+    
+    Args:
+        query (str): The user's query
+        conversation_context (str): The conversation context to help determine if query is ambiguous
+        
+    Returns:
+        Tuple[bool, str]: (is_ambiguous, clarification_message)
+        - is_ambiguous: True if query is ambiguous, False otherwise
+        - clarification_message: Suggested clarification message if ambiguous, empty string otherwise
+    """
+    # Normalize query
+    query_normalized = query.strip().lower()
+    
+    # FIRST: Check if query mentions a specific compliance framework
+    # If it does, it's NOT ambiguous even if it's in a clarification loop
+    framework_patterns = [
+        r'\bgdpr\b', r'\biso\s*27001\b', r'\biso\s*27002\b', r'\biso/iec\s*27001\b', r'\biso/iec\s*27002\b',
+        r'\bsoc\s*2\b', r'\bsoc2\b', r'\bsoc\s*ii\b',
+        r'\bhipaa\b',
+        r'\bpci\s*dss\b', r'\bpci-dss\b', r'\bpci\b',
+        r'\bnist\b',
+        r'\bccpa\b', r'\bcpra\b',
+        r'\biso\s*22301\b', r'\biso\s*31000\b'
+    ]
+    
+    mentions_framework = any(re.search(pattern, query_normalized, re.IGNORECASE) for pattern in framework_patterns)
+    
+    if mentions_framework:
+        # Query mentions a framework - NOT ambiguous, proceed to answer
+        logger.info(f"Query mentions framework: '{query}' - NOT ambiguous")
+        return False, ""
+    
+    # Check if previous bot response was asking for clarification
+    # If so, and current query is still vague, treat as ambiguous
+    is_followup_to_clarification = False
+    if conversation_context:
+        context_lower = conversation_context.lower()
+        # Check if bot's last response was asking for clarification
+        clarification_indicators = [
+            "could you please specify",
+            "could you please provide",
+            "please specify",
+            "please provide",
+            "what 'that thing' is",
+            "what compliance framework",
+            "which compliance framework",
+            "what specific requirement",
+            "what specific control",
+            "i'd be happy to help",
+            "i'd be happy to provide",
+            "clarification"
+        ]
+        # Check if context contains bot asking for clarification
+        if any(indicator in context_lower for indicator in clarification_indicators):
+            # Check if current query is still vague (short, uses pronouns, lacks specifics)
+            vague_patterns = [
+                r'^(that|this|it|the thing|that thing|this thing|it|them|those|these)$',
+                r'^(what|which|how|why|when|where)\s+(is|are|was|were|do|does|did|will|would|can|could|should|must)\s*(that|this|it|the thing|that thing)?\s*\?*$',
+                r'^(tell me|explain|describe|what about|how about)\s*(that|this|it|the thing|that thing)?\s*\?*$',
+            ]
+            for pattern in vague_patterns:
+                if re.match(pattern, query_normalized):
+                    is_followup_to_clarification = True
+                    logger.info(f"Detected vague follow-up to clarification request: '{query}'")
+                    break
+    
+    # If this is a vague follow-up to a clarification request, treat as ambiguous
+    if is_followup_to_clarification:
+        return True, "I still need more specific information to help you. Could you please provide details such as:\n- Which compliance framework are you asking about? (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, etc.)\n- What specific requirement, control, or regulation?\n- What aspect would you like to know more about? (implementation, requirements, certification, etc.)"
+    
+    # Quick check: very short queries without context are likely ambiguous
+    if len(query_normalized) < 10 and not conversation_context:
+        return True, "I'd be happy to help! Could you please provide more details about what you'd like to know? For example:\n- What compliance framework are you interested in? (GDPR, ISO 27001, SOC 2, etc.)\n- What specific requirement or control do you need information about?\n- Are you looking for implementation guidance or regulatory requirements?"
+    
+    # Use LLM to intelligently detect ambiguous queries
+    prompt = f"""Analyze this user query and determine if it is ambiguous or unclear. IMPORTANT: Consider the conversation context when making your decision.
+
+Query: "{query}"
+Conversation Context: "{conversation_context[:800] if conversation_context else 'None (this is a new conversation with no prior context)'}"
+
+CRITICAL RULES:
+1. **HIGHEST PRIORITY - Framework Mention**: If the query mentions a specific compliance framework (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, NIST, CCPA, etc.), it is NOT ambiguous - even if it's in a clarification loop. Examples: "yes gdpr in short", "all of gdpr main stuff", "tell me about ISO 27001" are NOT ambiguous.
+
+2. **SPECIAL CASE - Clarification Loop Detection**: If the Conversation Context shows the bot previously asked for clarification (e.g., "Could you please specify...", "What compliance framework..."), and the current query is still vague (e.g., "that thing", "it", "this") AND doesn't mention a framework, then the query IS ambiguous - the user hasn't provided the requested clarification yet.
+
+3. If Conversation Context contains relevant information (previous queries about frameworks, controls, requirements, etc.), then follow-up queries like "tell me more", "how do I do it", "what's required" are NOT ambiguous - they refer to the previous conversation.
+
+4. A query is ONLY ambiguous if BOTH conditions are true:
+   a) The query itself lacks specific details (e.g., "tell me more", "how do I do it")
+   b) There is NO relevant conversation context to understand what the user is referring to
+   c) The query does NOT mention a specific compliance framework
+
+A query is AMBIGUOUS if:
+1. It lacks specific details AND there is no conversation context (e.g., "tell me more" in a new conversation)
+2. It uses vague pronouns or references AND there is no context to understand them (e.g., "what about that?" with no prior discussion)
+3. It's too generic without mentioning frameworks, controls, regulations, or specific topics AND no context exists
+4. It cannot be answered even with the conversation context
+
+A query is NOT ambiguous if:
+1. It mentions specific frameworks (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, etc.)
+2. It asks about specific controls, articles, or requirements
+3. It has enough context from the conversation history to understand what the user means
+4. It's a clear follow-up question that references previous conversation (e.g., "tell me more" after discussing GDPR requirements)
+5. The conversation context provides enough information to understand the query
+
+Respond with ONLY a JSON object in this exact format:
+{{
+    "is_ambiguous": true/false,
+    "reasoning": "brief explanation",
+    "clarification_suggestion": "helpful question to ask the user (only if is_ambiguous is true, otherwise empty string)"
+}}
+
+Examples:
+Query: "tell me more"
+Conversation Context: "None"
+Response: {{"is_ambiguous": true, "reasoning": "Query lacks specific topic or framework reference and there is no conversation context", "clarification_suggestion": "I'd be happy to provide more information! Could you please specify what you'd like to know more about? For example:\n- Which compliance framework? (GDPR, ISO 27001, SOC 2, etc.)\n- What specific requirement or control?\n- Are you looking for implementation steps or regulatory details?"}}
+
+Query: "tell me more"
+Conversation Context: "User asked: What are GDPR data breach notification requirements? Bot responded with information about GDPR Article 33 and 34 requirements."
+Response: {{"is_ambiguous": false, "reasoning": "Query is a follow-up to previous GDPR discussion, context provides clear reference", "clarification_suggestion": ""}}
+
+Query: "What are the GDPR data breach notification requirements?"
+Conversation Context: "None"
+Response: {{"is_ambiguous": false, "reasoning": "Query mentions specific framework (GDPR) and specific topic (data breach notification)", "clarification_suggestion": ""}}
+
+Query: "how do i do it"
+Conversation Context: "None"
+Response: {{"is_ambiguous": true, "reasoning": "Query uses vague pronoun 'it' without context", "clarification_suggestion": "I'd be happy to help you! Could you please clarify what you'd like to do? For example:\n- Implement a specific compliance control?\n- Achieve certification for a framework?\n- Set up security measures?\n- Please provide more details about your goal."}}
+
+Query: "how do i do it"
+Conversation Context: "User asked: What are ISO 27001 access control requirements? Bot explained ISO 27001 Control A.9 requirements."
+Response: {{"is_ambiguous": false, "reasoning": "Query refers to implementing ISO 27001 access controls from previous conversation", "clarification_suggestion": ""}}
+
+Query: "what's required"
+Conversation Context: "None"
+Response: {{"is_ambiguous": true, "reasoning": "Query is too generic without specifying what is required and no context exists", "clarification_suggestion": "I can help you understand compliance requirements! Could you please specify:\n- Which compliance framework? (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, etc.)\n- What type of requirement? (access controls, encryption, data protection, audit, etc.)\n- For what purpose? (certification, implementation, assessment)"}}
+
+Query: "what's required"
+Conversation Context: "User asked about SOC 2 certification process. Bot explained the SOC 2 Trust Services Criteria."
+Response: {{"is_ambiguous": false, "reasoning": "Query refers to SOC 2 requirements from previous conversation context", "clarification_suggestion": ""}}
+
+Query: "that thing"
+Conversation Context: "User: what is that thing tell me moree about it kindly. Bot: I'd be happy to provide more information! Could you please specify what 'that thing' is? For example, are you referring to a specific compliance framework, control, or regulation?"
+Response: {{"is_ambiguous": true, "reasoning": "Bot previously asked for clarification about 'that thing', but user's response is still vague and doesn't provide the requested specifics or mention a framework", "clarification_suggestion": "I still need more specific information to help you. Could you please provide details such as:\n- Which compliance framework are you asking about? (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, etc.)\n- What specific requirement, control, or regulation?\n- What aspect would you like to know more about? (implementation, requirements, certification, etc.)"}}
+
+Query: "yes gdpr in short"
+Conversation Context: "User: i wanna know that. Bot: I'd be happy to help! Could you please specify what you'd like to know? For example, are you interested in a specific compliance framework (like GDPR, ISO 27001, or SOC 2)?"
+Response: {{"is_ambiguous": false, "reasoning": "Query mentions specific framework (GDPR) and requests a short summary, which is a clear and answerable request", "clarification_suggestion": ""}}
+
+Query: "all of gdpr main stuff"
+Conversation Context: "User: dont u know what i am talking about. Bot: I still need more specific information to help you..."
+Response: {{"is_ambiguous": false, "reasoning": "Query mentions specific framework (GDPR) and requests main/important information, which is a clear and answerable request despite being in a clarification loop", "clarification_suggestion": ""}}
+
+Now analyze the query above and respond with ONLY the JSON object:"""
+
+    try:
+        response_text = rate_limited_generate_content_optimized(prompt, temperature=0.1, max_tokens=300)
+        
+        # Extract JSON from response - handle nested braces
+        json_match = None
+        # Try to find JSON object with proper brace matching
+        brace_count = 0
+        start_idx = -1
+        for i, char in enumerate(response_text):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    json_match = response_text[start_idx:i+1]
+                    break
+        
+        if json_match:
+            try:
+                # Clean control characters that can cause JSON decode errors
+                cleaned_json = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_match)
+                result = json.loads(cleaned_json)
+                is_ambiguous = result.get("is_ambiguous", False)
+                clarification = result.get("clarification_suggestion", "") if is_ambiguous else ""
+                
+                logger.info(f"Ambiguous query detection: is_ambiguous={is_ambiguous}, query='{query[:50]}...'")
+                return is_ambiguous, clarification
+            except json.JSONDecodeError as je:
+                logger.warning(f"JSON decode error: {je}, cleaned JSON preview: {cleaned_json[:200] if 'cleaned_json' in locals() else 'N/A'}, using fallback")
+                return _fallback_ambiguous_detection(query, conversation_context)
+        else:
+            # Fallback: if JSON parsing fails, use heuristics
+            logger.warning("Failed to extract JSON from LLM response for ambiguous query detection, using fallback")
+            return _fallback_ambiguous_detection(query, conversation_context)
+    except Exception as e:
+        logger.error(f"Error in detect_ambiguous_query: {e}")
+        # Fallback to heuristic detection
+        return _fallback_ambiguous_detection(query, conversation_context)
+
+
+def _fallback_ambiguous_detection(query: str, conversation_context: str = "") -> Tuple[bool, str]:
+    """
+    Fallback heuristic-based ambiguous query detection.
+    Used when LLM detection fails.
+    IMPORTANT: This function considers conversation context - queries are only ambiguous if there's no context.
+    """
+    query_lower = query.strip().lower()
+    
+    # FIRST: Check if query mentions a specific compliance framework
+    # If it does, it's NOT ambiguous even if it's in a clarification loop
+    framework_patterns = [
+        r'\bgdpr\b', r'\biso\s*27001\b', r'\biso\s*27002\b', r'\biso/iec\s*27001\b', r'\biso/iec\s*27002\b',
+        r'\bsoc\s*2\b', r'\bsoc2\b', r'\bsoc\s*ii\b',
+        r'\bhipaa\b',
+        r'\bpci\s*dss\b', r'\bpci-dss\b', r'\bpci\b',
+        r'\bnist\b',
+        r'\bccpa\b', r'\bcpra\b',
+        r'\biso\s*22301\b', r'\biso\s*31000\b'
+    ]
+    
+    mentions_framework = any(re.search(pattern, query_lower, re.IGNORECASE) for pattern in framework_patterns)
+    
+    if mentions_framework:
+        # Query mentions a framework - NOT ambiguous, proceed to answer
+        logger.info(f"Fallback: Query mentions framework: '{query}' - NOT ambiguous")
+        return False, ""
+    
+    # Check if there's meaningful conversation context
+    has_context = conversation_context and len(conversation_context.strip()) > 50
+    
+    # FIRST: Check if previous bot response was asking for clarification
+    # If so, and current query is still vague, treat as ambiguous
+    if has_context:
+        context_lower = conversation_context.lower()
+        clarification_indicators = [
+            "could you please specify", "could you please provide", "please specify", "please provide",
+            "what 'that thing' is", "what compliance framework", "which compliance framework",
+            "what specific requirement", "what specific control", "i'd be happy to help",
+            "i'd be happy to provide", "clarification"
+        ]
+        is_followup_to_clarification = any(indicator in context_lower for indicator in clarification_indicators)
+        
+        if is_followup_to_clarification:
+            # Check if current query is still vague
+            vague_patterns = [
+                r'^(that|this|it|the thing|that thing|this thing|them|those|these)$',
+                r'^(what|which|how|why|when|where)\s+(is|are|was|were|do|does|did|will|would|can|could|should|must)\s*(that|this|it|the thing|that thing)?\s*\?*$',
+                r'^(tell me|explain|describe|what about|how about)\s*(that|this|it|the thing|that thing)?\s*\?*$',
+            ]
+            query_normalized = re.sub(r'\s+', ' ', query_lower).strip()
+            for pattern in vague_patterns:
+                if re.match(pattern, query_normalized, re.IGNORECASE):
+                    logger.info(f"Fallback: Vague follow-up to clarification request detected: '{query}'")
+                    return True, "I still need more specific information to help you. Could you please provide details such as:\n- Which compliance framework are you asking about? (GDPR, ISO 27001, SOC 2, HIPAA, PCI DSS, etc.)\n- What specific requirement, control, or regulation?\n- What aspect would you like to know more about? (implementation, requirements, certification, etc.)"
+    
+    # If there's context, check if it contains compliance-related terms that would make follow-ups clear
+    context_has_compliance_info = False
+    if has_context:
+        context_lower = conversation_context.lower()
+        compliance_indicators = ['gdpr', 'iso', 'soc', 'hipaa', 'pci', 'nist', 'ccpa', 'framework', 'control', 
+                                'requirement', 'article', 'standard', 'compliance', 'regulation', 'audit', 
+                                'certification', 'encryption', 'access', 'security', 'privacy', 'data', 'breach', 
+                                'notification', 'requirement', 'control', 'standard']
+        context_has_compliance_info = any(indicator in context_lower for indicator in compliance_indicators)
+    
+    # Patterns that indicate potentially ambiguous queries (but only if no context)
+    # Note: Using more flexible patterns to catch variations and typos
+    ambiguous_patterns = [
+        # Very vague single phrases (e.g., "that thing", "this thing", "it")
+        r'^(that|this|it|the\s+thing|that\s+thing|this\s+thing|them|those|these)$',
+        # Exact matches for common ambiguous phrases
+        r'^(tell\s*me\s*more|what\s*about|how\s*about|what\'?s\s*required|what\s*is\s*required|how\s*do\s*i\s*do\s*it|how\s*do\s*you\s*do\s*it|what\s*do\s*i\s*need|what\s*should\s*i\s*do|what\s*are\s*the\s*steps|how\s*can\s*i|what\s*can\s*i\s*do)$',
+        # "tell me more" with optional words after (e.g., "tell me more about that thing")
+        r'^tell\s*me\s*more(\s+about|\s+on|\s+regarding)?(\s+(that|this|it|the)\s+(thing|one|stuff|topic|subject))?',
+        # Vague questions with pronouns/references
+        r'^(tell\s*me|explain|describe|what|how|why|when|where)\s+(more|about|it|this|that|them|these|those)(\s+(thing|one|stuff|topic|subject))?',
+        # Generic questions without specifics
+        r'^(what|how|why|when|where)\s+(about|is|are|do|does|did|will|would|can|could|should|must)\s*(it|this|that|them|the\s+thing)?\s*\?*$',
+        # "what about that thing" pattern
+        r'^what\s+about\s+(that|this|it|the)\s+(thing|one|stuff|topic|subject)',
+    ]
+    
+    # Check if query matches ambiguous patterns (case-insensitive, flexible whitespace)
+    matches_ambiguous_pattern = False
+    # Normalize whitespace for better matching
+    query_normalized = re.sub(r'\s+', ' ', query_lower).strip()
+    
+    for pattern in ambiguous_patterns:
+        if re.match(pattern, query_normalized, re.IGNORECASE):
+            matches_ambiguous_pattern = True
+            logger.info(f"Fallback: Query matches ambiguous pattern: '{query}' -> pattern: {pattern}")
+            break
+    
+    # If query matches ambiguous pattern BUT there's context with compliance info, it's NOT ambiguous
+    if matches_ambiguous_pattern:
+        if has_context and context_has_compliance_info:
+            # This is a follow-up query with context - NOT ambiguous
+            logger.info(f"Follow-up query detected with context: '{query}' - not ambiguous")
+            return False, ""
+        else:
+            # No context or context doesn't help - ambiguous
+            logger.info(f"Fallback: Ambiguous query detected (no context): '{query}'")
+            return True, "I'd be happy to help! Could you please provide more details about what you'd like to know? For example:\n- What compliance framework are you interested in? (GDPR, ISO 27001, SOC 2, etc.)\n- What specific requirement or control do you need information about?\n- Are you looking for implementation guidance or regulatory requirements?"
+    
+    # Check if query is very short and lacks specific terms
+    if len(query_lower) < 15:
+        # Check for presence of specific compliance-related terms
+        specific_terms = ['gdpr', 'iso', 'soc', 'hipaa', 'pci', 'nist', 'ccpa', 'framework', 'control', 'requirement', 
+                         'article', 'standard', 'compliance', 'regulation', 'audit', 'certification', 'encryption',
+                         'access', 'security', 'privacy', 'data', 'breach', 'notification']
+        if not any(term in query_lower for term in specific_terms):
+            # If no conversation context, it's likely ambiguous
+            if not has_context or not context_has_compliance_info:
+                return True, "I'd be happy to help! Could you please provide more details about what you'd like to know? For example:\n- What compliance framework are you interested in? (GDPR, ISO 27001, SOC 2, etc.)\n- What specific requirement or control do you need information about?\n- Are you looking for implementation guidance or regulatory requirements?"
+    
+    return False, ""
+
+
+@timing_decorator
 def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, List[str]]:
     """
     Detect the type of compliance query and required experts using enhanced selection.
@@ -2011,9 +2569,17 @@ def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, 
         
     Returns:
         Tuple[str, List[str]]: (query_type, required_experts)
+        - query_type: 'ambiguous' if query needs clarification, otherwise the detected type
+        - required_experts: empty list if ambiguous, otherwise list of expert types
     """
     
-    # Check for framework selection queries first
+    # First, check if query is ambiguous
+    is_ambiguous, clarification_message = detect_ambiguous_query(query, conversation_context)
+    if is_ambiguous:
+        # Store clarification message in a special way - we'll handle this in the route
+        return 'ambiguous', []
+    
+    # Check for framework selection queries
     framework_keywords = ['which framework', 'what framework', 'recommend framework', 
                          'choose framework', 'select framework', 'best framework',
                          'framework recommendation', 'framework selection']
@@ -2090,11 +2656,28 @@ def process_query_optimized(query: str, context: str, conversation_context: str,
         end_time = time.time()
         return response, end_time - start_time
     
-    # Check for exact cache match first
-    cache_key = f"exact_query:{hash_text(query)}"
-    if cache_key in QUERY_CACHE:
-        cached_response = QUERY_CACHE[cache_key]
-        if isinstance(cached_response, str):
+    # Check for exact cache match first - use normalized query for exact matching
+    # Normalize query: lowercase, strip whitespace, remove extra spaces
+    query_normalized = ' '.join(query.strip().lower().split())
+    exact_query_key = f"exact_query:{hash_text(query_normalized)}"
+    
+    # First check: exact query match (same question = same answer, regardless of context)
+    if exact_query_key in QUERY_CACHE:
+        cached_response = QUERY_CACHE[exact_query_key]
+        if isinstance(cached_response, str) and len(cached_response) > 0:
+            logger.info(f"✅ EXACT CACHE HIT for query: '{query[:60]}...' (Key: {exact_query_key})")
+            end_time = time.time()
+            return cached_response, end_time - start_time
+    
+    # Second check: query + context match (for context-dependent responses)
+    context_hash = hash_text(context[:500] if context else "")
+    conv_hash = hash_text(conversation_context[:200] if conversation_context else "")
+    context_query_key = f"context_query:{hash_text(query_normalized)}:{context_hash}:{conv_hash}"
+    
+    if context_query_key in QUERY_CACHE:
+        cached_response = QUERY_CACHE[context_query_key]
+        if isinstance(cached_response, str) and len(cached_response) > 0:
+            logger.info(f"✅ CONTEXT CACHE HIT for query: '{query[:60]}...'")
             end_time = time.time()
             return cached_response, end_time - start_time
     
@@ -2119,17 +2702,24 @@ def process_query_optimized(query: str, context: str, conversation_context: str,
     if len(expert_responses) == 1:
         final_response = expert_responses[0]
     else:
-        final_response = aggregate_expert_outputs(expert_responses, query, context)
+        final_response = aggregate_expert_outputs(expert_responses, query, context, conversation_context)
     
-    # Cache the response
-    QUERY_CACHE[cache_key] = final_response
+    # Cache the response with both exact query key and context-dependent key
+    # Store in exact_query cache for instant retrieval on same question
+    QUERY_CACHE[exact_query_key] = final_response
     
-    # Async save to avoid blocking
-    if len(QUERY_CACHE) % 10 == 0:
-        try:
-            save_query_cache()
-        except:
-            pass  # Don't block on cache save errors
+    # Also store with context for context-dependent caching
+    QUERY_CACHE[context_query_key] = final_response
+    
+    logger.info(f"💾 Cached response for query: '{query[:60]}...' (Cache size: {len(QUERY_CACHE)})")
+    
+    # Save cache immediately to disk for persistence
+    try:
+        save_query_cache()
+        logger.debug(f"✅ Cache saved successfully to {QUERY_CACHE_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Error saving query cache: {e}")
+        # Don't block on cache save errors, but log them
     
     end_time = time.time()
     return final_response, end_time - start_time
@@ -3435,13 +4025,17 @@ Provide a CONCISE answer to: "{query}"
 FRAMEWORK DOCUMENTS:
 {context[:1000]}
 
-CRITICAL: For each point, cite evidence from the documents using this format: (Evidence: "exact quote" - Source)
+CRITICAL: For each point, cite evidence from the documents using this format: (Evidence: <span style="color:#008000">"exact quote"</span> - <span style="color:#008000">Source/Control ID</span>)
 
 Format as:
 **{framework} Compliance - Key Steps:**
-• Step 1 (Evidence: "quote" - Source)
-• Step 2 (Evidence: "quote" - Source)
-• Step 3 (Evidence: "quote" - Source)
+• Step 1 (Evidence: <span style="color:#008000">"quote"</span> - <span style="color:#008000">Article 17 GDPR</span>)
+• Step 2 (Evidence: <span style="color:#008000">"quote"</span> - <span style="color:#008000">ISO 27001 A.9.2.1</span>)
+• Step 3 (Evidence: <span style="color:#008000">"quote"</span> - <span style="color:#008000">Source</span>)
+
+**MANDATORY HIGHLIGHTING:**
+- All evidence quotes from framework documents MUST be highlighted in green: <span style="color:#008000">"quote"</span>
+- ALL control IDs, article numbers, and framework references MUST be highlighted in green: <span style="color:#008000">Article 17 GDPR</span>, <span style="color:#008000">ISO 27001 A.9.2.1</span>
 
 Keep under 100 words total. Focus only on essential actions with evidence citations.
 """
@@ -3472,8 +4066,12 @@ CRITICAL INSTRUCTIONS - EVIDENCE-BASED RESPONSE REQUIREMENTS:
 
 For EVERY requirement, rule, or claim you make, you MUST:
 1. Quote the EXACT text from the framework documents above that supports your statement
-2. Use this format: [Your statement] (Evidence: "exact quote from documents" - Source/Section)
-3. If specific details are NOT in the provided documents, state: "Based on {framework} standards" without warnings
+2. Use this format: [Your statement] (Evidence: <span style="color:#008000">"exact quote from documents"</span> - <span style="color:#008000">Source/Section</span>)
+3. If specific details are NOT in the provided documents, state: "Based on <span style=\"color:#008000\">{framework} Control/Article</span> standards" without warnings
+4. **MANDATORY HIGHLIGHTING:**
+   - All evidence quotes from framework documents MUST be highlighted in green: <span style="color:#008000">"quote"</span>
+   - ALL control IDs, article numbers, and framework references MUST be highlighted in green: <span style="color:#008000">Article 17 GDPR</span>, <span style="color:#008000">ISO 27001 A.9.2.1</span>, <span style="color:#008000">HIPAA §164.312</span>
+   - Example: Data subjects have the right to erasure (<span style="color:#008000">Article 17 GDPR</span>).
 
 Structure your response as follows:
 1. **Brief Definition** (2-3 sentences about what {framework} is)

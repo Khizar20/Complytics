@@ -140,7 +140,6 @@ Azure Cloud Security and Compliance Policy Document
 - Recovery Time Objectives (RTO) and Recovery Point Objectives (RPO) are documented
 - Backup restoration procedures are tested quarterly
 - Disaster recovery plans are maintained and updated
-- Cross-region replication is configured for critical services
 
 10. AUDIT AND COMPLIANCE REPORTING
 

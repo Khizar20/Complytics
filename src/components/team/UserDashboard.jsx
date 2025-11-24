@@ -396,8 +396,31 @@ const UiTestingSummaryCards = () => {
     const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
     let securityScore = typeof sh?.score === 'number' ? sh.score : undefined;
     if (securityScore === undefined) {
+      // Headers contribute 60% (60 points max)
       const missing = missingHeaders.length;
-      securityScore = Math.max(0, 100 - missing * 15);
+      const headersScore = Math.max(0, 60 - missing * 10); // -10 points per missing header
+      
+      // SSL/TLS grade contributes 40% (40 points max)
+      let sslScore = 0;
+      if (sslGrade) {
+        const gradeMap = {
+          "A+": 40,
+          "A": 35,
+          "B": 25,
+          "C": 15,
+          "D": 5,
+          "F": 0,
+          "T": 0,
+          "M": 0,
+        };
+        sslScore = gradeMap[sslGrade.toUpperCase()] || 0;
+      } else {
+        // If no SSL grade available, assume neutral (20 points)
+        sslScore = 20;
+      }
+      
+      // Total score = headers (60%) + SSL (40%)
+      securityScore = Math.max(0, Math.min(100, headersScore + sslScore));
     }
     return { securityScore, sslGrade, missingHeaders, presentHeaders };
   };
@@ -3129,6 +3152,8 @@ const ComplianceLogs = () => {
               <option value="document_upload">Document Upload</option>
               <option value="azure_config_fetch">Azure Config Fetch</option>
               <option value="checklist_generation">Checklist Generation</option>
+              <option value="ui_testing">UI Testing</option>
+              <option value="schedule_scan">Schedule Scan</option>
             </select>
           </div>
           <div>

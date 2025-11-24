@@ -37,6 +37,8 @@ const AzureComplianceChecker = () => {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState(null);
   const [analyzingSnapshot, setAnalyzingSnapshot] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [generationProgress, setGenerationProgress] = useState(0);
 
   // Check if Azure Checker is ready
   useEffect(() => {
@@ -128,6 +130,25 @@ const AzureComplianceChecker = () => {
     setUploading(true);
     setAnalyzing(true);
     setError(null);
+    setAnalysisProgress(0);
+
+    // Simulate progress steps
+    const progressSteps = [
+      { step: 1, message: 'Uploading document...', progress: 10 },
+      { step: 2, message: 'Extracting text...', progress: 25 },
+      { step: 3, message: 'Processing content...', progress: 40 },
+      { step: 4, message: 'Analyzing compliance...', progress: 60 },
+      { step: 5, message: 'Checking frameworks...', progress: 80 },
+      { step: 6, message: 'Generating report...', progress: 95 }
+    ];
+
+    const progressInterval = setInterval(() => {
+      setAnalysisProgress(prev => {
+        if (prev >= 95) return prev;
+        const currentStep = progressSteps.find(s => s.progress > prev) || progressSteps[progressSteps.length - 1];
+        return Math.min(prev + 5, currentStep.progress);
+      });
+    }, 500);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -146,6 +167,7 @@ const AzureComplianceChecker = () => {
         throw new Error(errorData.detail || 'Analysis failed');
       }
 
+      setAnalysisProgress(100);
       const data = await response.json();
       setAnalysis(data);
       setError(null);
@@ -153,8 +175,10 @@ const AzureComplianceChecker = () => {
       console.error('Error analyzing document:', error);
       setError(error.message || 'Failed to analyze document');
     } finally {
+      clearInterval(progressInterval);
       setUploading(false);
       setAnalyzing(false);
+      setTimeout(() => setAnalysisProgress(0), 1000);
     }
   };
 
@@ -170,6 +194,15 @@ const AzureComplianceChecker = () => {
     setChecklist(null);
     setSelectedFramework(null);
     setAnalysis(null);
+    setAnalysisProgress(0);
+
+    // Simulate progress for snapshot analysis
+    const progressInterval = setInterval(() => {
+      setAnalysisProgress(prev => {
+        if (prev >= 95) return prev;
+        return prev + 5;
+      });
+    }, 500);
 
     try {
       const response = await fetch(buildApiUrl('/api/azure-checker/analyze-snapshot'), {
@@ -185,6 +218,7 @@ const AzureComplianceChecker = () => {
         throw new Error(errorData.detail || 'Failed to analyze fetched settings');
       }
 
+      setAnalysisProgress(100);
       const data = await response.json();
       setAnalysis(data);
       setError(null);
@@ -192,8 +226,10 @@ const AzureComplianceChecker = () => {
       console.error('Error analyzing fetched settings:', err);
       setError(err.message || 'Failed to analyze fetched settings');
     } finally {
+      clearInterval(progressInterval);
       setAnalyzingSnapshot(false);
       setAnalyzing(false);
+      setTimeout(() => setAnalysisProgress(0), 1000);
     }
   };
 
@@ -243,6 +279,15 @@ const AzureComplianceChecker = () => {
 
     setGeneratingChecklist(true);
     setError(null);
+    setGenerationProgress(0);
+
+    // Simulate progress steps
+    const progressInterval = setInterval(() => {
+      setGenerationProgress(prev => {
+        if (prev >= 95) return prev;
+        return prev + 3;
+      });
+    }, 300);
 
     try {
       const url = framework 
@@ -261,14 +306,18 @@ const AzureComplianceChecker = () => {
         throw new Error(errorData.detail || 'Failed to generate checklist');
       }
 
+      setGenerationProgress(100);
       const data = await response.json();
       setChecklist(data);
       setSelectedFramework(framework);
+      setError(null);
     } catch (error) {
       console.error('Error generating checklist:', error);
       setError(error.message || 'Failed to generate compliance checklist');
     } finally {
+      clearInterval(progressInterval);
       setGeneratingChecklist(false);
+      setTimeout(() => setGenerationProgress(0), 1000);
     }
   };
 
@@ -477,12 +526,15 @@ const AzureComplianceChecker = () => {
                 <button
                   onClick={handleAnalyzeSnapshot}
                   disabled={analyzingSnapshot || checkerStatus?.status !== 'ready'}
-                  className="flex items-center gap-2 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center gap-2 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors relative overflow-hidden"
                 >
                   {analyzingSnapshot ? (
                     <>
-                      <FaSpinner className="animate-spin" />
-                      Analyzing Snapshot...
+                      <div className="absolute inset-0 bg-indigo-700" style={{ width: `${analysisProgress}%`, transition: 'width 0.3s ease' }}></div>
+                      <div className="relative z-10 flex items-center gap-3">
+                        <FaSpinner className="animate-spin" />
+                        <span>Analyzing Snapshot... {analysisProgress}%</span>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -495,6 +547,29 @@ const AzureComplianceChecker = () => {
                   Tip: Upload a detailed configuration file for deeper analysis.
                 </span>
               </div>
+              {analyzingSnapshot && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Progress</span>
+                    <span className="font-semibold">{analysisProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <motion.div
+                      className="bg-indigo-600 h-2.5 rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${analysisProgress}%` }}
+                      transition={{ duration: 0.3, ease: "easeOut" }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    {analysisProgress < 25 && <span>📤 Processing snapshot data...</span>}
+                    {analysisProgress >= 25 && analysisProgress < 50 && <span>📄 Extracting configuration...</span>}
+                    {analysisProgress >= 50 && analysisProgress < 75 && <span>🔍 Analyzing compliance...</span>}
+                    {analysisProgress >= 75 && analysisProgress < 95 && <span>📊 Checking frameworks...</span>}
+                    {analysisProgress >= 95 && <span>✅ Finalizing analysis...</span>}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -561,12 +636,15 @@ const AzureComplianceChecker = () => {
             <button
               onClick={handleAnalyze}
               disabled={!file || analyzing || checkerStatus?.status !== 'ready'}
-              className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 relative overflow-hidden"
             >
               {analyzing ? (
                 <>
-                  <FaSpinner className="animate-spin" />
-                  Analyzing...
+                  <div className="absolute inset-0 bg-blue-700" style={{ width: `${analysisProgress}%`, transition: 'width 0.3s ease' }}></div>
+                  <div className="relative z-10 flex items-center gap-3">
+                    <FaSpinner className="animate-spin" />
+                    <span>Analyzing Document... {analysisProgress}%</span>
+                  </div>
                 </>
               ) : (
                 <>
@@ -575,6 +653,31 @@ const AzureComplianceChecker = () => {
                 </>
               )}
             </button>
+            
+            {analyzing && (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-sm text-gray-600">
+                  <span>Progress</span>
+                  <span className="font-semibold">{analysisProgress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                  <motion.div
+                    className="bg-blue-600 h-2.5 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${analysisProgress}%` }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  {analysisProgress < 25 && <span>📤 Uploading document...</span>}
+                  {analysisProgress >= 25 && analysisProgress < 40 && <span>📄 Extracting text...</span>}
+                  {analysisProgress >= 40 && analysisProgress < 60 && <span>⚙️ Processing content...</span>}
+                  {analysisProgress >= 60 && analysisProgress < 80 && <span>🔍 Analyzing compliance...</span>}
+                  {analysisProgress >= 80 && analysisProgress < 95 && <span>📊 Checking frameworks...</span>}
+                  {analysisProgress >= 95 && <span>✅ Finalizing report...</span>}
+                </div>
+              </div>
+            )}
 
             {/* Error Display */}
             {error && (
@@ -903,7 +1006,7 @@ const AzureComplianceChecker = () => {
               exit={{ opacity: 0, y: -20 }}
               className="mt-6 bg-white rounded-2xl shadow-lg p-6"
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6 space-y-4">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                     <FaListAlt className="text-blue-600" />
@@ -913,21 +1016,22 @@ const AzureComplianceChecker = () => {
                     Generate an actionable checklist to achieve full compliance based on identified gaps
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <span className="text-sm font-medium text-gray-700">Generate Checklist:</span>
                   {Object.keys(analysis.frameworks || {}).map((fw) => (
                     <button
                       key={fw}
                       onClick={() => handleGenerateChecklist(fw)}
                       disabled={generatingChecklist}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 text-sm"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium shadow-sm hover:shadow-md"
                     >
-                      {fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()}
+                      {fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27017' ? 'ISO 27017' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()}
                     </button>
                   ))}
                   <button
                     onClick={() => handleGenerateChecklist()}
                     disabled={generatingChecklist}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-300 text-sm"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium shadow-sm hover:shadow-md"
                   >
                     {generatingChecklist ? (
                       <>
@@ -947,28 +1051,29 @@ const AzureComplianceChecker = () => {
                   animate={{ opacity: 1 }}
                   className="mt-6"
                 >
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="space-y-4 mb-6 pb-4 border-b border-gray-200">
                     <div>
                       <p className="text-lg font-semibold text-gray-900">
                         {checklist.total_items} Actionable Items
                       </p>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 mt-1">
                         Frameworks: {checklist.frameworks.map(fw => 
-                          fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()
+                          fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27017' ? 'ISO 27017' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()
                         ).join(', ')}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm font-medium text-gray-700">Export Options:</span>
                       <button
                         onClick={exportChecklistToCSV}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm hover:shadow-md font-medium"
                       >
                         <FaDownload />
                         Export CSV
                       </button>
                       <button
                         onClick={exportChecklistToPDF}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm hover:shadow-md font-medium"
                       >
                         <FaFilePdf />
                         Export PDF
@@ -1119,6 +1224,39 @@ const AzureComplianceChecker = () => {
                 </motion.div>
               )}
 
+              {generatingChecklist && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-center py-12 space-y-6"
+                >
+                  <div className="relative inline-block">
+                    <FaListAlt className="text-6xl mx-auto mb-4 text-blue-600 opacity-20" />
+                    <FaSpinner className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl text-blue-600 animate-spin" />
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-3">
+                      <span className="text-2xl font-bold text-blue-600">{generationProgress}%</span>
+                      <span className="text-gray-600">Generating Checklist...</span>
+                    </div>
+                    <div className="w-full max-w-md mx-auto bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <motion.div
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 h-3 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${generationProgress}%` }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                      {generationProgress < 30 && <span>📋 Preparing checklist structure...</span>}
+                      {generationProgress >= 30 && generationProgress < 60 && <span>🔍 Analyzing compliance gaps...</span>}
+                      {generationProgress >= 60 && generationProgress < 90 && <span>✍️ Generating actionable items...</span>}
+                      {generationProgress >= 90 && <span>✅ Finalizing checklist...</span>}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              
               {!checklist && !generatingChecklist && (
                 <div className="text-center py-8 text-gray-500">
                   <FaListAlt className="text-4xl mx-auto mb-3 opacity-30" />

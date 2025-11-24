@@ -80,7 +80,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     token = credentials.credentials
     
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # Decode token and get role first to check if expiration should be ignored
+        payload_unverified = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"verify_exp": False})
+        role = payload_unverified.get("role")
+        
+        # For superadmin, admin, compliance_team, it_team, and management_team, ignore expiration
+        # For other roles, verify expiration normally
+        if role in ("superadmin", "admin", "compliance_team", "it_team", "management_team"):
+            payload = payload_unverified  # Use unverified payload (expiration ignored)
+        else:
+            # Verify expiration for other roles
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(

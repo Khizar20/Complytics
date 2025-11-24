@@ -36,16 +36,18 @@ class ComplianceExtractor:
         """
         primary_from_env = os.getenv("GOOGLE_API_KEY1")
         fallback_from_env = os.getenv("GOOGLE_API_KEY2")
+        key3_from_env = os.getenv("GOOGLE_API_KEY3")
+        key4_from_env = os.getenv("GOOGLE_API_KEY4")
 
         self._gemini_keys: List[str] = []
-        for candidate in (api_key, primary_from_env, fallback_from_env):
+        for candidate in (api_key, primary_from_env, fallback_from_env, key3_from_env, key4_from_env):
             if candidate:
                 value = candidate.strip()
                 if value and value not in self._gemini_keys:
                     self._gemini_keys.append(value)
 
         if not self._gemini_keys:
-            raise ValueError("Google API key is required. Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2) environment variables.")
+            raise ValueError("Google API key is required. Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4) environment variables.")
 
         self._active_key_index: Optional[int] = None
         self.model: Optional[genai.GenerativeModel] = None

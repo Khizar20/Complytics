@@ -54,247 +54,8 @@ import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { buildApiUrl } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
+import FormattedResponse from '@/components/ui/FormattedResponse';
 
-// Formatted response component
-const FormattedResponse = ({ content }) => {
-  const theme = useTheme();
-
-  const preprocessContent = (text) => {
-    if (!text) return ''; // Return empty string if text is undefined or null
-    
-    // First, handle special cases to avoid conflicts
-    let processedText = text
-      // Handle URLs with fragments
-      .replace(/(https?:\/\/[^\s#]+)#([^\s]+)/g, '$1%23$2')
-      // Handle multiplication in code
-      .replace(/(\d+)\s*\*\s*(\d+)/g, '$1×$2')
-      // Handle wildcards in code
-      .replace(/\*\.([a-zA-Z]+)/g, '*.$1')
-      // Handle comments
-      .replace(/\/\/\s*#/g, '//%23')
-      .replace(/\/\*\s*#/g, '/*%23');
-
-    // Clean up standalone hashtags and malformed markdown
-    processedText = processedText
-      // Remove standalone hashtags on their own lines
-      .replace(/^#+\s*$/gm, '')
-      // Remove multiple consecutive empty lines
-      .replace(/\n\s*\n\s*\n+/g, '\n\n')
-      // Clean up hashtags at start of lines that don't have proper content
-      .replace(/^#+\s*([^\n]*)\n#+\s*$/gm, '## $1')
-      // Fix malformed headers - ensure space after hashtags
-      .replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
-      // Clean up repeated hashtags
-      .replace(/^#{4,}/gm, '###')
-      // Handle emojis followed by headers properly
-      .replace(/^(#{1,3})\s*([🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯])\s*/gm, '$1 $2 ')
-      // Remove empty headers (headers with only emoji or whitespace)
-      .replace(/^#{1,3}\s*([🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯]*)\s*$/gm, '');
-
-    // Then handle markdown formatting
-    processedText = processedText
-      // Headings - ensure proper spacing
-      .replace(/###\s+/g, '\n### ')
-      .replace(/##\s+/g, '\n## ')
-      .replace(/#\s+/g, '\n# ')
-      // Bold and italic
-      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      // Download links - special handling for /api/compliance/download/ links
-      .replace(/\[([^\]]+)\]\((\/api\/compliance\/download\/[^)]+)\)/g, (_match, label, path) => `<a href="${buildApiUrl(path)}" download style="color: #1976d2; text-decoration: none; font-weight: 600; background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); padding: 8px 16px; border-radius: 8px; color: white; display: inline-block; margin: 4px 0; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(25, 118, 210, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(25, 118, 210, 0.3)';">${label}</a>`)
-      // Regular markdown links - convert [text](url) to clickable links
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #1976d2; text-decoration: none; font-weight: 500; border-bottom: 1px solid #1976d2; padding-bottom: 1px;">$1</a>')
-      // Evidence-based citations - highlight with green background
-      // Matches patterns like: (Legal Basis: "quote" - Source) or (Evidence: "quote" - Framework)
-      .replace(/(\((?:Legal Basis|Evidence|Source|Regulation|Framework|Based on):\s*"[^"]+"\s*(?:-\s*[^)]+)?\))/gi, '<span class="evidence-citation" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.12) 0%, rgba(129, 199, 132, 0.12) 100%); border-left: 3px solid #4CAF50; padding: 4px 8px 4px 12px; border-radius: 6px; display: inline-block; margin: 2px 0; font-size: 0.9em; color: #2E7D32; font-weight: 500; box-shadow: 0 1px 3px rgba(76, 175, 80, 0.1);">$1</span>')
-      // Bullet points
-      .replace(/\*\s+/g, '\n* ')
-      .replace(/-\s+/g, '\n- ')
-      // Dividers
-      .replace(/\n\*\*\*\n/g, '\n<hr/>\n')
-      // Final cleanup - remove any remaining standalone hashtags
-      .replace(/^\s*#+\s*$/gm, '')
-      // Clean up extra whitespace
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
-    return processedText;
-  };
-
-  const formatContent = (text) => {
-    if (!text) return null; // Return null if text is undefined or null
-    
-    const processedText = preprocessContent(text);
-    // Split content into sections based on headings and bullet points, but filter out empty sections
-    const sections = processedText
-      .split(/(?=#{1,3}\s[^#\s]|^[*-]\s|<hr\/>)/m)
-      .filter(section => section.trim() && section.trim() !== '#' && section.trim() !== '##' && section.trim() !== '###')
-      .map(section => section.trim())
-      .filter(section => section.length > 0);
-    
-    return sections.map((section, index) => {
-      // Handle dividers
-      if (section.trim() === '<hr/>') {
-        return (
-          <Divider 
-            key={index} 
-            sx={{ 
-              my: 3,
-              borderColor: theme.palette.divider,
-              opacity: 0.5
-            }} 
-          />
-        );
-      }
-
-      // Check if section starts with a heading - improved regex to handle emojis
-      const headingMatch = section.match(/^(#{1,3})\s+(.+?)$/m);
-      
-      if (headingMatch) {
-        const level = headingMatch[1].length;
-        const headingText = headingMatch[2].trim();
-        // Get content after the heading line
-        const contentLines = section.split('\n');
-        const content = contentLines.slice(1).join('\n').trim();
-        
-        // Only render if heading text is meaningful (not just emoji or empty)
-        if (headingText && headingText.length > 0 && headingText !== '#' && !/^[🔍📋🚨⚠️✨📝🎯📚💡🔧📊📥✅❌⭐🎉🏆🔐🛡️📈📉💼🌟⚡🎯\s]*$/.test(headingText)) {
-        return (
-          <Box key={index} sx={{ mb: 3 }}>
-            <Typography
-              variant={level === 1 ? "h4" : level === 2 ? "h5" : "h6"}
-              sx={{
-                fontFamily: 'Montserrat, sans-serif',
-                fontWeight: 600,
-                mb: 2,
-                color: theme.palette.text.primary,
-                fontSize: level === 1 ? '1.5rem' : level === 2 ? '1.25rem' : '1.1rem'
-              }}
-            >
-              {headingText}
-            </Typography>
-            {content && (
-              <Box sx={{ pl: 2 }}>
-                {formatBulletPoints(content)}
-              </Box>
-            )}
-          </Box>
-        );
-      }
-      }
-      
-      // For non-heading sections, format as bullet points or paragraphs
-      if (section.trim()) {
-        return (
-          <Box key={index} sx={{ mb: 2 }}>
-            {formatBulletPoints(section)}
-          </Box>
-        );
-      }
-      
-      return null;
-    }).filter(Boolean); // Remove any null entries
-  };
-
-  const formatBulletPoints = (text) => {
-    if (!text || !text.trim()) return null;
-    
-    // Split content into paragraphs and filter out empty ones
-    const paragraphs = text
-      .split(/\n\n+/)
-      .map(p => p.trim())
-      .filter(p => p && p.length > 0 && p !== '#' && p !== '##' && p !== '###');
-    
-    return paragraphs.map((paragraph, index) => {
-      // Skip if paragraph is just hashtags or whitespace
-      if (!paragraph || /^[#\s]*$/.test(paragraph)) {
-        return null;
-      }
-      
-      // Check if paragraph contains bullet points
-      if (paragraph.includes('* ') || paragraph.includes('- ')) {
-        const points = paragraph
-          .split(/\n/)
-          .filter(line => line.trim().startsWith('* ') || line.trim().startsWith('- '))
-          .map(line => line.trim())
-          .filter(line => line && line.length > 2); // Must have content after bullet
-        
-        if (points.length === 0) return null;
-        
-        return (
-          <List key={index} sx={{ py: 0, pl: 2 }}>
-            {points.map((point, pointIndex) => (
-              <ListItem key={pointIndex} sx={{ py: 0.5, pl: 0 }}>
-                <ListItemIcon sx={{ minWidth: 24 }}>
-                  <FiberManualRecordIcon sx={{ fontSize: 8, color: theme.palette.primary.main }} />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Typography
-                      variant="body1"
-                      sx={{
-                        fontFamily: 'DM Sans, sans-serif',
-                        lineHeight: 1.6,
-                        fontSize: '0.95rem',
-                        '& a': {
-                          cursor: 'pointer',
-                          '&:hover': {
-                            opacity: 0.8
-                          }
-                        }
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: point.replace(/^[*-]\s+/, '')
-                      }}
-                    />
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        );
-      }
-      
-      // Regular paragraph with HTML formatting
-      return (
-        <Typography
-          key={index}
-          variant="body1"
-          sx={{
-            fontFamily: 'DM Sans, sans-serif',
-            lineHeight: 1.6,
-            mb: 2,
-            fontSize: '0.95rem',
-            '& strong': {
-              fontWeight: 600,
-              color: theme.palette.text.primary
-            },
-            '& em': {
-              fontStyle: 'italic',
-              color: theme.palette.text.secondary
-            },
-            '& a': {
-              cursor: 'pointer',
-              '&:hover': {
-                opacity: 0.8
-              }
-            }
-          }}
-          dangerouslySetInnerHTML={{
-            __html: paragraph.trim()
-          }}
-        />
-      );
-    }).filter(Boolean); // Remove any null entries
-  };
-
-  return (
-    <Box sx={{ width: '100%' }}>
-      {content ? formatContent(content) : null}
-    </Box>
-  );
-};
 
 // Typing effect component
 const TypewriterText = ({ text, onComplete }) => {
@@ -1034,85 +795,105 @@ const ComplianceChat = () => {
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             position: 'relative',
-            height: '100%',
+            height: '100vh',
+            top: 0,
             boxSizing: 'border-box',
             background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.95)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
             backdropFilter: 'blur(20px)',
             border: 'none',
             borderRight: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
             boxShadow: `inset -1px 0 0 ${alpha(theme.palette.primary.main, 0.05)}`,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
           },
         }}
       >
       <Box sx={{ 
-        px: 2,
-        py: 2.2,
-        height: '80.44px',
-        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
         display: 'flex',
-        flexDirection: 'row',
-        gap: 1.5,
-        alignItems: 'center',
-        boxSizing: 'border-box'
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden'
       }}>
-        <Tooltip title="Back to Dashboard" arrow>
-          <IconButton
-            onClick={handleBackToDashboard}
+        <Box sx={{ 
+          px: 2,
+          py: 2.2,
+          height: '80.44px',
+          flexShrink: 0,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+          display: 'flex',
+          flexDirection: 'row',
+          gap: 1.5,
+          alignItems: 'center',
+          boxSizing: 'border-box'
+        }}>
+          <Tooltip title="Back to Dashboard" arrow>
+            <IconButton
+              onClick={handleBackToDashboard}
+              sx={{ 
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
+                color: theme.palette.primary.main,
+                '&:hover': {
+                  borderColor: theme.palette.primary.main,
+                  bgcolor: alpha(theme.palette.primary.main, 0.05)
+                }
+              }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+          </Tooltip>
+          <Button
+            fullWidth
+            variant="contained"
+            startIcon={<RefreshIcon />}
+            onClick={handleReset}
             sx={{ 
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`,
-              color: theme.palette.primary.main,
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+              color: 'white',
+              fontFamily: 'Montserrat, sans-serif',
+              fontWeight: 600,
+              textTransform: 'none',
+              py: 1,
+              boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
               '&:hover': {
-                borderColor: theme.palette.primary.main,
-                bgcolor: alpha(theme.palette.primary.main, 0.05)
-              }
+                background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+                boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
+                transform: 'translateY(-1px)'
+              },
+              transition: 'all 0.3s ease'
             }}
           >
-            <ArrowBackIcon />
-          </IconButton>
-        </Tooltip>
-        <Button
-          fullWidth
-          variant="contained"
-          startIcon={<RefreshIcon />}
-          onClick={handleReset}
-          sx={{ 
-            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-            color: 'white',
-            fontFamily: 'Montserrat, sans-serif',
-            fontWeight: 600,
-            textTransform: 'none',
-            py: 1,
-            boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
-            '&:hover': {
-              background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
-              boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
-              transform: 'translateY(-1px)'
+            New Chat
+          </Button>
+        </Box>
+        <Box sx={{ 
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <List sx={{ 
+            overflowY: 'auto', 
+            overflowX: 'hidden',
+            flex: 1,
+            minHeight: 0,
+            p: 2,
+            '&::-webkit-scrollbar': {
+              width: '6px',
             },
-            transition: 'all 0.3s ease'
-          }}
-        >
-          New Chat
-        </Button>
-      </Box>
-      <List sx={{ 
-        overflow: 'auto', 
-        flex: 1, 
-        p: 2,
-        '&::-webkit-scrollbar': {
-          width: '6px',
-        },
-        '&::-webkit-scrollbar-track': {
-          background: 'transparent',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          background: alpha(theme.palette.primary.main, 0.2),
-          borderRadius: '3px',
-          '&:hover': {
-            background: alpha(theme.palette.primary.main, 0.3),
-          }
-        },
-      }}>
+            '&::-webkit-scrollbar-track': {
+              background: 'transparent',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: alpha(theme.palette.primary.main, 0.2),
+              borderRadius: '3px',
+              '&:hover': {
+                background: alpha(theme.palette.primary.main, 0.3),
+              }
+            },
+          }}>
         <Typography
           variant="overline"
           sx={{
@@ -1256,7 +1037,9 @@ const ComplianceChat = () => {
               })}
           </>
         )}
-      </List>
+          </List>
+        </Box>
+      </Box>
     </Drawer>
     
     {/* Sidebar Collapse Button - Only on Desktop */}
@@ -1875,7 +1658,10 @@ const ComplianceChat = () => {
                             onComplete={() => handleTypingComplete(index)}
                           />
                         ) : (
-                          <FormattedResponse content={message.content} />
+                          <FormattedResponse 
+                            content={message.content} 
+                            textColor={message.type === 'user' ? 'white' : undefined}
+                          />
                         )}
                 {message.attachments && message.attachments.length > 0 && (
                   <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>

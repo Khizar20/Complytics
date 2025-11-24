@@ -212,11 +212,6 @@ const CTASection = () => {
               </div>
             </div>
           </div>
-          
-          <Button className="group" size="lg">
-            <span>Schedule a Demo</span>
-            <FaArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-          </Button>
         </div>
         
         <div>

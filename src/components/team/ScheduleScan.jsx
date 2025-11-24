@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner, FaGlobe, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { buildApiUrl } from '@/lib/api';
 
@@ -265,170 +265,385 @@ const ScheduleScan = () => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="space-y-6"
+      className="space-y-8"
     >
-      <h2 className="text-2xl font-bold text-foreground">Schedule Compliance Scan</h2>
-
-      <div className="p-6 bg-card rounded-xl shadow-lg">
-        <div className="flex items-center space-x-4 mb-4">
-          <FaCalendarAlt className="text-2xl text-primary" />
-          <div>
-            <h3 className="text-lg font-semibold">Schedule a One-Time Whole-Site Scan</h3>
-            <p className="text-muted-foreground">Runs comprehensive website testing on the selected date/time</p>
-          </div>
+      {/* Header Section */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Schedule Compliance Scan</h2>
+          <p className="text-muted-foreground">Schedule automated whole-site scans for your website</p>
         </div>
+      </div>
 
-        {error && (
-          <div className="mb-3 p-3 rounded bg-red-50 text-red-700 text-sm">{error}</div>
-        )}
-        {success && (
-          <div className="mb-3 p-3 rounded bg-green-50 text-green-700 text-sm">{success}</div>
-        )}
-
-        {/* URL Selection Section */}
-        <div className="mb-4 space-y-3">
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="usePreviousUrl"
-              checked={usePreviousUrl}
-              onChange={(e) => {
-                setUsePreviousUrl(e.target.checked);
-                if (e.target.checked && previousUrl) {
-                  setScheduleUrl(previousUrl);
-                } else if (!e.target.checked) {
-                  setScheduleUrl('');
-                }
-              }}
-              className="rounded border-border"
-            />
-            <label htmlFor="usePreviousUrl" className="text-sm font-medium text-foreground">
-              Use previously scanned website
-            </label>
-          </div>
-          
-          {usePreviousUrl ? (
-            previousUrl ? (
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">Previous Website:</p>
-                <p className="text-sm text-blue-800 dark:text-blue-200 break-all">{previousUrl}</p>
-              </div>
-            ) : (
-              <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  No previous website found. Please uncheck the option above and enter a URL manually.
-                </p>
-              </div>
-            )
-          ) : (
+      {/* Schedule Form Card */}
+      <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
+        {/* Card Header */}
+        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-5 border-b border-border">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <FaCalendarAlt className="text-xl text-primary" />
+            </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                Website URL
-              </label>
-              <input
-                type="text"
-                value={scheduleUrl}
-                onChange={(e) => setScheduleUrl(e.target.value)}
-                placeholder="https://example.com"
-                className="w-full px-3 py-2 border border-border rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              />
+              <h3 className="text-xl font-semibold text-foreground">Schedule a One-Time Whole-Site Scan</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Runs comprehensive website testing on the selected date/time</p>
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-          <div className="md:col-span-2">
-            <label className="block text-sm mb-1">Date & Time</label>
-            <input
-              type="datetime-local"
-              value={runAt}
-              onChange={(e) => setRunAt(e.target.value)}
-              className="w-full p-2 border border-border rounded"
-            min={minDateTimeLocal()}
-            />
-          </div>
-          <div>
-            <button
-              disabled={loading}
-              onClick={handleSchedule}
-              className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center justify-center gap-2"
+        {/* Card Body */}
+        <div className="p-6 space-y-6">
+          {/* Alert Messages */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start space-x-3 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
             >
-              <FaClock /> {loading ? 'Scheduling...' : 'Schedule Scan'}
-            </button>
-          <button
-            disabled={scanNowLoading}
-            onClick={handleScanNow}
-            className="mt-2 w-full px-4 py-2 border border-border rounded-lg hover:bg-secondary flex items-center justify-center gap-2"
-          >
-            {scanNowLoading ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now (Whole-Site)'}
-          </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-6 bg-card rounded-xl shadow-lg">
-        <div className="flex items-center space-x-4 mb-4">
-          <FaList className="text-2xl text-primary" />
-          <div>
-            <h3 className="text-lg font-semibold">Scheduled Scans</h3>
-            <p className="text-muted-foreground">Upcoming schedules</p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {schedules.length === 0 && (
-            <div className="text-sm text-muted-foreground">No schedules.</div>
+              <FaExclamationCircle className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300 flex-1">{error}</p>
+            </motion.div>
           )}
-          {schedules.map((s) => (
-            <div key={s._id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-              <div className="flex-1">
-                <div className="text-sm font-medium">{formatUtc(s.scheduled_for)}</div>
-                <div className="text-xs text-muted-foreground">Status: {s.status}</div>
-                {s.url && (
-                  <div className="text-xs text-muted-foreground mt-1 break-all">
-                    URL: {s.url}
-                  </div>
-                )}
-              </div>
-              {s.status === 'scheduled' && (
-                <button
-                  onClick={() => handleCancel(s._id)}
-                  className="px-3 py-2 border border-border rounded hover:bg-secondary flex items-center gap-2"
-                >
-                  <FaTrash /> Cancel
-                </button>
-              )}
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start space-x-3 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+            >
+              <FaCheckCircle className="text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-green-700 dark:text-green-300 flex-1">{success}</p>
+            </motion.div>
+          )}
+
+          {/* URL Selection Section */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="usePreviousUrl"
+                checked={usePreviousUrl}
+                onChange={(e) => {
+                  setUsePreviousUrl(e.target.checked);
+                  if (e.target.checked && previousUrl) {
+                    setScheduleUrl(previousUrl);
+                  } else if (!e.target.checked) {
+                    setScheduleUrl('');
+                  }
+                }}
+                className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
+              />
+              <label htmlFor="usePreviousUrl" className="text-sm font-medium text-foreground cursor-pointer">
+                Use previously scanned website
+              </label>
             </div>
-          ))}
-        </div>
-      </div>
-      {showScanNowModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md p-6 bg-card rounded-xl shadow-xl border border-border">
-            <h3 className="text-lg font-semibold mb-2">Enter Website URL</h3>
-            <p className="text-sm text-muted-foreground mb-4">No previous website found. Provide your site URL to run a comprehensive whole-site scan now.</p>
-            {modalError && (
-              <div className="mb-3 p-3 rounded bg-red-50 text-red-700 text-sm">{modalError}</div>
+            
+            {usePreviousUrl ? (
+              previousUrl ? (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+                >
+                  <div className="flex items-start space-x-2">
+                    <FaGlobe className="text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 uppercase tracking-wide">Previous Website</p>
+                      <p className="text-sm text-blue-800 dark:text-blue-200 break-all font-mono">{previousUrl}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
+                >
+                  <div className="flex items-start space-x-2">
+                    <FaExclamationCircle className="text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300 flex-1">
+                      No previous website found. Please uncheck the option above and enter a URL manually.
+                    </p>
+                  </div>
+                </motion.div>
+              )
+            ) : (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-2"
+              >
+                <label className="block text-sm font-semibold text-foreground">
+                  Website URL
+                </label>
+                <div className="relative">
+                  <FaGlobe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                  <input
+                    type="text"
+                    value={scheduleUrl}
+                    onChange={(e) => setScheduleUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  />
+                </div>
+              </motion.div>
             )}
-            <input
-              value={modalUrl}
-              onChange={(e) => setModalUrl(e.target.value)}
-              placeholder="https://example.com"
-              className="w-full px-3 py-2 border border-border rounded mb-4"
-            />
-            <div className="flex items-center justify-end gap-2">
-              <button onClick={() => { setShowScanNowModal(false); setModalUrl(''); setModalError(null); }} className="px-3 py-2 border border-border rounded">Cancel</button>
-              <button onClick={submitScanNowWithUrl} disabled={modalSubmitting} className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 flex items-center gap-2">
-                {modalSubmitting ? (<><FaSpinner className="animate-spin" /> Scanning…</>) : 'Scan Now (Whole-Site)'}
+          </div>
+
+          {/* Date/Time and Actions */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-4 border-t border-border">
+            <div className="lg:col-span-2 space-y-2">
+              <label className="block text-sm font-semibold text-foreground">
+                Date & Time
+              </label>
+              <div className="relative">
+                <FaClock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                <input
+                  type="datetime-local"
+                  value={runAt}
+                  onChange={(e) => setRunAt(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  min={minDateTimeLocal()}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                disabled={loading}
+                onClick={handleSchedule}
+                className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-all shadow-sm hover:shadow-md"
+              >
+                {loading ? (
+                  <>
+                    <FaSpinner className="animate-spin" />
+                    <span>Scheduling...</span>
+                  </>
+                ) : (
+                  <>
+                    <FaClock />
+                    <span>Schedule Scan</span>
+                  </>
+                )}
+              </button>
+              <button
+                disabled={scanNowLoading}
+                onClick={handleScanNow}
+                className="w-full px-6 py-3 border-2 border-border rounded-lg hover:bg-secondary/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-all"
+              >
+                {scanNowLoading ? (
+                  <>
+                    <FaSpinner className="animate-spin" />
+                    <span>Scanning…</span>
+                  </>
+                ) : (
+                  <>
+                    <FaGlobe />
+                    <span>Scan Now</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
-      )}
-      {showSuccessPopup && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg">
-          Whole-site scan completed successfully.
+      </div>
+
+      {/* Scheduled Scans List Card */}
+      <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
+        {/* Card Header */}
+        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-5 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <FaList className="text-xl text-primary" />
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-foreground">Scheduled Scans</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">Manage your upcoming scans</p>
+              </div>
+            </div>
+            {schedules.length > 0 && (
+              <div className="px-3 py-1 bg-primary/10 rounded-full">
+                <span className="text-sm font-semibold text-primary">{schedules.length}</span>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Card Body */}
+        <div className="p-6">
+          {schedules.length === 0 ? (
+            <div className="text-center py-12">
+              <FaList className="text-4xl text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-muted-foreground font-medium">No scheduled scans</p>
+              <p className="text-sm text-muted-foreground mt-1">Schedule your first scan above to get started</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {schedules.map((s, index) => (
+                <motion.div
+                  key={s._id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:border-primary/30 hover:shadow-sm transition-all bg-background/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="p-1.5 bg-primary/10 rounded">
+                        <FaClock className="text-primary text-xs" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-foreground truncate">
+                          {formatUtc(s.scheduled_for)}
+                        </div>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            s.status === 'scheduled' 
+                              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                          }`}>
+                            {s.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {s.url && (
+                      <div className="ml-8 mt-2 flex items-start space-x-2">
+                        <FaGlobe className="text-muted-foreground text-xs mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-muted-foreground break-all font-mono">{s.url}</p>
+                      </div>
+                    )}
+                  </div>
+                  {s.status === 'scheduled' && (
+                    <button
+                      onClick={() => handleCancel(s._id)}
+                      className="ml-4 px-4 py-2 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors font-medium text-sm"
+                    >
+                      <FaTrash className="text-xs" />
+                      <span>Cancel</span>
+                    </button>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Scan Now Modal */}
+      {showScanNowModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => {
+            if (!modalSubmitting) {
+              setShowScanNowModal(false);
+              setModalUrl('');
+              setModalError(null);
+            }
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-card rounded-xl shadow-2xl border border-border overflow-hidden"
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-4 border-b border-border">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <FaGlobe className="text-xl text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Enter Website URL</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">No previous website found</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Provide your site URL to run a comprehensive whole-site scan now.
+              </p>
+              
+              {modalError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-start space-x-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+                >
+                  <FaExclamationCircle className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-red-700 dark:text-red-300 flex-1">{modalError}</p>
+                </motion.div>
+              )}
+              
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-foreground">
+                  Website URL
+                </label>
+                <div className="relative">
+                  <FaGlobe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                  <input
+                    value={modalUrl}
+                    onChange={(e) => setModalUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !modalSubmitting && modalUrl.trim()) {
+                        submitScanNowWithUrl();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-muted/30 border-t border-border flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowScanNowModal(false);
+                  setModalUrl('');
+                  setModalError(null);
+                }}
+                disabled={modalSubmitting}
+                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitScanNowWithUrl}
+                disabled={modalSubmitting || !modalUrl.trim()}
+                className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all shadow-sm hover:shadow-md font-medium"
+              >
+                {modalSubmitting ? (
+                  <>
+                    <FaSpinner className="animate-spin" />
+                    <span>Scanning…</span>
+                  </>
+                ) : (
+                  <>
+                    <FaGlobe />
+                    <span>Scan Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Success Popup */}
+      {showSuccessPopup && (
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          className="fixed bottom-6 right-6 z-50 px-6 py-4 bg-green-600 text-white rounded-lg shadow-xl flex items-center space-x-3 max-w-md"
+        >
+          <FaCheckCircle className="text-xl flex-shrink-0" />
+          <p className="font-medium">Whole-site scan completed successfully.</p>
+        </motion.div>
       )}
     </motion.div>
   );

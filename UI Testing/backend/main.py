@@ -110,6 +110,7 @@ async def on_startup() -> None:
     # Configure Gemini once (no-op if key missing)
     primary_key = os.getenv("GOOGLE_API_KEY1")
     fallback_key = os.getenv("GOOGLE_API_KEY2")
+    # Note: configure_gemini will also read GOOGLE_API_KEY3 and GOOGLE_API_KEY4 from environment
     configure_gemini(primary_key, fallback_key)
     logger.info(
         "Application startup complete. Gemini configured=%s",

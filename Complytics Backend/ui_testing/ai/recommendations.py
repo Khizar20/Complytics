@@ -69,6 +69,8 @@ def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[
         fallback_api_key,
         os.getenv("GOOGLE_API_KEY1"),
         os.getenv("GOOGLE_API_KEY2"),
+        os.getenv("GOOGLE_API_KEY3"),
+        os.getenv("GOOGLE_API_KEY4"),
     ):
         if key:
             value = key.strip()
@@ -81,7 +83,7 @@ def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[
 
     if not _GEMINI_KEYS:
         logger.warning(
-            "Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)"
+            "Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4)"
         )
         return
 
@@ -235,7 +237,7 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
     if not gemini_ready and not agentic_enabled:
         logger.warning("AI recommendations requested but Gemini is not configured")
         return (
-            "Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2) to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.",
+            "Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4) to enable AI recommendations. Meanwhile, prioritize fixing Critical and Serious WCAG issues and add security headers like Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.",
             "none",
             "none",
         )

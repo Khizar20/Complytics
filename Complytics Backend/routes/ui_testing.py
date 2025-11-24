@@ -160,6 +160,29 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
             if not url:
                 # No previous scans to re-use
                 await database.db.scheduled_scans.update_one({"_id": ObjectId(schedule_id)}, {"$set": {"status": "failed", "error": "No previous scan URL found", "updated_at": int(time.time())}})
+                
+                # Create activity log for failed scheduled scan
+                try:
+                    if database.db is not None:
+                        activity_log = {
+                            'user_id': requested_by,
+                            'user_email': email_to,
+                            'organization_id': org_id,
+                            'activity_type': 'schedule_scan',
+                            'activity_label': 'Scheduled Scan Failed',
+                            'description': f"Scheduled scan failed: No previous scan URL found",
+                            'status': 'failed',
+                            'details': {
+                                'schedule_id': schedule_id,
+                                'error': 'No previous scan URL found'
+                            },
+                            'timestamp': datetime.utcnow(),
+                            'icon': '❌'
+                        }
+                        await database.db.activity_logs.insert_one(activity_log)
+                except Exception as e:
+                    logger.error(f"Error creating activity log for failed scheduled scan: {e}")
+                
                 return
 
         # Execute whole-site scan (comprehensive testing)
@@ -230,8 +253,69 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
             except Exception as e:
                 logger.error(f"Failed to persist scheduled site scan result: {e}")
             
+            # Create activity log for scheduled scan execution
+            try:
+                if database.db is not None:
+                    summary = result.get("summary", {})
+                    pages_scanned = summary.get("pages_scanned", 0)
+                    a11y_score = summary.get("accessibility_score")
+                    security_agg = result.get("security_aggregate", {})
+                    security_primary = security_agg.get("primary_scan", {})
+                    security_headers = security_primary.get("securityheaders", {})
+                    security_score = security_headers.get("score") if security_headers else None
+                    
+                    activity_log = {
+                        'user_id': requested_by,
+                        'user_email': email_to,
+                        'organization_id': org_id,
+                        'activity_type': 'schedule_scan',
+                        'activity_label': 'Scheduled Scan Executed',
+                        'description': f"Executed scheduled whole-site scan on {url} - {pages_scanned} pages scanned",
+                        'status': 'success',
+                        'details': {
+                            'schedule_id': schedule_id,
+                            'url': url,
+                            'scan_mode': 'all',
+                            'pages_scanned': pages_scanned,
+                            'accessibility_score': a11y_score,
+                            'security_score': security_score,
+                            'executed_at': datetime.utcnow().isoformat()
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'icon': '✅'
+                    }
+                    await database.db.activity_logs.insert_one(activity_log)
+                    logger.info(f"Activity log created for scheduled scan execution: {schedule_id}")
+            except Exception as e:
+                logger.error(f"Error creating activity log for scheduled scan execution: {e}")
+            
         except Exception as e:
             logger.error(f"Scheduled whole-site scan failed: {e}")
+            
+            # Create activity log for failed scheduled scan execution
+            try:
+                if database.db is not None:
+                    doc = await database.db.scheduled_scans.find_one({"_id": ObjectId(schedule_id)})
+                    activity_log = {
+                        'user_id': doc.get("scheduled_by") if doc else requested_by,
+                        'user_email': doc.get("email") if doc else email_to,
+                        'organization_id': org_id,
+                        'activity_type': 'schedule_scan',
+                        'activity_label': 'Scheduled Scan Failed',
+                        'description': f"Scheduled scan execution failed: {str(e)[:100]}",
+                        'status': 'failed',
+                        'details': {
+                            'schedule_id': schedule_id,
+                            'url': doc.get("url") if doc else url,
+                            'error': str(e)[:200]
+                        },
+                        'timestamp': datetime.utcnow(),
+                        'icon': '❌'
+                    }
+                    await database.db.activity_logs.insert_one(activity_log)
+            except Exception as log_error:
+                logger.error(f"Error creating activity log for failed scheduled scan: {log_error}")
+            
             # Fallback to single-page scan if whole-site scan fails
             logger.info("Falling back to single-page scan...")
             result = await _run_scan_and_persist(url=url, mode=ScanMode.all, org_id=org_id, requested_by=requested_by)
@@ -400,10 +484,44 @@ async def scan(payload: ScanRequest, user=Depends(get_current_user)) -> Dict[str
     def _compute_security_score(s: Dict[str, Any]) -> int:
         try:
             sh = (s or {}).get("securityheaders") or {}
+            ssl = (s or {}).get("ssllabs") or {}
+            
+            # If SecurityHeaders provides a score, use it as base (0-100 scale)
+            base_score = None
             if isinstance(sh.get("score"), (int, float)):
-                return int(sh["score"])  # SecurityHeaders may return numeric score
-            missing = len((sh.get("missing") or []))
-            return max(0, 100 - missing * 15)
+                base_score = int(sh["score"])
+            
+            # Calculate from missing headers if no base score
+            if base_score is None:
+                missing = len((sh.get("missing") or []))
+                # Headers are worth 60% of total score (60 points max)
+                base_score = max(0, 60 - missing * 10)  # -10 points per missing header
+            
+            # SSL/TLS grade contributes 40% of total score (40 points max)
+            ssl_score = 0
+            endpoints = ssl.get("endpoints") if isinstance(ssl.get("endpoints"), list) else []
+            ssl_grade = (endpoints[0].get("grade") if endpoints else ssl.get("grade")) or ""
+            
+            if ssl_grade:
+                # Map SSL grades to points (A+ = 40, A = 35, B = 25, C = 15, D = 5, F = 0)
+                grade_map = {
+                    "A+": 40,
+                    "A": 35,
+                    "B": 25,
+                    "C": 15,
+                    "D": 5,
+                    "F": 0,
+                    "T": 0,  # Trust issues
+                    "M": 0,  # Certificate problems
+                }
+                ssl_score = grade_map.get(ssl_grade.upper(), 0)
+            else:
+                # If no SSL grade available, assume neutral (20 points)
+                ssl_score = 20
+            
+            # Total score = headers (60%) + SSL (40%)
+            total_score = base_score + ssl_score
+            return max(0, min(100, total_score))
         except Exception:
             return 0
     result = {
@@ -584,6 +702,33 @@ async def schedule_scan(payload: ScheduleScanRequest, user=Depends(get_current_u
     if SCHEDULER.get_job(schedule_id) is None:
         SCHEDULER.add_job(_execute_scheduled_scan, trigger=DateTrigger(run_date=run_date), id=schedule_id, args=[schedule_id])
 
+    # Create activity log for schedule scan creation
+    try:
+        if database.db is not None:
+            scheduled_for_str = run_at_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+            activity_log = {
+                'user_id': getattr(user, 'id', None) or getattr(user, '_id', None),
+                'user_email': getattr(user, 'email', None),
+                'organization_id': org_id,
+                'activity_type': 'schedule_scan',
+                'activity_label': 'Scan Scheduled',
+                'description': f"Scheduled whole-site scan for {scheduled_for_str}" + (f" on {payload.url}" if payload.url else " (using previous URL)"),
+                'status': 'success',
+                'details': {
+                    'schedule_id': schedule_id,
+                    'scheduled_for': run_ts,
+                    'scheduled_for_readable': scheduled_for_str,
+                    'url': payload.url if payload.url else 'previous_url',
+                    'status': 'scheduled'
+                },
+                'timestamp': datetime.utcnow(),
+                'icon': '📅'
+            }
+            await database.db.activity_logs.insert_one(activity_log)
+            logger.info(f"Activity log created for schedule scan: {schedule_id}")
+    except Exception as e:
+        logger.error(f"Error creating activity log for schedule scan: {e}")
+
     return {"id": schedule_id, "scheduled_for": run_ts, "status": "scheduled"}
 
 
@@ -653,107 +798,367 @@ async def get_latest_ui_result(user=Depends(get_current_user)) -> Dict[str, Any]
 @router.post("/ui/export/pdf")
 async def export_pdf(payload: ScanRequest, user=Depends(get_current_user)) -> StreamingResponse:
     from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+    from datetime import datetime
+    import textwrap
 
     url = _normalize_url((payload.url or "").strip())
     mode = payload.mode or ScanMode.all
-    res = _get_cached_scan(url, mode)
-    if res is None:
-        res = await scan(payload, user)
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    # Header
-    c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(40, height - 50, "UI Compliance Report")
-    c.setFont("Helvetica", 10)
-    c.drawString(40, height - 68, f"URL: {url}")
-    c.drawString(300, height - 68, f"Mode: {mode}")
-    c.line(40, height - 75, width - 40, height - 75)
-
-    # Metrics
-    a11y_score = res.get("a11y_score")
-    security_score = res.get("security_score")
-    ssl = (res.get("security_results") or {}).get("ssllabs") or {}
-    endpoints = ssl.get("endpoints") if isinstance(ssl.get("endpoints"), list) else []
-    ssl_grade = (endpoints[0].get("grade") if endpoints else ssl.get("grade")) or ""
-    wcag = (res.get("wcag_results") or {})
-    violations = wcag.get("violations") or []
-    counts = {"critical": 0, "serious": 0, "moderate": 0, "minor": 0, "unknown": 0}
-    for v in violations:
-        imp = str(v.get("impact", "")).lower()
-        if imp in counts:
-            counts[imp] += 1
+    
+    # Try to get results from database first (whole-site scan)
+    res = None
+    is_site_scan = False
+    
+    if database.db is not None:
+        # Check for whole-site scan results first
+        site_doc = await database.db.ui_testing_site_results.find_one(
+            {
+                "organization_id": user.organization_id,
+                "url": url,
+                "mode": mode.value
+            },
+            sort=[("created_at", -1)]
+        )
+        
+        if site_doc and site_doc.get("result"):
+            res = site_doc.get("result")
+            is_site_scan = True
+            logger.info(f"Using cached whole-site scan results from DB for export")
         else:
-            counts["unknown"] += 1
+            # Check for single-page scan results
+            single_doc = await database.db.ui_testing_results.find_one(
+                {
+                    "organization_id": user.organization_id,
+                    "url": url,
+                    "mode": mode.value
+                },
+                sort=[("created_at", -1)]
+            )
+            
+            if single_doc and single_doc.get("result"):
+                res = single_doc.get("result")
+                logger.info(f"Using cached single-page scan results from DB for export")
+    
+    # Fallback to in-memory cache
+    if res is None:
+        res = _get_cached_scan(url, mode)
+    
+    # Last resort: run new scan (should rarely happen)
+    if res is None:
+        logger.warning(f"No cached results found for export, running new scan")
+        res = await scan(payload, user)
+    # Extract data based on scan type (whole-site vs single-page)
+    if is_site_scan:
+        # Whole-site scan data structure
+        summary = res.get("summary", {})
+        wcag_agg = res.get("wcag_aggregate", {})
+        security_agg = res.get("security_aggregate", {})
+        
+        a11y_score = summary.get("accessibility_score")
+        pages_scanned = summary.get("pages_scanned", 0)
+        pages_discovered = summary.get("pages_discovered", 0)
+        
+        # Security data
+        security_primary = security_agg.get("primary_scan", {})
+        security_score = None
+        ssl_data = security_primary.get("ssllabs", {})
+        endpoints = ssl_data.get("endpoints") if isinstance(ssl_data.get("endpoints"), list) else []
+        ssl_grade = (endpoints[0].get("grade") if endpoints else ssl_data.get("grade")) or ""
+        
+        # WCAG violations
+        violations_summary = wcag_agg.get("violations_summary", [])
+        impact_counts = wcag_agg.get("impact_counts", {})
+        counts = {
+            "critical": impact_counts.get("critical", 0),
+            "serious": impact_counts.get("serious", 0),
+            "moderate": impact_counts.get("moderate", 0),
+            "minor": impact_counts.get("minor", 0),
+            "unknown": 0
+        }
+        
+        # Security headers
+        security_headers = security_primary.get("securityheaders", {})
+        if security_headers:
+            missing_headers = security_headers.get("missing", [])
+            security_score = security_headers.get("score")
+            if security_score is None:
+                security_score = max(0, 100 - len(missing_headers) * 15)
+    else:
+        # Single-page scan data structure
+        a11y_score = res.get("a11y_score")
+        security_score = res.get("security_score")
+        ssl = (res.get("security_results") or {}).get("ssllabs") or {}
+        endpoints = ssl.get("endpoints") if isinstance(ssl.get("endpoints"), list) else []
+        ssl_grade = (endpoints[0].get("grade") if endpoints else ssl.get("grade")) or ""
+        wcag = (res.get("wcag_results") or {})
+        violations = wcag.get("violations") or []
+        violations_summary = violations[:20]  # Limit for display
+        counts = {"critical": 0, "serious": 0, "moderate": 0, "minor": 0, "unknown": 0}
+        for v in violations:
+            imp = str(v.get("impact", "")).lower()
+            if imp in counts:
+                counts[imp] += 1
+            else:
+                counts["unknown"] += 1
+        pages_scanned = 1
+        pages_discovered = 1
 
-    y = height - 110
-    def section(title, color):
-        nonlocal y
-        c.setFillColor(color)
-        c.rect(40, y - 18, width - 80, 20, fill=1, stroke=0)
-        c.setFillColor(colors.white)
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(48, y - 14, title)
-        y -= 30
-        c.setFillColor(colors.black)
-
-    # Security section (when selected)
-    if mode in (ScanMode.all, ScanMode.security):
-        section("Security Summary", colors.darkgreen)
-        c.setFont("Helvetica", 10)
-        c.drawString(48, y, f"Security Score: {security_score if isinstance(security_score, int) else '—'}")
-        y -= 14
-        c.drawString(48, y, f"SSL Labs Grade: {ssl_grade or '—'}")
-        y -= 18
-        # Findings (top items)
-        sec_findings = (res.get("findings", {}) or {}).get("security", [])
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(48, y, "Top Security Findings:")
-        y -= 14
-        c.setFont("Helvetica", 10)
-        for it in sec_findings[:12]:
-            line = f"- [{it.get('severity')}] {it.get('title')}"
-            c.drawString(52, y, line[:110])
-            y -= 12
-            if y < 80:
-                c.showPage(); y = height - 80
-
-    # Accessibility section (when selected)
+    # Create PDF with professional formatting
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                            rightMargin=72, leftMargin=72,
+                            topMargin=72, bottomMargin=72)
+    
+    # Professional color scheme
+    primary_color = colors.HexColor('#1e40af')  # Blue
+    secondary_color = colors.HexColor('#059669')  # Green
+    accent_color = colors.HexColor('#dc2626')  # Red
+    warning_color = colors.HexColor('#f59e0b')  # Orange
+    dark_gray = colors.HexColor('#374151')
+    light_gray = colors.HexColor('#f3f4f6')
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=primary_color,
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=primary_color,
+        spaceAfter=12,
+        spaceBefore=20,
+        fontName='Helvetica-Bold'
+    )
+    
+    subheading_style = ParagraphStyle(
+        'CustomSubHeading',
+        parent=styles['Heading3'],
+        fontSize=12,
+        textColor=dark_gray,
+        spaceAfter=8,
+        spaceBefore=12,
+        fontName='Helvetica-Bold'
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.black,
+        spaceAfter=6,
+        leading=14
+    )
+    
+    # Build PDF content
+    story = []
+    
+    # Title
+    story.append(Paragraph("UI Compliance Testing Report", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Report metadata
+    metadata_data = [
+        ['URL:', url],
+        ['Scan Mode:', mode.value.upper()],
+        ['Scan Type:', 'Whole-Site Scan' if is_site_scan else 'Single-Page Scan'],
+        ['Date:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+    ]
+    
+    if is_site_scan:
+        metadata_data.append(['Pages Scanned:', str(pages_scanned)])
+        metadata_data.append(['Pages Discovered:', str(pages_discovered)])
+    
+    metadata_table = Table(metadata_data, colWidths=[2*inch, 4*inch])
+    metadata_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), light_gray),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    story.append(metadata_table)
+    story.append(Spacer(1, 20))
+    
+    # Summary metrics section
+    story.append(Paragraph("Executive Summary", heading_style))
+    
+    summary_data = []
     if mode in (ScanMode.all, ScanMode.accessibility):
-        section("Accessibility Summary", colors.darkblue)
-        c.setFont("Helvetica", 10)
-        c.drawString(48, y, f"Accessibility Score: {a11y_score if isinstance(a11y_score, int) else '—'}")
-        y -= 14
-        c.drawString(48, y, f"Violations: Crit {counts['critical']} • Serious {counts['serious']} • Moderate {counts['moderate']} • Minor {counts['minor']}")
-        y -= 18
-        acc_findings = (res.get("findings", {}) or {}).get("accessibility", [])
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(48, y, "Top Accessibility Findings:")
-        y -= 14
-        c.setFont("Helvetica", 10)
-        for it in acc_findings[:12]:
-            line = f"- [{it.get('severity')}] {it.get('title')}"
-            c.drawString(52, y, line[:110])
-            y -= 12
-            if y < 80:
-                c.showPage(); y = height - 80
-
-    # Recommendations
-    section("AI Recommendations", colors.grey)
-    c.setFont("Helvetica", 10)
-    rec_text = (res.get("recommendations") or "")
-    for line in (rec_text.splitlines() or ["—"]):
-        c.drawString(48, y, line[:110])
-        y -= 12
-        if y < 80:
-            c.showPage(); y = height - 80
-    c.showPage()
-    c.save()
+        summary_data.append(['Accessibility Score', str(a11y_score) if a11y_score is not None else '—'])
+        summary_data.append(['Critical Violations', str(counts['critical'])])
+        summary_data.append(['Serious Violations', str(counts['serious'])])
+        summary_data.append(['Moderate Violations', str(counts['moderate'])])
+        summary_data.append(['Minor Violations', str(counts['minor'])])
+    
+    if mode in (ScanMode.all, ScanMode.security):
+        summary_data.append(['Security Score', str(security_score) if security_score is not None else '—'])
+        if mode == ScanMode.all or mode == ScanMode.security:
+            # Calculate SSL grade fallback if needed
+            if not ssl_grade or ssl_grade == 'None':
+                missing_headers_count = len(security_headers.get("missing", [])) if security_headers else 0
+                if missing_headers_count == 0:
+                    ssl_grade = "A"
+                elif missing_headers_count <= 2:
+                    ssl_grade = "B"
+                else:
+                    ssl_grade = "C"
+            summary_data.append(['SSL Grade', ssl_grade])
+    
+    if summary_data:
+        summary_table = Table(summary_data, colWidths=[3*inch, 3*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), light_gray),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, primary_color),
+            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, light_gray]),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+    
+    # Accessibility Findings
+    if mode in (ScanMode.all, ScanMode.accessibility) and violations_summary:
+        story.append(Paragraph("Accessibility Findings", heading_style))
+        
+        findings_data = [['Severity', 'Rule ID', 'Description', 'Pages Affected']]
+        for v in violations_summary[:15]:
+            severity = v.get("impact", "unknown").upper()
+            rule_id = v.get("id", "N/A")
+            description = (v.get("description") or "")[:80] + "..." if len(v.get("description") or "") > 80 else (v.get("description") or "")
+            pages_affected = v.get("pages_affected", 0) if is_site_scan else 1
+            
+            # Color coding for severity
+            severity_color = colors.black
+            if severity == "CRITICAL":
+                severity_color = accent_color
+            elif severity == "SERIOUS":
+                severity_color = warning_color
+            elif severity == "MODERATE":
+                severity_color = warning_color
+            
+            findings_data.append([severity, rule_id, description, str(pages_affected)])
+        
+        findings_table = Table(findings_data, colWidths=[1*inch, 1.2*inch, 3*inch, 0.8*inch])
+        findings_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_gray]),
+            ('TEXTCOLOR', (0, 1), (0, -1), accent_color),  # Severity column
+        ]))
+        story.append(findings_table)
+        story.append(Spacer(1, 20))
+    
+    # Security Findings
+    if mode in (ScanMode.all, ScanMode.security):
+        story.append(Paragraph("Security Findings", heading_style))
+        
+        security_data = []
+        if security_headers:
+            missing = security_headers.get("missing", [])
+            present = security_headers.get("present", [])
+            
+            security_data.append(['Header', 'Status'])
+            for header in missing:
+                security_data.append([header, 'Missing'])
+            for header in present:
+                security_data.append([header, 'Present'])
+        
+        if security_data:
+            sec_table = Table(security_data, colWidths=[3*inch, 3*inch])
+            sec_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), secondary_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_gray]),
+                ('TEXTCOLOR', (1, 1), (1, -1), accent_color),  # Status column
+            ]))
+            story.append(sec_table)
+            story.append(Spacer(1, 20))
+    
+    # AI Recommendations
+    rec_text = res.get("recommendations") or ""
+    if rec_text:
+        story.append(PageBreak())
+        story.append(Paragraph("AI Recommendations", heading_style))
+        
+        # Process recommendations text - split by sections
+        rec_lines = rec_text.split('\n')
+        current_section = None
+        
+        for line in rec_lines:
+            line = line.strip()
+            if not line:
+                story.append(Spacer(1, 6))
+                continue
+            
+            # Check for headings
+            if line.startswith('## '):
+                current_section = line[3:].strip()
+                story.append(Paragraph(current_section, heading_style))
+            elif line.startswith('### '):
+                current_section = line[4:].strip()
+                story.append(Paragraph(current_section, subheading_style))
+            elif line.startswith('**') and line.endswith('**'):
+                # Bold text
+                bold_text = line.replace('**', '')
+                story.append(Paragraph(f"<b>{bold_text}</b>", normal_style))
+            elif line.startswith('```'):
+                # Code block - skip language identifier
+                continue
+            elif line.startswith('---'):
+                story.append(Spacer(1, 12))
+            else:
+                # Regular paragraph
+                # Clean up markdown formatting
+                clean_line = line.replace('**', '').replace('*', '')
+                if clean_line:
+                    story.append(Paragraph(clean_line, normal_style))
+        
+        story.append(Spacer(1, 20))
+    
+    # Build PDF
+    doc.build(story)
     buffer.seek(0)
-    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=ui-testing-report.pdf"})
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=ui-testing-report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pdf"})
 
 
 @router.post("/ui/export/excel")
@@ -776,76 +1181,229 @@ async def export_excel(payload: ScanRequest, user=Depends(get_current_user)) -> 
 
     url = _normalize_url((payload.url or "").strip())
     mode = payload.mode or ScanMode.all
-    res = _get_cached_scan(url, mode)
+    
+    # Try to get results from database first (whole-site scan)
+    res = None
+    is_site_scan = False
+    
+    if database.db is not None:
+        # Check for whole-site scan results first
+        site_doc = await database.db.ui_testing_site_results.find_one(
+            {
+                "organization_id": user.organization_id,
+                "url": url,
+                "mode": mode.value
+            },
+            sort=[("created_at", -1)]
+        )
+        
+        if site_doc and site_doc.get("result"):
+            res = site_doc.get("result")
+            is_site_scan = True
+            logger.info(f"Using cached whole-site scan results from DB for Excel export")
+        else:
+            # Check for single-page scan results
+            single_doc = await database.db.ui_testing_results.find_one(
+                {
+                    "organization_id": user.organization_id,
+                    "url": url,
+                    "mode": mode.value
+                },
+                sort=[("created_at", -1)]
+            )
+            
+            if single_doc and single_doc.get("result"):
+                res = single_doc.get("result")
+                logger.info(f"Using cached single-page scan results from DB for Excel export")
+    
+    # Fallback to in-memory cache
     if res is None:
+        res = _get_cached_scan(url, mode)
+    
+    # Last resort: run new scan (should rarely happen)
+    if res is None:
+        logger.warning(f"No cached results found for Excel export, running new scan")
         res = await scan(payload, user)
+    # Extract data based on scan type
+    if is_site_scan:
+        # Whole-site scan data structure
+        summary = res.get("summary", {})
+        wcag_agg = res.get("wcag_aggregate", {})
+        security_agg = res.get("security_aggregate", {})
+        
+        a11y_score = summary.get("accessibility_score")
+        pages_scanned = summary.get("pages_scanned", 0)
+        
+        # Security data
+        security_primary = security_agg.get("primary_scan", {})
+        sec_score = None
+        ssl_data = security_primary.get("ssllabs", {})
+        endpoints = ssl_data.get("endpoints") if isinstance(ssl_data.get("endpoints"), list) else []
+        ssl_grade = (endpoints[0].get("grade") if endpoints else ssl_data.get("grade")) or ""
+        
+        # WCAG violations
+        violations_summary = wcag_agg.get("violations_summary", [])
+        impact_counts = wcag_agg.get("impact_counts", {})
+        counts = {
+            "critical": impact_counts.get("critical", 0),
+            "serious": impact_counts.get("serious", 0),
+            "moderate": impact_counts.get("moderate", 0),
+            "minor": impact_counts.get("minor", 0),
+            "unknown": 0
+        }
+        
+        # Security headers
+        security_headers = security_primary.get("securityheaders", {})
+        if security_headers:
+            sec_score = security_headers.get("score")
+            if sec_score is None:
+                missing_headers_count = len(security_headers.get("missing", []))
+                sec_score = max(0, 100 - missing_headers_count * 15)
+        
+        # Convert violations_summary to DataFrame format
+        violations_for_df = []
+        for v in violations_summary:
+            violations_for_df.append({
+                "id": v.get("id"),
+                "impact": v.get("impact"),
+                "description": v.get("description"),
+                "help": v.get("help", ""),
+                "pages_affected": v.get("pages_affected", 0),
+                "total_instances": v.get("total_instances", 0)
+            })
+    else:
+        # Single-page scan data structure
+        a11y_score = res.get("a11y_score")
+        sec_score = res.get("security_score")
+        ssl = (res.get("security_results") or {}).get("ssllabs") or {}
+        endpoints = ssl.get("endpoints") if isinstance(ssl.get("endpoints"), list) else []
+        ssl_grade = (endpoints[0].get("grade") if endpoints else ssl.get("grade")) or ""
+        wcag = (res.get("wcag_results") or {})
+        violations = wcag.get("violations", [])
+        violations_for_df = violations
+        counts = {"critical": 0, "serious": 0, "moderate": 0, "minor": 0, "unknown": 0}
+        for v in violations:
+            imp = str(v.get("impact", "")).lower()
+            if imp in counts:
+                counts[imp] += 1
+            else:
+                counts["unknown"] += 1
+        pages_scanned = 1
+        security_primary = res.get("security_results", {})
+        security_headers = security_primary.get("securityheaders", {}) if security_primary else {}
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine=engine) as xw:
-        mode = payload.mode or ScanMode.all
-        # Summary sheet to mirror dashboard cards
+        # Summary sheet
         try:
-            a11y_score = res.get("a11y_score")
-            sec_score = res.get("security_score")
-            ssl = (res.get("security_results") or {}).get("ssllabs") or {}
-            endpoints = ssl.get("endpoints") if isinstance(ssl.get("endpoints"), list) else []
-            ssl_grade = (endpoints[0].get("grade") if endpoints else ssl.get("grade")) or ""
-            wcag = (res.get("wcag_results") or {})
-            violations = wcag.get("violations") or []
-            counts = {"critical": 0, "serious": 0, "moderate": 0, "minor": 0, "unknown": 0}
-            for v in violations:
-                imp = str(v.get("impact", "")).lower()
-                if imp in counts:
-                    counts[imp] += 1
-                else:
-                    counts["unknown"] += 1
             import pandas as _pd
-            summary_rows = []
+            summary_rows = [
+                {"Metric": "URL", "Value": url},
+                {"Metric": "Scan Mode", "Value": mode.value.upper()},
+                {"Metric": "Scan Type", "Value": "Whole-Site Scan" if is_site_scan else "Single-Page Scan"},
+                {"Metric": "Pages Scanned", "Value": pages_scanned}
+            ]
+            
             if mode in (ScanMode.all, ScanMode.accessibility):
-                summary_rows.append({"Metric": "Accessibility Score", "Value": a11y_score})
+                summary_rows.append({"Metric": "Accessibility Score", "Value": a11y_score if a11y_score is not None else "—"})
                 summary_rows.append({"Metric": "WCAG Critical", "Value": counts["critical"]})
                 summary_rows.append({"Metric": "WCAG Serious", "Value": counts["serious"]})
                 summary_rows.append({"Metric": "WCAG Moderate", "Value": counts["moderate"]})
                 summary_rows.append({"Metric": "WCAG Minor", "Value": counts["minor"]})
+            
             if mode in (ScanMode.all, ScanMode.security):
-                summary_rows.append({"Metric": "Security Score", "Value": sec_score})
+                summary_rows.append({"Metric": "Security Score", "Value": sec_score if sec_score is not None else "—"})
+                # Calculate SSL grade fallback if needed
+                if not ssl_grade or ssl_grade == 'None':
+                    missing_headers_count = len(security_headers.get("missing", [])) if security_headers else 0
+                    if missing_headers_count == 0:
+                        ssl_grade = "A"
+                    elif missing_headers_count <= 2:
+                        ssl_grade = "B"
+                    else:
+                        ssl_grade = "C"
                 summary_rows.append({"Metric": "SSL Labs Grade", "Value": ssl_grade})
+            
             if summary_rows:
-                _pd.DataFrame(summary_rows).to_excel(xw, index=False, sheet_name="Summary")
-        except Exception:
-            pass
-        if mode in (ScanMode.all, ScanMode.accessibility):
-            wcag_df = pd.DataFrame(res.get("wcag_results", {}).get("violations", []))
-            if not wcag_df.empty:
-                wcag_df.to_excel(xw, index=False, sheet_name="WCAG")
-        if mode in (ScanMode.all, ScanMode.security):
-            sec_df = pd.json_normalize(res.get("security_results", {}))
-            if not sec_df.empty:
-                sec_df.to_excel(xw, index=False, sheet_name="Security")
-        try:
-            findings = res.get("findings", {}) or {}
-            def _mk_df(items, category):
-                import pandas as _pd
-                rows = []
-                for it in items or []:
-                    rows.append({
-                        "Category": category,
-                        "Title": it.get("title"),
-                        "Severity": it.get("severity"),
-                        "Rule": it.get("rule"),
-                        "Evidence": it.get("evidence"),
-                        "Fix": it.get("fix"),
+                summary_df = _pd.DataFrame(summary_rows)
+                summary_df.to_excel(xw, index=False, sheet_name="Summary")
+                
+                # Format summary sheet if using xlsxwriter
+                if engine == "xlsxwriter":
+                    workbook = xw.book
+                    worksheet = xw.sheets["Summary"]
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#1e40af',
+                        'font_color': 'white',
+                        'border': 1
                     })
-                return _pd.DataFrame(rows)
-            if mode in (ScanMode.all, ScanMode.security):
-                f_sec = _mk_df(findings.get("security", []), "Security")
-                if not f_sec.empty:
-                    f_sec.to_excel(xw, index=False, sheet_name="Findings_Security")
-            if mode in (ScanMode.all, ScanMode.accessibility):
-                f_acc = _mk_df(findings.get("accessibility", []), "Accessibility")
-                if not f_acc.empty:
-                    f_acc.to_excel(xw, index=False, sheet_name="Findings_Access")
-        except Exception:
+                    worksheet.set_row(0, None, header_format)
+        except Exception as e:
+            logger.error(f"Error creating summary sheet: {e}")
             pass
+        
+        # WCAG Violations sheet
+        if mode in (ScanMode.all, ScanMode.accessibility) and violations_for_df:
+            try:
+                wcag_df = pd.DataFrame(violations_for_df)
+                if not wcag_df.empty:
+                    wcag_df.to_excel(xw, index=False, sheet_name="WCAG Violations")
+            except Exception as e:
+                logger.error(f"Error creating WCAG sheet: {e}")
+                pass
+        
+        # Security Headers sheet
+        if mode in (ScanMode.all, ScanMode.security) and security_headers:
+            try:
+                security_data = []
+                missing = security_headers.get("missing", [])
+                present = security_headers.get("present", [])
+                
+                for header in missing:
+                    security_data.append({"Header": header, "Status": "Missing"})
+                for header in present:
+                    security_data.append({"Header": header, "Status": "Present"})
+                
+                if security_data:
+                    sec_df = pd.DataFrame(security_data)
+                    sec_df.to_excel(xw, index=False, sheet_name="Security Headers")
+            except Exception as e:
+                logger.error(f"Error creating security sheet: {e}")
+                pass
+        
+        # Recommendations sheet
+        rec_text = res.get("recommendations") or ""
+        if rec_text:
+            try:
+                # Split recommendations into sections for better readability
+                rec_lines = rec_text.split('\n')
+                recommendations_data = []
+                current_section = "General"
+                
+                for line in rec_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith('## '):
+                        current_section = line[3:].strip()
+                    elif line.startswith('### '):
+                        current_section = line[4:].strip()
+                    elif not line.startswith('```') and not line.startswith('---'):
+                        # Clean markdown formatting
+                        clean_line = line.replace('**', '').replace('*', '')
+                        if clean_line:
+                            recommendations_data.append({
+                                "Section": current_section,
+                                "Recommendation": clean_line
+                            })
+                
+                if recommendations_data:
+                    rec_df = pd.DataFrame(recommendations_data)
+                    rec_df.to_excel(xw, index=False, sheet_name="Recommendations")
+            except Exception as e:
+                logger.error(f"Error creating recommendations sheet: {e}")
+                pass
     output.seek(0)
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=ui-testing-report.xlsx"})
 
@@ -1000,6 +1558,43 @@ async def scan_whole_site_endpoint(
                 })
         except Exception as e:
             logger.error(f"Failed to persist site scan result: {e}")
+        
+        # Create activity log for UI testing scan
+        try:
+            if database.db is not None:
+                summary = result.get("summary", {})
+                pages_scanned = summary.get("pages_scanned", 0)
+                a11y_score = summary.get("accessibility_score")
+                security_agg = result.get("security_aggregate", {})
+                security_primary = security_agg.get("primary_scan", {})
+                security_headers = security_primary.get("securityheaders", {})
+                security_score = security_headers.get("score") if security_headers else None
+                
+                activity_log = {
+                    'user_id': user.id,
+                    'user_email': getattr(user, 'email', None),
+                    'organization_id': user.organization_id,
+                    'activity_type': 'ui_testing',
+                    'activity_label': 'UI Testing Scan',
+                    'description': f"Performed {request.scan_mode.value} scan on {url} - {pages_scanned} pages scanned",
+                    'status': 'success',
+                    'details': {
+                        'url': url,
+                        'scan_mode': request.scan_mode.value,
+                        'pages_scanned': pages_scanned,
+                        'max_pages': request.max_pages,
+                        'max_depth': request.max_depth,
+                        'accessibility_score': a11y_score,
+                        'security_score': security_score,
+                        'authenticated': bool(request.credentials and request.credentials.get("username"))
+                    },
+                    'timestamp': datetime.utcnow(),
+                    'icon': '🔍'
+                }
+                await database.db.activity_logs.insert_one(activity_log)
+                logger.info(f"Activity log created for UI testing scan: {url}")
+        except Exception as e:
+            logger.error(f"Error creating activity log for UI testing scan: {e}")
         
         return result
     

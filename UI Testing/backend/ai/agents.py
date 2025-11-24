@@ -12,7 +12,7 @@ logger = logging.getLogger("ai.agents")
 
 def _api_keys() -> list[str]:
     keys: list[str] = []
-    for key in (os.getenv("GOOGLE_API_KEY1"), os.getenv("GOOGLE_API_KEY2")):
+    for key in (os.getenv("GOOGLE_API_KEY1"), os.getenv("GOOGLE_API_KEY2"), os.getenv("GOOGLE_API_KEY3"), os.getenv("GOOGLE_API_KEY4")):
         if key:
             value = key.strip()
             if value and value not in keys:
@@ -24,7 +24,7 @@ def _invoke_llm(messages: list) -> Any:
     keys = _api_keys()
     last_error: Exception | None = None
     if not keys:
-        raise RuntimeError("Gemini API key not configured (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2)")
+        raise RuntimeError("Gemini API key not configured (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4)")
 
     for idx, key in enumerate(keys):
         try:

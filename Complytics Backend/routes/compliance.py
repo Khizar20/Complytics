@@ -34,6 +34,8 @@ from compliance_rag import (
     detect_document_analysis_request,
     detect_document_reference,
     analyze_general_documentation_compliance,
+    detect_query_type,
+    detect_ambiguous_query,
     QUERY_CACHE,
     save_query_cache
 )
@@ -114,6 +116,29 @@ async def compliance_chat(
         # Get conversation context before checking compliance
         conversation_context = conversation_histories[session_id].get_context()
         logger.info(f"Got conversation context: {conversation_context[:100]}...")
+
+        # Check for ambiguous queries first - ask for clarification before routing to experts
+        is_ambiguous, clarification_message = detect_ambiguous_query(query, conversation_context)
+        logger.info(f"Ambiguous query check result: is_ambiguous={is_ambiguous}, query='{query}', context_length={len(conversation_context) if conversation_context else 0}")
+        if is_ambiguous:
+            logger.info(f"✅ Ambiguous query detected: '{query}' - asking for clarification, NOT routing to experts")
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            response = clarification_message if clarification_message else (
+                "I'd be happy to help! Could you please provide more details about what you'd like to know? "
+                "For example:\n- What compliance framework are you interested in? (GDPR, ISO 27001, SOC 2, etc.)\n"
+                "- What specific requirement or control do you need information about?\n"
+                "- Are you looking for implementation guidance or regulatory requirements?"
+            )
+            experts = []
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
 
         # Check if user has uploaded documents scoped to this session only
         has_uploaded_doc = False
@@ -2351,6 +2376,52 @@ async def get_compliance_logs(
                 "icon": log_entry.get("icon", "✅")
             })
         
+        # 4. UI Testing Scans (from activity_logs)
+        ui_testing_query = {"$or": [{"user_id": user_id_obj}, {"user_id": user_id}], "activity_type": "ui_testing"}
+        if date_filter:
+            ui_testing_query["timestamp"] = date_filter
+        if status:
+            ui_testing_query["status"] = status
+        
+        ui_testing_logs = await db.activity_logs.find(ui_testing_query).sort("timestamp", -1).limit(limit).to_list(length=None)
+        logger.info(f"Found {len(ui_testing_logs)} UI testing logs for user {user_id}")
+        for log_entry in ui_testing_logs:
+            all_logs.append({
+                "id": str(log_entry.get("_id", "")),
+                "timestamp": log_entry.get("timestamp", datetime.utcnow()),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": "ui_testing",
+                "activity_label": log_entry.get("activity_label", "UI Testing Scan"),
+                "description": log_entry.get("description", "Performed UI testing scan"),
+                "status": log_entry.get("status", "success"),
+                "details": log_entry.get("details", {}),
+                "icon": log_entry.get("icon", "🔍")
+            })
+        
+        # 5. Schedule Scans (from activity_logs)
+        schedule_scan_query = {"$or": [{"user_id": user_id_obj}, {"user_id": user_id}], "activity_type": "schedule_scan"}
+        if date_filter:
+            schedule_scan_query["timestamp"] = date_filter
+        if status:
+            schedule_scan_query["status"] = status
+        
+        schedule_scan_logs = await db.activity_logs.find(schedule_scan_query).sort("timestamp", -1).limit(limit).to_list(length=None)
+        logger.info(f"Found {len(schedule_scan_logs)} schedule scan logs for user {user_id}")
+        for log_entry in schedule_scan_logs:
+            all_logs.append({
+                "id": str(log_entry.get("_id", "")),
+                "timestamp": log_entry.get("timestamp", datetime.utcnow()),
+                "user_id": user_id,
+                "user_email": user_email,
+                "activity_type": "schedule_scan",
+                "activity_label": log_entry.get("activity_label", "Scan Scheduled"),
+                "description": log_entry.get("description", "Scheduled scan"),
+                "status": log_entry.get("status", "success"),
+                "details": log_entry.get("details", {}),
+                "icon": log_entry.get("icon", "📅")
+            })
+        
         # Filter by activity_type if specified - ensure strict matching
         if activity_type:
             filtered_logs = []
@@ -2389,7 +2460,7 @@ async def get_compliance_logs(
         # Calculate summary
         summary = {
             "today": {
-                "analyses": len([l for l in today_logs if l["activity_type"] == "azure_analysis"]),
+                "analyses": len([l for l in today_logs if l["activity_type"] in ["azure_analysis", "ui_testing"]]),
                 "uploads": len([l for l in today_logs if l["activity_type"] == "document_upload"]),
                 "framework_uploads": len([l for l in today_logs if l["activity_type"] == "framework_upload"]),
                 "config_fetches": len([l for l in today_logs if l["activity_type"] == "azure_config_fetch"]),
@@ -2397,7 +2468,7 @@ async def get_compliance_logs(
                 "total": len(today_logs)
             },
             "this_week": {
-                "analyses": len([l for l in week_logs if l["activity_type"] == "azure_analysis"]),
+                "analyses": len([l for l in week_logs if l["activity_type"] in ["azure_analysis", "ui_testing"]]),
                 "uploads": len([l for l in week_logs if l["activity_type"] == "document_upload"]),
                 "framework_uploads": len([l for l in week_logs if l["activity_type"] == "framework_upload"]),
                 "config_fetches": len([l for l in week_logs if l["activity_type"] == "azure_config_fetch"]),

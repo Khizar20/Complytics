@@ -1,0 +1,115 @@
+
+
+#### 1. SECURITY CONTROLS
+
+**1.1 Identity and Access Management**
+* All identity management must be handled via **Microsoft Entra ID** (formerly Azure AD).
+* **Multi-Factor Authentication (MFA)** is mandatory for all users, enforced via Conditional Access policies.
+* **Privileged Identity Management (PIM)** must be used for Just-In-Time (JIT) elevation of administrative roles; permanent admin access is prohibited.
+* **Conditional Access** policies must strictly define access context (device health, location, user risk) before granting entry.
+* Service Principals and Managed Identities are required for application authentication; hardcoded credentials are strictly forbidden.
+
+**1.2 Network Security**
+* **Network Security Groups (NSGs)** and Application Security Groups (ASGs) must filter traffic at the subnet and NIC level.
+* **Azure Firewall** (Standard or Premium) is deployed in the hub VNet for centralized, stateful traffic inspection.
+* **Azure Private Link** must be used for PaaS services (SQL, Storage, Key Vault) to keep traffic on the Microsoft backbone network, avoiding public endpoints.
+* **Azure DDoS Protection** is enabled for all critical public-facing IP addresses.
+* **Azure Bastion** is used for secure RDP/SSH management of VMs; no management ports (3389/22) are to be exposed to the internet.
+
+**1.3 Data Protection**
+* **Azure Key Vault** or **Managed HSM** is used to manage all encryption keys, secrets, and certificates.
+* **Azure Storage Service Encryption (SSE)** is enabled for all data at rest using either Microsoft-managed or Customer-managed keys (CMK).
+* **Transport Layer Security (TLS) 1.2+** is enforced for all data in transit.
+* **Always Encrypted** is enabled for sensitive columns in Azure SQL Databases.
+* **Azure Information Protection (AIP)** labels are applied to documents and emails based on data classification policies.
+
+#### 2. MONITORING AND LOGGING
+
+**2.1 Azure Monitor & Sentinel**
+* **Azure Monitor** is configured to collect metrics and logs from all resources.
+* **Azure Activity Log** data is exported to a centralized Log Analytics Workspace for long-term retention.
+* **Application Insights** is enabled for all custom applications to track performance and failure rates.
+* **Microsoft Sentinel** (SIEM/SOAR) is connected to all subscriptions to correlate alerts and automate threat response.
+* Log retention policies are set to a minimum of 365 days for audit trails (or as required by compliance).
+
+**2.2 Compliance Monitoring**
+* **Microsoft Defender for Cloud** is enabled on all subscriptions to provide Cloud Security Posture Management (CSPM).
+* **Regulatory Compliance Dashboard** in Defender for Cloud is used to track alignment with ISO 27001, NIST SP 800-53, and CIS Benchmarks.
+* Vulnerability scanning for VMs and container images (via Qualys or Defender) is automated, with high-severity findings remediated within 30 days.
+
+#### 3. GOVERNANCE AND COMPLIANCE
+
+**3.1 Azure Policy & Management Groups**
+* **Azure Management Groups** are used to efficiently manage policies and access across multiple subscriptions.
+* **Azure Policy** definitions are assigned to enforce guardrails (e.g., "Allowed Locations," "Require Tagging," "Deny Public IP").
+* **Microsoft Purview** is deployed to map, catalog, and govern data across the entire data estate.
+* **Cost Management** budgets and alerts are configured at the subscription level to prevent anomalous spending.
+
+**3.2 Data Privacy**
+* **Purview Information Protection** scanners automatically discover and label sensitive data (PII/PHI) in Blob Storage and SQL.
+* Data residency is enforced by Azure Policy to restrict resource deployment to approved regions (e.g., "East US" only).
+* Data Subject Request (DSR) fulfillment processes leverage the Azure Data Privacy Portal.
+
+#### 4. COMPUTE SECURITY
+
+**4.1 Virtual Machine Security**
+* **Trusted Launch** is enabled for all Gen2 VMs to prevent boot kit and rootkit infections.
+* **Just-In-Time (JIT) VM Access** is configured via Defender for Cloud to limit the time management ports are open.
+* **Azure Arc** is used to extend security baselines and policies to non-Azure (on-prem/multicloud) servers.
+* Automated patching (Guest Configuration) is enabled for all Windows and Linux VMs.
+
+**4.2 Container Security (AKS)**
+* **Azure Kubernetes Service (AKS)** clusters must use **Microsoft Entra Workload ID** for pod identity.
+* **Azure Policy for Kubernetes** (Gatekeeper) is installed to enforce cluster-level governance (e.g., "Disallow privileged containers").
+* **Microsoft Defender for Containers** is enabled to scan images in Azure Container Registry (ACR) and detect runtime threats.
+* API Server access is restricted to authorized IP ranges or private endpoints.
+
+#### 5. STORAGE SECURITY
+
+**5.1 Blob Storage Configuration**
+* **"Allow Blob Public Access"** is set to **Disabled** at the storage account level.
+* **Shared Access Signatures (SAS)** must be time-limited and use the principle of least privilege.
+* **Immutable Storage** (WORM) policies are applied to backup and compliance archives.
+* Soft Delete and Versioning are enabled to protect against accidental deletion or ransomware.
+
+#### 6. DATABASE SECURITY
+
+**6.1 SQL & Cosmos DB**
+* **Microsoft Defender for SQL** is enabled to detect anomalous access patterns and potential SQL injection attacks.
+* **Azure SQL Firewall** rules are restricted to the specific subnets of the application tier.
+* **Microsoft Entra Authentication** is the only allowed authentication method; SQL Authentication (username/password) is disabled where possible.
+* **Transparent Data Encryption (TDE)** with Customer-Managed Keys (CMK) is used for high-sensitivity databases.
+
+#### 7. COMPLIANCE FRAMEWORKS
+
+**7.1 GDPR & Data Sovereignty**
+* Standard Contractual Clauses (SCCs) are utilized for any data transfers outside the EEA.
+* **Azure Blueprints** (or Template Specs) are used to deploy standard, GDPR-compliant environments for new projects.
+* Resource Locking is used to prevent the deletion of logs required for breach notification (GDPR Art. 33).
+
+**7.2 ISO 27001 & Shared Responsibility**
+* The organization leverages **Service Trust Portal** to access Microsoft’s audit reports (SOC 2, ISO 27001).
+* Responsibility matrix is documented: Microsoft handles "Security *of* the Cloud" (Physical DCs, Hypervisor), Client handles "Security *in* the Cloud" (OS, Data, Identity).
+
+#### 8. INCIDENT RESPONSE
+
+**8.1 Response Procedures**
+* Automated playbooks in **Microsoft Sentinel** trigger specifically for high-severity alerts (e.g., "Isolate VM," "Block User").
+* Root Cause Analysis (RCA) utilizes **Azure Monitor** logs and **Network Watcher** packet captures.
+* Security incidents are classified and escalated according to the corporate Incident Response Plan.
+
+#### 9. BUSINESS CONTINUITY
+
+**9.1 Backup and Disaster Recovery**
+* **Azure Backup** vaults are configured with Soft Delete and Multi-User Authorization (MUA) to prevent malicious wiper attacks.
+* **Azure Site Recovery (ASR)** is configured for critical VMs to failover to a paired secondary region.
+* **Geo-Redundant Storage (GRS)** is selected for storage accounts requiring high durability.
+* Disaster Recovery drills are conducted bi-annually using ASR Test Failover capabilities.
+
+#### 10. AUDIT AND REPORTING
+
+**10.1 Auditing**
+* **Azure Advisor** recommendations are reviewed weekly for security and operational excellence improvements.
+* Internal audits utilize **Azure Resource Graph** queries to validate configuration states across the environment.
+* Compliance reports are auto-generated from the Defender for Cloud dashboard for executive review.
+

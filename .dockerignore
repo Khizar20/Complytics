@@ -47,6 +47,8 @@ __tests__/
 *.json
 !package.json
 !package-lock.json
+# Allow embeddings JSON files (needed for RAG)
+!Complytics Backend/embeddings/**/*.json
 
 # Cache and temporary files
 .cache/

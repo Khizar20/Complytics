@@ -68,7 +68,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # For superadmin, admin, compliance_team, it_team, and management_team members, tokens don't expire (only on logout)
+    # For other roles, use the configured expiration time
+    if user.role in ("superadmin", "admin", "compliance_team", "it_team", "management_team"):
+        # Create token without expiration (set to a very far future date - effectively no expiration)
+        access_token_expires = timedelta(days=36500)  # ~100 years - effectively no expiration
+    else:
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
     access_token = create_access_token(
         data={"sub": user.email, "role": user.role},  # Include role in token
         expires_delta=access_token_expires

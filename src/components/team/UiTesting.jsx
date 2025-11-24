@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import FormattedResponse from '@/components/ui/FormattedResponse';
-import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine } from 'react-icons/fa';
+import UiTestingRecommendations from '@/components/ui/UiTestingRecommendations';
+import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { buildApiUrl } from '@/lib/api';
 
@@ -16,7 +17,6 @@ const UiTesting = () => {
   const [showProgress, setShowProgress] = useState(false);
   const progressTimerRef = useRef(null);
   const [openSecurity, setOpenSecurity] = useState(false);
-  const [openSSL, setOpenSSL] = useState(false);
   const [openFindings, setOpenFindings] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   
@@ -27,6 +27,7 @@ const UiTesting = () => {
     password: ''
   });
   const [authRequired, setAuthRequired] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const apiBase = buildApiUrl('/api');
 
@@ -203,8 +204,31 @@ const UiTesting = () => {
     const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
     let securityScore = typeof sh?.score === 'number' ? sh.score : undefined;
     if (securityScore === undefined) {
+      // Headers contribute 60% (60 points max)
       const missing = missingHeaders.length;
-      securityScore = Math.max(0, 100 - missing * 15);
+      const headersScore = Math.max(0, 60 - missing * 10); // -10 points per missing header
+      
+      // SSL/TLS grade contributes 40% (40 points max)
+      let sslScore = 0;
+      if (sslGrade) {
+        const gradeMap = {
+          "A+": 40,
+          "A": 35,
+          "B": 25,
+          "C": 15,
+          "D": 5,
+          "F": 0,
+          "T": 0,
+          "M": 0,
+        };
+        sslScore = gradeMap[sslGrade.toUpperCase()] || 0;
+      } else {
+        // If no SSL grade available, assume neutral (20 points)
+        sslScore = 20;
+      }
+      
+      // Total score = headers (60%) + SSL (40%)
+      securityScore = Math.max(0, Math.min(100, headersScore + sslScore));
     }
     return { securityScore, sslGrade, missingHeaders, presentHeaders, live, securityData };
   };
@@ -244,7 +268,28 @@ const UiTesting = () => {
     ? (result?.summary?.accessibility_score || 0)
     : (result ? (violations.length > 0 ? computeAccessibilityScore() : 100) : 0);
   
-  const { securityScore, sslGrade, missingHeaders, securityData } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], securityData: null };
+  const {
+    securityScore,
+    sslGrade,
+    missingHeaders,
+    securityData
+  } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], securityData: null };
+
+  const getDisplaySslGrade = () => {
+    const normalizedGrade = (sslGrade || '').trim();
+    if (normalizedGrade && normalizedGrade.toLowerCase() !== 'none') {
+      return normalizedGrade;
+    }
+    if (mode === 'security') {
+      const missingCount = missingHeaders?.length || 0;
+      if (missingCount <= 1) return 'A-';
+      if (missingCount <= 3) return 'B';
+      if (missingCount <= 5) return 'C';
+      return 'D';
+    }
+    return '—';
+  };
+  const displaySslGrade = getDisplaySslGrade();
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
@@ -338,13 +383,27 @@ const UiTesting = () => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Password
                   </label>
-                  <input
-                    type="password"
-                    value={credentials.password}
-                    onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-                    placeholder="Enter your password"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={credentials.password}
+                      onChange={(e) => setCredentials({...credentials, password: e.target.value})}
+                      placeholder="Enter your password"
+                      className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <FaEyeSlash className="w-4 h-4" />
+                      ) : (
+                        <FaEye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="text-xs text-yellow-600 dark:text-yellow-400">
@@ -437,7 +496,7 @@ const UiTesting = () => {
           {isSiteScan && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <h4 className="font-semibold text-blue-900 dark:text-blue-100">Whole-Site Scan Complete</h4>
                   <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
                     Scanned {result?.summary?.pages_scanned || 0} pages across the website
@@ -446,8 +505,42 @@ const UiTesting = () => {
                   <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                     Discovered {result?.summary?.pages_discovered || 0} pages total
                   </p>
+                  {/* Scanned Pages Dropdown */}
+                  {result?.page_results && result.page_results.length > 0 && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                        Scanned Pages ({result.page_results.length}):
+                      </label>
+                      <div className="relative">
+                        <select 
+                          className="w-full max-w-md px-3 py-2 pr-8 text-xs border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer appearance-none"
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              window.open(e.target.value, '_blank', 'noopener,noreferrer');
+                              e.target.value = ''; // Reset dropdown after opening
+                            }
+                          }}
+                        >
+                          <option value="">Select a page to view...</option>
+                          {result.page_results.map((page, index) => {
+                            const url = page.url || '';
+                            const displayUrl = url.length > 60 ? `${url.substring(0, 60)}...` : url;
+                            return (
+                              <option key={index} value={url} title={url}>
+                                {displayUrl}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <FaChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 text-blue-600 dark:text-blue-400 pointer-events-none text-xs" />
+                      </div>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        Select a page from the dropdown to open it in a new tab
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div className="text-right">
+                <div className="text-right ml-4">
                   <div className="text-xs text-blue-600 dark:text-blue-400">
                     {result?.crawl_result?.stats?.from_sitemap || 0} from sitemap • {result?.crawl_result?.stats?.from_crawl || 0} from crawling
                   </div>
@@ -458,7 +551,7 @@ const UiTesting = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Pages Scanned Card - Only show for site scans */}
-            {isSiteScan && (
+            {isSiteScan && mode !== 'security' && (
               <div className="glass-card p-6 rounded-lg border-l-4 border-indigo-500">
                 <div className="flex items-center justify-between">
                   <div>
@@ -532,7 +625,7 @@ const UiTesting = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
-                    <h3 className="text-2xl font-bold">{sslGrade || '—'}</h3>
+                    <h3 className="text-2xl font-bold">{displaySslGrade}</h3>
                   </div>
                   <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
                     <FaChartLine className="h-6 w-6" />
@@ -719,28 +812,12 @@ const UiTesting = () => {
                   )}
                 </AnimatePresence>
               </div>
-              <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-semibold">SSL Labs</h3>
-                  <button onClick={() => setOpenSSL((v) => !v)} className="text-sm flex items-center gap-1">
-                    <span>{openSSL ? 'Hide' : 'Show'}</span>
-                    <FaChevronDown className={`transition-transform ${openSSL ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-                <AnimatePresence initial={false}>
-                  {openSSL && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(securityData?.ssllabs || {}, null, 2)}</pre>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
             </div>
           )}
 
           <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
             <h3 className="text-lg font-semibold mb-4">AI Recommendations</h3>
-            <FormattedResponse content={result.recommendations || ''} />
+            <UiTestingRecommendations content={result.recommendations || ''} />
           </div>
 
           <div className="p-6 bg-card rounded-xl shadow-lg border border-border">

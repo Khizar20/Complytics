@@ -305,16 +305,22 @@ DOCUMENT CONTENT SAMPLE:
 
 TASK: Determine if this document is relevant to Azure cloud compliance, security, or IT governance.
 
+IMPORTANT: This is an AZURE-SPECIFIC compliance checker. Documents about AWS, GCP, or other cloud providers should be rejected.
+
 RELEVANT DOCUMENTS include:
 - Azure configuration documents, policies, or architecture
-- Cloud security policies, compliance frameworks (GDPR, ISO 27001, etc.)
-- IT security documentation, access control policies
-- Data protection policies, privacy policies
-- Infrastructure as Code (IaC) files, Terraform, ARM templates
-- Security audit reports, compliance assessments
-- Cloud governance documents, best practices documentation
+- Azure-specific security policies and compliance frameworks
+- IT security documentation related to Azure services
+- Data protection policies for Azure environments
+- Infrastructure as Code (IaC) files for Azure (ARM templates, Azure Bicep, Terraform for Azure)
+- Azure security audit reports, compliance assessments
+- Azure governance documents, best practices documentation
+- Generic compliance frameworks (GDPR, ISO 27001, etc.) IF they are in the context of Azure implementations
 
 IRRELEVANT DOCUMENTS include:
+- AWS (Amazon Web Services) configuration documents, policies, or architecture
+- GCP (Google Cloud Platform) configuration documents
+- Other cloud provider-specific documents (Oracle Cloud, IBM Cloud, etc.)
 - Personal CVs, resumes, job applications
 - Game documentation, game guides, entertainment content
 - Personal letters, emails, social media content
@@ -324,20 +330,31 @@ IRRELEVANT DOCUMENTS include:
 - Marketing materials, advertisements
 - Any content completely unrelated to Azure, cloud computing, compliance, or IT security
 
+CLOUD PROVIDER DETECTION:
+- If the document mentions AWS services (IAM, S3, EC2, CloudWatch, CloudTrail, Route 53, etc.), it is AWS-specific and should be rejected
+- If the document mentions GCP services (Cloud IAM, Cloud Storage, Compute Engine, etc.), it is GCP-specific and should be rejected
+- If the document mentions Azure services (Azure AD, Key Vault, Storage Accounts, etc.), it is Azure-specific and should be accepted
+- Generic cloud security policies without specific provider mentions may be accepted, but with lower relevance score
+
 ANALYZE THE DOCUMENT and respond in this EXACT JSON format (no markdown, just JSON):
 {{
   "is_relevant": true/false,
   "relevance_score": 0.0-1.0,
-  "document_type": "brief description (e.g., 'Azure configuration', 'CV', 'Game guide', 'Privacy policy')",
+  "document_type": "brief description (e.g., 'Azure configuration', 'AWS configuration', 'CV', 'Game guide', 'Privacy policy')",
   "reasoning": "brief explanation of why it is or isn't relevant",
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "cloud_provider": "Azure|AWS|GCP|Other|None|Unknown"
 }}
 
-Be strict: Only mark as relevant if the document is clearly related to Azure, cloud compliance, IT security, or governance.
+Be strict: Only mark as relevant if the document is clearly related to Azure cloud compliance, IT security, or governance.
+If it's AWS, GCP, or other cloud provider-specific, mark is_relevant as false.
 If it's a personal document, game content, or completely unrelated topic, mark is_relevant as false.
 
-CRITICAL: If the document is a CV, resume, game guide, recipe, fiction, or any personal/entertainment content, 
-you MUST set is_relevant to false, regardless of the relevance_score."""
+CRITICAL RULES:
+1. If the document is AWS-specific (mentions AWS services like IAM, S3, EC2, CloudWatch, etc.), you MUST set is_relevant to false
+2. If the document is GCP-specific (mentions GCP services), you MUST set is_relevant to false
+3. If the document is a CV, resume, game guide, recipe, fiction, or any personal/entertainment content, you MUST set is_relevant to false
+4. Only Azure-specific or generic compliance documents should be marked as relevant"""
 
         response = rate_limited_generate_content_optimized(
             prompt,
@@ -365,6 +382,7 @@ you MUST set is_relevant to false, regardless of the relevance_score."""
             document_type = result.get('document_type', 'Unknown').lower()
             reasoning = result.get('reasoning', '')
             confidence = float(result.get('confidence', 0.5))
+            cloud_provider = result.get('cloud_provider', 'Unknown').lower()
             
             # List of document types that should always be rejected
             irrelevant_types = [
@@ -374,13 +392,35 @@ you MUST set is_relevant to false, regardless of the relevance_score."""
                 'fiction', 'novel', 'story', 'literature',
                 'personal letter', 'email', 'social media',
                 'marketing', 'advertisement', 'ad',
-                'academic paper', 'essay', 'thesis', 'dissertation'
+                'academic paper', 'essay', 'thesis', 'dissertation',
+                'aws', 'amazon web services', 'gcp', 'google cloud', 'google cloud platform'
             ]
             
             # Check if document type is explicitly irrelevant
             is_irrelevant_type = any(irrelevant in document_type for irrelevant in irrelevant_types)
             
-            # Primary check: If AI explicitly says it's not relevant, reject it
+            # Check if cloud provider is not Azure
+            is_non_azure_provider = cloud_provider in ['aws', 'gcp', 'other'] or 'aws' in document_type or 'gcp' in document_type or 'google cloud' in document_type
+            
+            # Primary check: If document is for a non-Azure cloud provider, reject it
+            if is_non_azure_provider:
+                provider_name = 'AWS (Amazon Web Services)' if cloud_provider == 'aws' or 'aws' in document_type else \
+                               'GCP (Google Cloud Platform)' if cloud_provider == 'gcp' or 'gcp' in document_type else \
+                               'another cloud provider'
+                error_msg = f"This Azure Compliance Checker is designed specifically for Azure cloud environments. "
+                error_msg += f"The uploaded document appears to be for {provider_name}, which cannot be analyzed by this tool. "
+                error_msg += "Please upload an Azure configuration document, Azure security policy, or Azure compliance documentation instead."
+                
+                logger.warning(f"Document rejected - Non-Azure cloud provider: {filename} - Provider: {cloud_provider}, Type: {document_type}")
+                
+                return {
+                    'valid': False,
+                    'error': error_msg,
+                    'relevance_score': relevance_score,
+                    'document_type': document_type
+                }
+            
+            # Secondary check: If AI explicitly says it's not relevant, reject it
             if not is_relevant:
                 error_msg = f"The uploaded document appears to be a {document_type}, which is not relevant to Azure compliance checking."
                 if reasoning:
