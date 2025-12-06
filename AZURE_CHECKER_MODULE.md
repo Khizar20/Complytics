@@ -88,6 +88,14 @@ Ye module:
 3. **Tables**: Compliance tables generate hote hain
 4. **Charts**: Visual representations add hote hain
 
+### Compliance Scores Kaise Generate Hote Hain?
+- **Similarity Se Score**: `AzureComplianceAnalyzer.analyze_document()` FAISS search se top chunks leta hai, har category (Security, Identity, Storage, Networking, Monitoring, Compliance, Governance, etc.) ka average similarity calculate karta hai. Ye similarity 0-1 range se 0-100 percent mein convert hoti hai (e.g. 0.82 → 82%).
+- **AI Validation**: Har category ke top 3 best-practice chunks + uploaded document ka text Gemini ko diya jata hai (`_analyze_category_with_ai`). AI se status (Compliant/Partial/Non-Compliant), gaps aur recommendations milte hain. Agar AI fail ho to fallback `determine_compliance_status()` similarity thresholds (>=0.80 Compliant, >=0.60 Partial, otherwise Non-Compliant) apply karta hai.
+- **Category Aggregation**: Category-wise findings ko sort karke severity highlight ki jaati hai aur har category ka confidence `similarity * 100` ke form mein store hota hai. Ye direct UI mein Key Findings cards mein use hota hai.
+- **Framework Scores**: Har selected framework (GDPR, ISO 27001, ISO 27017, ISO 27018, Azure Best Practices) ke liye upar wala process independently run hota hai. `framework_scores` map store karta hai `{framework_name: score}` jis se grid + bar chart render hota hai.
+- **Overall Score**: `_perform_compliance_analysis()` sab frameworks ke scores ka average leta hai. >=80 ho to `Compliant`, 60-79 `Partial`, aur <60 `Non-Compliant`. Ye overall score gauge, executive summary aur PDF report mein re-use hota hai.
+- **Evidence Trail**: Har score ke saath findings, AI key points aur FAISS matched chunks persist hote hain taake user ko pata rahe ke kis requirement ne kitna score dila ya deduct kiya.
+
 ## Files Jahan Code Present Hai
 
 ### Backend Files (Python)
@@ -245,4 +253,44 @@ Ye module Azure configurations ko compliance frameworks ke against check karta h
 - Recommendations provide karta hai
 
 Sab kuch embedding-based similarity search aur AI analysis ke combination se kaam karta hai.
+
+---
+
+## Story Time: Compliance Team Member Is Module Ko Kaise Use Karta Hai?
+
+Chaliye ek kahani ki soorat mein samajhte hain. Imagine karein ke Ayesha ek compliance engineer hai jo ek fintech company ke Azure environment ko secure rakhne ki zimmedar hai. Company ka CEO usay kehta hai: “Ayesha, humein jaldi se batayein ke hamari Azure architecture GDPR, ISO 27001 aur Azure Best Practices ke mutabiq hai ya nahi. Agle hafta external audit hai.”
+
+Ayesha ka workflow kuch yoon hota hai:
+
+1. **Document Tayyari**  
+   - Wo apne DevOps team se recently updated Azure Architecture Deck (PDF), Security Runbook (DOCX) aur Azure Policy Export (JSON) le leti hai.  
+   - Ye documents aksar contain karte hain:  
+     * Virtual Network diagrams  
+     * Access control matrices (Azure AD groups, RBAC roles)  
+     * Storage encryption settings  
+     * Monitoring aur logging configurations  
+
+2. **Azure Checker Module Khulna**  
+   - Superadmin dashboard se “Azure Compliance Checker” section open karti hai.  
+   - Frameworks select karti hai: `Azure Best Practices + GDPR + ISO 27001`.
+
+3. **Document Upload Scene**  
+   - Ayesha ek hi baar mein teen files upload karti hai (PDF, DOCX, JSON).  
+   - Module pehle relevance check karta hai (agar kisi file mein “recipes” ya “marketing copy” ho to reject).  
+   - Har file ka text extract hota hai aur chunk-by-chunk embeddings create hoti hain.
+
+4. **Analysis & Wait Moment**  
+   - Ayesha coffee sip karte hue wait karti hai jab tak module FAISS similarity search se har framework ka relevant control identify kare.  
+   - AI analyzer har category (Security, Identity, Storage, Networking, Monitoring, Compliance) ka compliance score calculate karta hai.
+
+5. **Result & Report**  
+   - Dashboard par ek interactive summary aati hai: “Security: 78%, Identity: 92%, Storage: 65%...”  
+   - Issues list hoti hain, jaise: “Blob storage encryption missing customer-managed keys (ISO 27018)”  
+   - Ayesha “Download PDF” button dabati hai aur ek polished report milti hai jisme executive summary, findings, recommendations sab hota hai.
+
+6. **Follow-up Action**  
+   - Wo PDF ko DevOps lead aur CEO ko bhej deti hai.  
+   - Next sprint ke liye remediation tickets create ho jati hain.  
+
+**In Short:** Ayesha ko kisi manual checklist ya Excel sheet ki zarurat nahi parti. Bas relevant Azure documents upload karo aur module AI + embeddings se instant compliance insight de deta hai. Audit ke waqt wo confidently bolti hai: “Hamare paas latest Azure compliance report ready hai—ye dekhein evidence!”
 

@@ -17,6 +17,13 @@ def _build_chrome_driver(page_load_timeout: int = 120) -> webdriver.Chrome:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    # Suppress noisy SSL/network errors in logs
+    options.add_argument("--disable-logging")
+    options.add_argument("--log-level=3")  # Only show fatal errors
+    options.add_argument("--silent")
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    # Disable network service logging to reduce SSL handshake error noise
+    options.add_argument("--disable-features=NetworkService,NetworkServiceLogging")
     # Use faster/eager page load to mitigate renderer timeouts on heavy pages
     try:
         options.page_load_strategy = "eager"
@@ -84,6 +91,9 @@ def _run_axe_sync(url: str, credentials: Optional[Dict[str, str]] = None, sessio
             except Exception as e:
                 logger.warning(f"Failed to set session cookies: {str(e)}")
         
+        # Track login page detection status
+        login_page_detected = False
+        
         # If we have credentials but no session cookies, try to authenticate first
         if credentials and not session_cookies:
             logger.info("Credentials provided but no session cookies - attempting authentication")
@@ -102,6 +112,7 @@ def _run_axe_sync(url: str, credentials: Optional[Dict[str, str]] = None, sessio
                 # Check if login is required
                 try:
                     if auth_handler.detect_login_page(driver):
+                        login_page_detected = True
                         logger.info("Login page detected, attempting authentication...")
                         login_form = auth_handler.find_login_form(driver)
                         if login_form:
@@ -115,6 +126,7 @@ def _run_axe_sync(url: str, credentials: Optional[Dict[str, str]] = None, sessio
                         else:
                             logger.info("No login form found - scanning as public page")
                     else:
+                        login_page_detected = False
                         logger.info("No login page detected - scanning as public page")
                 except Exception as e:
                     logger.warning(f"Error during authentication check: {str(e)} - continuing with public page scan")
@@ -177,11 +189,17 @@ def _run_axe_sync(url: str, credentials: Optional[Dict[str, str]] = None, sessio
         passes = results.get("passes", [])
         inapplicable = results.get("inapplicable", [])
 
-        return {
+        result_dict = {
             "violations": simplified,
             "passes_count": len(passes),
             "inapplicable_count": len(inapplicable),
         }
+        
+        # Add login page detection status if credentials were provided
+        if credentials:
+            result_dict["login_page_detected"] = login_page_detected
+        
+        return result_dict
     except Exception as e:
         logger.exception("WCAG scan failed for url=%s", url)
         return {"error": str(e), "violations": []}

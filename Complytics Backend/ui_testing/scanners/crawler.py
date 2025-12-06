@@ -262,6 +262,13 @@ class WebsiteCrawler:
             options.add_argument("--disable-gpu")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
+            # Suppress noisy SSL/network errors in logs
+            options.add_argument("--disable-logging")
+            options.add_argument("--log-level=3")  # Only show fatal errors
+            options.add_argument("--silent")
+            options.add_experimental_option('excludeSwitches', ['enable-logging'])
+            # Disable network service logging to reduce SSL handshake error noise
+            options.add_argument("--disable-features=NetworkService,NetworkServiceLogging")
             options.page_load_strategy = "eager"
             
             driver = webdriver.Chrome(options=options)

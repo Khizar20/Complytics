@@ -9,18 +9,36 @@ import { buildApiUrl } from '@/lib/api';
 const LoginForm = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, user, isLoading: authLoading } = useAuth();
+
+  // Redirect if user is already authenticated
+  useEffect(() => {
+    // Wait for auth context to finish loading
+    if (authLoading) {
+      return;
+    }
+
+    // Check if user is already authenticated
+    if (isAuthenticated && user) {
+      // Redirect based on user role
+      if (user.role === 'superadmin') {
+        navigate('/superadmin/dashboard', { replace: true });
+      } else if (user.role === 'admin') {
+        navigate('/dashboard', { replace: true });
+      } else if (['it_team', 'compliance_team', 'management_team'].includes(user.role)) {
+        navigate('/team-dashboard', { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, authLoading, navigate]);
 
   useEffect(() => {
-    // Check for saved credentials
+    // Clean up any legacy remembered email
     const savedEmail = localStorage.getItem('rememberedEmail');
     if (savedEmail) {
-      setEmail(savedEmail);
-      setRememberMe(true);
+      localStorage.removeItem('rememberedEmail');
     }
   }, []);
 
@@ -45,13 +63,6 @@ const LoginForm = () => {
 
       const data = await response.json();
       
-      // Handle remember me
-      if (rememberMe) {
-        localStorage.setItem('rememberedEmail', email);
-      } else {
-        localStorage.removeItem('rememberedEmail');
-      }
-
       // Login will now handle fetching user data and storing it
       await login(data.access_token);
 
@@ -96,6 +107,18 @@ const LoginForm = () => {
       }
     }, 100);
   };
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <FaSpinner className="animate-spin h-8 w-8 text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -162,20 +185,6 @@ const LoginForm = () => {
           </div>
 
           <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 text-primary focus:ring-primary border-border rounded"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-muted-foreground">
-                Remember me
-              </label>
-            </div>
-
             <div className="text-sm">
               <Link
                 to="/forgot-password"

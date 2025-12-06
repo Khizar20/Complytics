@@ -1281,7 +1281,8 @@ def expert_industry_specific(query: str, context: str, conversation_context: str
         "4. Industry best practices and guidance\n"
         "5. Regulatory body requirements and guidance\n"
         "6. Industry-specific risk factors and controls\n"
-        "Chain-of-Thought Analysis:"
+        "Think step by step and provide a detailed answer."
+        
     )
     return rate_limited_generate_content_optimized(prompt)
 
@@ -1829,6 +1830,12 @@ EXPERT_KEYWORD_SCORES = {
     },
     'financial': {
         'pci dss': 5, 'sox': 5, 'financial': 4, 'payment': 4, 'banking': 3
+    },
+    'healthcare': {
+        'hipaa': 5, 'healthcare': 4, 'phi': 4, 'protected health information': 4,
+        'health insurance portability': 3, 'medical': 3, 'patient data': 3,
+        'health data': 3, 'ehr': 3, 'electronic health record': 3, 'ephi': 3,
+        'covered entity': 3, 'business associate': 3
     }
 }
 
@@ -2134,7 +2141,10 @@ def cached_expert_response(expert_type: str, query: str, context: str, conversat
         return QUERY_CACHE[cache_key]
     
     # Call appropriate expert function based on type
-    if expert_type == "security":
+    if expert_type == "general":
+        from compliance_rag_intelligent import expert_general_compliance
+        response = expert_general_compliance(query, conversation_context, "")
+    elif expert_type == "security":
         response = expert_security_controls(query, context, conversation_context)
     elif expert_type == "privacy":
         response = expert_privacy_regulations(query, context, conversation_context)
@@ -2144,12 +2154,6 @@ def cached_expert_response(expert_type: str, query: str, context: str, conversat
         response = expert_financial_compliance(query, context, conversation_context)
     elif expert_type == "healthcare":
         response = expert_healthcare_compliance(query, context, conversation_context)
-    elif expert_type == "international":
-        response = expert_international_compliance(query, context, conversation_context)
-    elif expert_type == "operational":
-        response = expert_operational_compliance(query, context, conversation_context)
-    elif expert_type == "industry_specific":
-        response = expert_industry_specific(query, context, conversation_context)
     else:
         return ""
     
@@ -2596,6 +2600,8 @@ def detect_query_type(query: str, conversation_context: str = "") -> Tuple[str, 
             query_type = 'security'
         elif required_experts[0] == 'privacy':
             query_type = 'privacy'
+        elif required_experts[0] == 'healthcare':
+            query_type = 'healthcare'
         elif required_experts[0] == 'financial':
             query_type = 'financial'
         elif required_experts[0] == 'healthcare':
@@ -2800,33 +2806,55 @@ def extract_text_from_pdf(file_path: str) -> str:
         except Exception as e:
             logger.warning(f"pdfplumber extraction failed: {str(e)}")
         
-        # If no text was extracted, try OCR using pytesseract
+        # If no text was extracted, try OCR using pytesseract (optional - requires poppler)
         try:
             import pytesseract
             from pdf2image import convert_from_path
             import tempfile
             
-            # Convert PDF to images
-            with tempfile.TemporaryDirectory() as temp_dir:
-                images = convert_from_path(file_path, output_folder=temp_dir)
-                
-                text = ""
-                for i, image in enumerate(images):
-                    try:
-                        # Extract text using OCR
-                        page_text = pytesseract.image_to_string(image)
-                        if page_text:
-                            text += page_text + "\n"
-                        else:
-                            logger.warning(f"No text extracted from page {i+1} using OCR")
-                    except Exception as e:
-                        logger.error(f"Error during OCR for page {i+1}: {str(e)}")
-                        continue
-                
-                if text.strip():
-                    return text
-        except Exception as e:
-            logger.warning(f"OCR extraction failed: {str(e)}")
+            # Check if poppler is available by trying to convert first page
+            try:
+                # Convert PDF to images
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    images = convert_from_path(file_path, output_folder=temp_dir)
+                    
+                    if not images:
+                        raise ValueError("No images generated from PDF")
+                    
+                    text = ""
+                    for i, image in enumerate(images):
+                        try:
+                            # Extract text using OCR
+                            page_text = pytesseract.image_to_string(image)
+                            if page_text:
+                                text += page_text + "\n"
+                            else:
+                                logger.warning(f"No text extracted from page {i+1} using OCR")
+                        except Exception as e:
+                            logger.error(f"Error during OCR for page {i+1}: {str(e)}")
+                            continue
+                    
+                    if text.strip():
+                        return text
+            except Exception as pdf2img_error:
+                error_str = str(pdf2img_error)
+                if "poppler" in error_str.lower() or "Unable to get page count" in error_str:
+                    # Poppler not installed - skip OCR
+                    logger.warning("Poppler not available - OCR skipped. Install poppler for scanned PDF support.")
+                    raise ValueError("OCR requires poppler to be installed. See INSTALL_POPPLER_WINDOWS.md for instructions.")
+                raise
+        except ImportError as import_error:
+            logger.warning(f"OCR libraries not available: {str(import_error)}")
+            ocr_error_msg = f"OCR libraries not installed: {str(import_error)}"
+        except ValueError as value_error:
+            # Re-raise our custom poppler error
+            if "poppler" in str(value_error).lower():
+                ocr_error_msg = str(value_error)
+                raise
+            raise
+        except Exception as ocr_error:
+            logger.warning(f"OCR extraction failed: {str(ocr_error)}")
+            ocr_error_msg = str(ocr_error)
         
         # If all methods fail, try to repair the PDF
         try:
@@ -2855,14 +2883,37 @@ def extract_text_from_pdf(file_path: str) -> str:
                         os.remove(repaired_path)
                     except:
                         pass
-        except Exception as e:
-            logger.error(f"PDF repair attempt failed: {str(e)}")
+        except Exception as repair_error:
+            logger.error(f"PDF repair attempt failed: {str(repair_error)}")
         
-        raise ValueError("All PDF extraction methods failed")
+        # Provide more specific error message based on what failed
+        error_details = []
         
+        # Check if OCR failed due to poppler (from the exception message)
+        if 'ocr_error_msg' in locals() and ocr_error_msg:
+            if "poppler" in ocr_error_msg.lower() or "Unable to get page count" in ocr_error_msg:
+                error_details.append("OCR processing requires poppler to be installed")
+        
+        error_msg = "Unable to extract text from the PDF document."
+        if error_details:
+            error_msg += f" {error_details[0]}."
+        error_msg += " The PDF might be image-based (scanned), password-protected, or corrupted. Please ensure the PDF contains selectable text or try converting it to a text-based PDF format."
+        
+        raise ValueError(error_msg)
+        
+    except ValueError as e:
+        # Re-raise our custom error messages as-is
+        if "Unable to extract text" in str(e):
+            raise
+        # Otherwise, wrap it
+        raise ValueError(f"PDF extraction failed: {str(e)}")
     except Exception as e:
         logger.error(f"Error extracting text from PDF: {str(e)}")
-        raise
+        # Wrap in a user-friendly message
+        error_msg = f"PDF extraction failed: {str(e)}"
+        if "poppler" in str(e).lower():
+            error_msg = "Unable to extract text from the PDF document. OCR processing requires poppler to be installed. The PDF might be image-based (scanned). Please ensure the PDF contains selectable text or try converting it to a text-based PDF format."
+        raise ValueError(error_msg)
 
 def extract_text_from_docx(file_path: str) -> str:
     """Extract text from a DOCX file."""

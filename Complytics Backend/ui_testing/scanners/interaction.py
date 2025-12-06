@@ -19,6 +19,13 @@ def _build_chrome_driver(page_load_timeout: int = 60) -> webdriver.Chrome:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    # Suppress noisy SSL/network errors in logs
+    options.add_argument("--disable-logging")
+    options.add_argument("--log-level=3")  # Only show fatal errors
+    options.add_argument("--silent")
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    # Disable network service logging to reduce SSL handshake error noise
+    options.add_argument("--disable-features=NetworkService,NetworkServiceLogging")
     # Reduce renderer stalls and noisy GPU/WebGL warnings in CI/headless
     options.add_argument("--use-gl=swiftshader")
     options.add_argument("--enable-unsafe-swiftshader")

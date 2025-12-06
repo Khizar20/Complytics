@@ -55,6 +55,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { buildApiUrl } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import FormattedResponse from '@/components/ui/FormattedResponse';
+import ComplianceChatFormattedResponse from '@/components/ui/ComplianceChatFormattedResponse';
 
 
 // Typing effect component
@@ -108,7 +109,7 @@ const TypewriterText = ({ text, onComplete }) => {
           fontFamily: 'DM Sans, sans-serif',
           lineHeight: 1.6
         }}>
-          <FormattedResponse content={displayedText} />
+          <ComplianceChatFormattedResponse content={displayedText} />
           <motion.span
             animate={{ opacity: [1, 0] }}
             transition={{ duration: 0.4, repeat: Infinity }}
@@ -118,7 +119,7 @@ const TypewriterText = ({ text, onComplete }) => {
           </motion.span>
         </Box>
       ) : (
-        <FormattedResponse content={text} />
+        <ComplianceChatFormattedResponse content={text} />
       )}
     </Box>
   );
@@ -685,7 +686,31 @@ const ComplianceChat = () => {
           scrollToBottom();
           return;
         }
-        throw new Error(data.detail?.message || 'Upload failed');
+        
+        // Handle PDF extraction failure
+        if (data.detail && data.detail.type === 'PDF_EXTRACTION_FAILED') {
+          // Display user-friendly error in chat with suggestions
+          let errorContent = `**${data.detail.title || 'PDF Extraction Failed'}**\n\n${data.detail.message || 'Unable to extract text from the PDF document.'}`;
+          
+          if (data.detail.suggestions && Array.isArray(data.detail.suggestions)) {
+            errorContent += '\n\n**Suggestions:**\n';
+            data.detail.suggestions.forEach((suggestion, index) => {
+              errorContent += `${index + 1}. ${suggestion}\n`;
+            });
+          }
+          
+          const errorMessage = {
+            type: 'response',
+            content: errorContent,
+            timestamp: new Date(),
+            isTyping: false
+          };
+          setMessages(prev => [...prev, errorMessage]);
+          scrollToBottom();
+          return;
+        }
+        
+        throw new Error(data.detail?.message || data.detail?.title || 'Upload failed');
       }
 
       // Store pending attachment to be sent with the next user message
@@ -1658,7 +1683,7 @@ const ComplianceChat = () => {
                             onComplete={() => handleTypingComplete(index)}
                           />
                         ) : (
-                          <FormattedResponse 
+                          <ComplianceChatFormattedResponse 
                             content={message.content} 
                             textColor={message.type === 'user' ? 'white' : undefined}
                           />

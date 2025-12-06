@@ -197,6 +197,8 @@ class SiteScanOrchestrator:
         violations_by_rule = {}
         impact_counts = {"critical": 0, "serious": 0, "moderate": 0, "minor": 0}
         pages_with_issues = 0
+        login_pages_detected = []
+        login_pages_not_detected = []
         
         for page in page_results:
             url = page["url"]
@@ -204,6 +206,13 @@ class SiteScanOrchestrator:
             
             if not wcag or wcag.get("error"):
                 continue
+            
+            # Track login page detection status
+            if "login_page_detected" in wcag:
+                if wcag["login_page_detected"]:
+                    login_pages_detected.append(url)
+                else:
+                    login_pages_not_detected.append(url)
             
             violations = wcag.get("violations", [])
             
@@ -276,7 +285,7 @@ class SiteScanOrchestrator:
             key=lambda x: (impact_order.get(x["impact"], 4), -x["pages_affected"])
         )
         
-        return {
+        result = {
             "total_pages_scanned": len(page_results),
             "pages_with_issues": pages_with_issues,
             "total_violations": len(total_violations),
@@ -286,6 +295,16 @@ class SiteScanOrchestrator:
             "violations_summary": violations_summary,
             "top_issues": violations_summary[:10]  # Top 10 most critical/widespread issues
         }
+        
+        # Add login page detection summary if any pages were checked
+        if login_pages_detected or login_pages_not_detected:
+            result["login_page_detection"] = {
+                "pages_with_login_detected": login_pages_detected,
+                "pages_without_login_detected": login_pages_not_detected,
+                "total_checked": len(login_pages_detected) + len(login_pages_not_detected)
+            }
+        
+        return result
     
     def aggregate_security_results(self, page_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Aggregate security results (typically domain-level)"""
@@ -454,44 +473,73 @@ class SiteScanOrchestrator:
         moderate = impact_counts.get("moderate", 0)
         minor = impact_counts.get("minor", 0)
         
+        # Get number of pages scanned
+        pages_scanned = len(page_results)
+        
         # Log impact counts for debugging
-        logger.debug(f"Calculating accessibility score - Critical: {critical}, Serious: {serious}, Moderate: {moderate}, Minor: {minor}")
+        logger.debug(f"Calculating accessibility score - Pages: {pages_scanned}, Critical: {critical}, Serious: {serious}, Moderate: {moderate}, Minor: {minor}")
         
-        # Calculate accessibility score with improved formula
-        # Uses diminishing returns to handle high violation counts gracefully
-        import math
+        # Base deduction values per violation (for small scans)
+        CRITICAL_POINTS = 25
+        SERIOUS_POINTS = 15
+        MODERATE_POINTS = 8
+        MINOR_POINTS = 3
         
-        # Calculate base deductions per violation type with diminishing returns
-        # Critical violations: Most severe, 2 points each (with diminishing returns)
-        if critical > 0:
-            critical_deduction = min(critical * 2.0, 40) + (max(0, critical - 20) * 1.0)  # Diminishing returns after 20
-            critical_deduction = min(critical_deduction, 50)
+        # Determine scoring strategy based on number of pages
+        if pages_scanned <= 10:
+            # Small scans (1-10 pages): Use strict formula (same as single-page scans)
+            # This ensures critical violations have significant impact
+            critical_deduction = critical * CRITICAL_POINTS
+            serious_deduction = serious * SERIOUS_POINTS
+            moderate_deduction = moderate * MODERATE_POINTS
+            minor_deduction = minor * MINOR_POINTS
         else:
-            critical_deduction = 0
-        
-        # Serious violations: 1.2 points each
-        if serious > 0:
-            serious_deduction = min(serious * 1.2, 30) + (max(0, serious - 25) * 0.5)
-            serious_deduction = min(serious_deduction, 35)
-        else:
-            serious_deduction = 0
-        
-        # Moderate violations: 0.3 points each (less weight)
-        moderate_deduction = min(moderate * 0.3, 20)
-        
-        # Minor violations: 0.05 points each (very little weight)
-        minor_deduction = min(minor * 0.05, 5)
+            # Large scans (11+ pages): Normalize by pages to prevent score from going to 0
+            # Calculate violations per page, then scale deductions appropriately
+            violations_per_page = {
+                'critical': critical / pages_scanned,
+                'serious': serious / pages_scanned,
+                'moderate': moderate / pages_scanned,
+                'minor': minor / pages_scanned
+            }
+            
+            # For large scans, use a normalized approach:
+            # - Calculate average violations per page
+            # - Apply deductions based on per-page averages, scaled to total pages
+            # - Use a scaling factor that prevents excessive deductions for large sites
+            
+            # Scale factor: reduces impact as pages increase (logarithmic scaling)
+            # For 11 pages: factor ~0.9, for 50 pages: factor ~0.6
+            scale_factor = 1.0 / (1.0 + 0.1 * math.log10(max(1, pages_scanned / 10)))
+            
+            # Apply deductions with scaling
+            # Critical violations still have significant impact even in large scans
+            critical_deduction = critical * CRITICAL_POINTS * scale_factor
+            serious_deduction = serious * SERIOUS_POINTS * scale_factor
+            moderate_deduction = moderate * MODERATE_POINTS * scale_factor
+            minor_deduction = minor * MINOR_POINTS * scale_factor
+            
+            # Additional normalization: if violations per page are low, reduce deductions further
+            # This prevents penalizing large sites with sparse violations
+            avg_violations_per_page = (critical + serious + moderate + minor) / pages_scanned
+            if avg_violations_per_page < 2.0:  # Less than 2 violations per page on average
+                # Apply additional reduction for sparse violations
+                sparse_factor = 0.7 + (avg_violations_per_page * 0.15)  # 0.7 to 1.0
+                critical_deduction *= sparse_factor
+                serious_deduction *= sparse_factor
+                moderate_deduction *= sparse_factor
+                minor_deduction *= sparse_factor
         
         # Total raw deduction
         raw_deduction = critical_deduction + serious_deduction + moderate_deduction + minor_deduction
         
-        # Apply logarithmic scaling to prevent scores from going too low
+        # Apply logarithmic scaling only for very high violation counts (to prevent scores from going too low)
         # This ensures even sites with many violations get a meaningful score
-        if raw_deduction > 50:
-            # For high deductions, apply logarithmic compression
+        if raw_deduction > 80:
+            # For very high deductions (>80), apply logarithmic compression
             # This prevents the score from going below 10-15 even with many violations
             # Use log scaling: factor decreases as raw_deduction increases
-            log_factor = 0.7 - (0.2 * math.log10(raw_deduction / 50))
+            log_factor = 0.7 - (0.2 * math.log10(raw_deduction / 80))
             effective_deduction = raw_deduction * max(0.5, log_factor)
         else:
             effective_deduction = raw_deduction

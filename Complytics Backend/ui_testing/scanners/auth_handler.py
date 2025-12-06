@@ -151,6 +151,9 @@ class AuthenticationHandler:
             # Find and click submit button
             submit_success = False
             submit_selectors = [
+                "button#submit-login",  # Specific ID from the form
+                "#submit-login",  # Direct ID selector
+                "button[name='submit-login']",  # Name attribute
                 "button#submit",
                 "input#submit", 
                 "button[type='submit']",
@@ -168,16 +171,51 @@ class AuthenticationHandler:
             for selector in submit_selectors:
                 try:
                     submit_btn = driver.find_element(By.CSS_SELECTOR, selector)
-                    submit_btn.click()
-                    submit_success = True
-                    self.logger.info(f"Submit button clicked using selector: {selector}")
-                    break
+                    
+                    # Scroll button into view to avoid click interception
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+                    time.sleep(0.3)  # Wait for scroll
+                    
+                    # Wait for button to be clickable
+                    try:
+                        WebDriverWait(driver, 2).until(
+                            EC.element_to_be_clickable(submit_btn)
+                        )
+                    except TimeoutException:
+                        pass  # Continue anyway
+                    
+                    # Try regular click first
+                    try:
+                        submit_btn.click()
+                        submit_success = True
+                        self.logger.info(f"Submit button clicked using selector: {selector}")
+                        break
+                    except Exception as click_error:
+                        # If click is intercepted, try JavaScript click
+                        if "click intercepted" in str(click_error).lower() or "not clickable" in str(click_error).lower():
+                            self.logger.warning(f"Click intercepted for {selector}, trying JavaScript click")
+                            try:
+                                driver.execute_script("arguments[0].click();", submit_btn)
+                                submit_success = True
+                                self.logger.info(f"Submit button clicked using JavaScript: {selector}")
+                                break
+                            except Exception as js_error:
+                                self.logger.warning(f"JavaScript click also failed: {str(js_error)}")
+                                continue
+                        else:
+                            raise
+                            
                 except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    self.logger.warning(f"Error with selector {selector}: {str(e)}")
                     continue
             
             # If CSS selectors didn't work, try XPath for text-based matching
             if not submit_success:
                 xpath_selectors = [
+                    "//button[@id='submit-login']",  # Specific ID
+                    "//button[@name='submit-login']",  # Name attribute
                     "//button[@id='submit']",
                     "//input[@id='submit']",
                     "//button[contains(text(), 'Login')]",
@@ -191,21 +229,78 @@ class AuthenticationHandler:
                 for xpath in xpath_selectors:
                     try:
                         submit_btn = driver.find_element(By.XPATH, xpath)
-                        submit_btn.click()
-                        submit_success = True
-                        self.logger.info(f"Submit button clicked using XPath: {xpath}")
-                        break
+                        
+                        # Scroll button into view
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+                        time.sleep(0.3)
+                        
+                        # Wait for button to be clickable
+                        try:
+                            WebDriverWait(driver, 2).until(
+                                EC.element_to_be_clickable(submit_btn)
+                            )
+                        except TimeoutException:
+                            pass
+                        
+                        # Try regular click first
+                        try:
+                            submit_btn.click()
+                            submit_success = True
+                            self.logger.info(f"Submit button clicked using XPath: {xpath}")
+                            break
+                        except Exception as click_error:
+                            # If click is intercepted, try JavaScript click
+                            if "click intercepted" in str(click_error).lower() or "not clickable" in str(click_error).lower():
+                                self.logger.warning(f"Click intercepted for XPath {xpath}, trying JavaScript click")
+                                try:
+                                    driver.execute_script("arguments[0].click();", submit_btn)
+                                    submit_success = True
+                                    self.logger.info(f"Submit button clicked using JavaScript XPath: {xpath}")
+                                    break
+                                except Exception as js_error:
+                                    self.logger.warning(f"JavaScript click also failed: {str(js_error)}")
+                                    continue
+                            else:
+                                raise
+                                
                     except NoSuchElementException:
+                        continue
+                    except Exception as e:
+                        self.logger.warning(f"Error with XPath {xpath}: {str(e)}")
                         continue
             
             if not submit_success:
+                # Try submitting the form directly if we have a form element
+                if login_form.get("form"):
+                    try:
+                        form = login_form["form"]
+                        # Try JavaScript form submission
+                        driver.execute_script("arguments[0].submit();", form)
+                        submit_success = True
+                        self.logger.info("Form submitted using JavaScript")
+                    except Exception as e:
+                        self.logger.warning(f"Could not submit form via JavaScript: {str(e)}")
+                
                 # Try pressing Enter on password field
-                try:
-                    password_field.send_keys(Keys.RETURN)
-                    submit_success = True
-                    self.logger.info("Login submitted using Enter key")
-                except Exception as e:
-                    self.logger.warning(f"Could not submit form: {str(e)}")
+                if not submit_success:
+                    try:
+                        password_field.send_keys(Keys.RETURN)
+                        submit_success = True
+                        self.logger.info("Login submitted using Enter key")
+                    except Exception as e:
+                        self.logger.warning(f"Could not submit form using Enter key: {str(e)}")
+                
+                # Last resort: Try to find and click any submit button within the form
+                if not submit_success and login_form.get("form"):
+                    try:
+                        form = login_form["form"]
+                        # Find submit button within the form
+                        submit_in_form = form.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit'], button#submit-login, #submit-login")
+                        driver.execute_script("arguments[0].click();", submit_in_form)
+                        submit_success = True
+                        self.logger.info("Submit button clicked within form using JavaScript")
+                    except Exception as e:
+                        self.logger.warning(f"Could not find/click submit button in form: {str(e)}")
             
             if submit_success:
                 # Wait for navigation or success indicator

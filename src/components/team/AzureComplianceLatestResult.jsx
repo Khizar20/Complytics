@@ -8,7 +8,8 @@ import {
   FaCloud,
   FaFileAlt,
   FaSpinner,
-  FaClock
+  FaClock,
+  FaChartBar
 } from 'react-icons/fa';
 import { buildApiUrl } from '@/lib/api';
 
@@ -264,6 +265,56 @@ const AzureComplianceLatestResult = () => {
           </div>
         )}
       </div>
+
+      {/* Framework Scores Bar Chart */}
+      {isMultiFramework && latestResult.framework_scores && (
+        <div className="bg-white rounded-xl p-6 shadow-md border border-gray-200 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <FaChartBar className="text-blue-600" />
+            <h5 className="font-bold text-gray-900">Framework Scores Comparison</h5>
+          </div>
+          <div className="space-y-4">
+            {Object.entries(latestResult.framework_scores)
+              .sort(([, a], [, b]) => b - a) // Sort by score descending
+              .map(([framework, score]) => {
+                const status = score >= 80 ? 'Compliant' : score >= 60 ? 'Partial' : 'Non-Compliant';
+                const color = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+                const frameworkName = framework === 'gdpr' ? 'GDPR' : 
+                                     framework === 'iso27001' ? 'ISO 27001' :
+                                     framework === 'iso27017' ? 'ISO 27017' :
+                                     framework === 'iso27018' ? 'ISO 27018' :
+                                     framework.charAt(0).toUpperCase() + framework.slice(1);
+                
+                return (
+                  <div key={framework} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-700">{frameworkName}</span>
+                        <span className="text-xs px-2 py-1 rounded-full" style={{
+                          backgroundColor: color + '20',
+                          color: color,
+                          fontWeight: '600'
+                        }}>
+                          {status}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-gray-900">{score}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${score}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       {latestResult.summary && (

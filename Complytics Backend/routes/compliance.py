@@ -40,7 +40,8 @@ from compliance_rag import (
     save_query_cache
 )
 from compliance_rag_refined import (
-    analyze_refined_intent,
+    IntelligentConversationHistory,
+    process_compliance_query_unified,
     privacy_policy_expert_extractive,
     terms_expert_extractive,
     scenario_guidance_expert,
@@ -61,8 +62,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["compliance"])
 
-# Initialize conversation history
-conversation_histories = {}
+# Initialize conversation history using unified intelligent system
+conversation_histories = {}  # Maps session_id -> IntelligentConversationHistory
 
 async def _get_or_extract_document_text(doc, db):
     try:
@@ -108,116 +109,24 @@ async def compliance_chat(
         
         logger.info(f"Processing query: {query} for session: {session_id}")
 
-        # Initialize or get conversation history
+        # Initialize or get intelligent conversation history (stores only user queries, up to 50)
         if session_id not in conversation_histories:
-            logger.info(f"Creating new conversation history for session: {session_id}")
-            conversation_histories[session_id] = ConversationHistory()
+            logger.info(f"Creating new intelligent conversation history for session: {session_id}")
+            conversation_histories[session_id] = IntelligentConversationHistory(max_queries=50)
 
-        # Get conversation context before checking compliance
-        conversation_context = conversation_histories[session_id].get_context()
-        logger.info(f"Got conversation context: {conversation_context[:100]}...")
-
-        # Check for ambiguous queries first - ask for clarification before routing to experts
-        is_ambiguous, clarification_message = detect_ambiguous_query(query, conversation_context)
-        logger.info(f"Ambiguous query check result: is_ambiguous={is_ambiguous}, query='{query}', context_length={len(conversation_context) if conversation_context else 0}")
-        if is_ambiguous:
-            logger.info(f"✅ Ambiguous query detected: '{query}' - asking for clarification, NOT routing to experts")
-            end_time = datetime.utcnow()
-            response_time = (end_time - start_time).total_seconds()
-            response = clarification_message if clarification_message else (
-                "I'd be happy to help! Could you please provide more details about what you'd like to know? "
-                "For example:\n- What compliance framework are you interested in? (GDPR, ISO 27001, SOC 2, etc.)\n"
-                "- What specific requirement or control do you need information about?\n"
-                "- Are you looking for implementation guidance or regulatory requirements?"
-            )
-            experts = []
-            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
-            await db.compliance_chat_history.update_one(
-                {"user_id": current_user.id, "session_id": session_id},
-                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
-                 "$set": {"last_updated": end_time}},
-                upsert=True
-            )
-            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
+        conversation_history = conversation_histories[session_id]
 
         # Check if user has uploaded documents scoped to this session only
         has_uploaded_doc = False
+        document_text = None
+        document_type = None
         latest_doc = await db.documents.find_one(
             {"session_id": session_id},
-                sort=[("upload_date", -1)]
-            )
+            sort=[("upload_date", -1)]
+        )
         if latest_doc:
             has_uploaded_doc = True
-            try:
-                logger.info(f"Latest uploaded doc for session={session_id} user={current_user.id}: name={latest_doc.get('original_name')} path={latest_doc.get('file_path')} has_content={'content' in latest_doc}")
-            except Exception:
-                pass
-
-        # Quick pattern-based non-compliance detection (safety net)
-        query_lower = query.lower()
-        personal_life_patterns = [
-            r'\b(what|which).+(should i|do i|can i).+(eat|drink|play|watch|buy|wear)',
-            r'\bi got (in )?an? accident\b',
-            r'\bcar accident\b',
-            r'\bvideo game\b',
-            r'\bmovie (to watch|recommendation)\b',
-            r'\brestaurant\b',
-            r'\bfood (to eat|recommendation)\b',
-            r'\bwhat (should|can) i (do|play|eat|watch) (today|tonight)',
-        ]
-        
-        import re
-        is_personal_query = any(re.search(pattern, query_lower) for pattern in personal_life_patterns)
-        
-        if is_personal_query:
-            logger.info(f"Pattern-based detection: Personal/non-compliance query detected")
-            end_time = datetime.utcnow()
-            response_time = (end_time - start_time).total_seconds()
-            response = generate_simple_non_compliance_response(query)
-            experts = []
-            conversation_histories[session_id].add_exchange(query, response, is_compliance=False)
-            await db.compliance_chat_history.update_one(
-                {"user_id": current_user.id, "session_id": session_id},
-                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": False}},
-                 "$set": {"last_updated": end_time}},
-                upsert=True
-            )
-            logger.info("Blocked personal query with pattern detection")
-            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": False}
-        
-        # Early document analysis detection - check if user is asking about a document BEFORE intent analysis
-        # This prevents queries like "analyze this document" from triggering experts when no doc is uploaded
-        doc_analysis_detected = detect_document_analysis_request(query)
-        doc_reference_detected = detect_document_reference(query, conversation_context)
-        
-        logger.info(f"Early document detection: analysis={doc_analysis_detected}, reference={doc_reference_detected}, has_doc={has_uploaded_doc}")
-        
-        # If user is clearly asking about a document but hasn't uploaded one, stop early
-        if (doc_analysis_detected or doc_reference_detected) and not has_uploaded_doc:
-            end_time = datetime.utcnow()
-            response_time = (end_time - start_time).total_seconds()
-            response = "Please upload your document first. I don't see any file attached in this session."
-            experts = []
-            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
-            await db.compliance_chat_history.update_one(
-                {"user_id": current_user.id, "session_id": session_id},
-                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
-                 "$set": {"last_updated": end_time}},
-                upsert=True
-            )
-            logger.info(f"Blocked document query without upload (early): {query}")
-            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
-        
-        # Refined intent analysis with sub-intents
-        refined_intent = analyze_refined_intent(query, conversation_context, has_uploaded_doc)
-        logger.info(f"Refined intent: {refined_intent}")
-        
-        # Fallback to old intent for compatibility
-        intent_analysis = analyze_document_intent(query, conversation_context, has_uploaded_doc)
-        logger.info(f"Legacy intent analysis: {intent_analysis}")
-
-        # If user is referring to uploaded document and one exists, validate document type early
-        if (doc_analysis_detected or doc_reference_detected) and has_uploaded_doc:
+            # Extract document text
             document_text = (latest_doc or {}).get("content") or ""
             if not document_text:
                 path = latest_doc.get("file_path") or ""
@@ -226,24 +135,60 @@ async def compliance_chat(
                         document_text = extract_text_from_pdf(path)
                     elif path.endswith('.docx'):
                         document_text = extract_text_from_docx(path)
+                    if document_text:
+                        # Store extracted text in database
+                        try:
+                            await db.documents.update_one(
+                                {"_id": latest_doc.get("_id")}, 
+                                {"$set": {"content": document_text}}
+                            )
+                        except Exception:
+                            pass
             
-            # Check if document has enough text (minimum 50 chars for classification)
-            if not document_text or len(document_text.strip()) < 50:
-                end_time = datetime.utcnow()
-                response_time = (end_time - start_time).total_seconds()
-                response = "The uploaded document appears to be empty or too short to analyze. Please upload a document with substantial content (at least 50 characters)."
-                experts = []
-                conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
-                await db.compliance_chat_history.update_one(
-                    {"user_id": current_user.id, "session_id": session_id},
-                    {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
-                     "$set": {"last_updated": end_time}},
-                    upsert=True
-                )
-                logger.info(f"Rejected document - too short: {len(document_text.strip())} chars")
-                return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
-            
-            if document_text:
+            # Classify document type if we have text
+            if document_text and len(document_text.strip()) >= 50:
+                document_type = classify_document_type(document_text, allow_general_docs=True)
+                logger.info(f"Document type classified: {document_type}")
+        
+        # Use unified intelligent processing system
+        logger.info(f"Using unified intelligent processing system for query: {query[:100]}...")
+        result = process_compliance_query_unified(
+            query=query,
+            conversation_history=conversation_history,
+            has_uploaded_doc=has_uploaded_doc,
+            document_text=document_text if has_uploaded_doc else None,
+            document_type=document_type if has_uploaded_doc else None
+        )
+        
+        response = result.get("response", "I couldn't generate a response. Please try rephrasing your question.")
+        experts = result.get("experts_consulted", [])
+        is_compliance = result.get("is_compliance", True)
+        needs_clarification = result.get("needs_clarification", False)
+        
+        end_time = datetime.utcnow()
+        response_time = (end_time - start_time).total_seconds()
+        
+        # Save to database
+        await db.compliance_chat_history.update_one(
+            {"user_id": current_user.id, "session_id": session_id},
+            {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": is_compliance}},
+             "$set": {"last_updated": end_time}},
+            upsert=True
+        )
+        
+        logger.info(
+            f"Query processed successfully | experts: {experts} | "
+            f"compliance: {is_compliance} | clarification_needed: {needs_clarification}"
+        )
+        return {
+            "response": response,
+            "session_id": session_id,
+            "experts_consulted": experts,
+            "response_time": response_time,
+            "is_compliance": is_compliance,
+        }
+        
+        if document_text:
                 # Check with allow_general_docs=True to detect system documentation
                 doc_type = classify_document_type(document_text, allow_general_docs=True)
                 logger.info(f"Early document type check: {doc_type}")
@@ -658,11 +603,74 @@ Please upload one of the supported document types."""
                 logger.info("Completed document generation from scratch")
                 return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
-        # 6. USE_MAIN_EXPERTS - Route to main expert system (Audit, Security, Privacy, Financial)
+        # 6. USE_MAIN_EXPERTS - Route intelligently based on query complexity and type
         elif intent == "USE_MAIN_EXPERTS":
-            logger.info(f"Routing to main expert system for query: {query[:100]}")
-            # Continue to main expert processing below (don't return early)
-            pass  # Fall through to main expert system
+            logger.info(f"Routing to intelligent expert system for query: {query[:100]}")
+            
+            # Import intelligent routing
+            from compliance_rag_intelligent import intelligent_expert_routing, select_domain_expert
+            from compliance_rag import cached_expert_response, search_documents, process_documents, get_embedding_optimized
+            import numpy as np
+            
+            # Get routing decision
+            routing_decision = intelligent_expert_routing(query, conversation_context, framework)
+            expert_type = routing_decision['expert_type']
+            
+            end_time = datetime.utcnow()
+            response_time = (end_time - start_time).total_seconds()
+            
+            # Get context from framework documents (used for domain and specialized experts)
+            context = ""
+            try:
+                segments, embeddings, index = process_documents()
+                if segments and index:
+                    query_embedding = get_embedding_optimized(query)
+                    if query_embedding is not None:
+                        query_embedding = np.expand_dims(query_embedding, axis=0)
+                        distances, idxs = index.search(query_embedding, 3)
+                        retrieved_segments = []
+                        for idx in idxs[0]:
+                            if idx >= 0 and idx < len(segments):
+                                retrieved_segments.append(segments[idx])
+                        if retrieved_segments:
+                            context = " ".join(retrieved_segments[:500])
+            except Exception as e:
+                logger.warning(f"Error getting context from documents: {e}")
+            
+            if expert_type == 'general':
+                # Use general expert for simple/comparison queries
+                response = cached_expert_response("general", query, "", conversation_context)
+                experts = ['general']
+            elif expert_type == 'domain':
+                # Use domain expert for medium complexity
+                domain_expert = select_domain_expert(query, framework)
+                response = cached_expert_response(domain_expert, query, context, conversation_context)
+                experts = [domain_expert]
+            else:
+                # Use specialized expert for complex/implementation queries
+                # Use existing expert selection logic
+                from compliance_rag import select_relevant_experts_optimized
+                required_experts = select_relevant_experts_optimized(query)
+                
+                if not required_experts:
+                    required_experts = ['audit']
+                
+                # Get response from primary expert
+                response = cached_expert_response(required_experts[0], query, context, conversation_context)
+                if not response:
+                    response = "I couldn't generate a response. Please try rephrasing your question."
+                
+                experts = required_experts[:1]
+            
+            conversation_histories[session_id].add_exchange(query, response, is_compliance=True)
+            await db.compliance_chat_history.update_one(
+                {"user_id": current_user.id, "session_id": session_id},
+                {"$push": {"messages": {"query": query, "response": response, "experts_consulted": experts, "response_time": response_time, "timestamp": end_time, "is_compliance": True}},
+                 "$set": {"last_updated": end_time}},
+                upsert=True
+            )
+            logger.info(f"Completed intelligent expert routing: {expert_type} - {experts}")
+            return {"response": response, "session_id": session_id, "experts_consulted": experts, "response_time": response_time, "is_compliance": True}
         
         # 7. SCENARIO_GUIDANCE - Compliance guidance (only for step-by-step implementation guides)
         elif intent == "SCENARIO_GUIDANCE":
@@ -1447,6 +1455,30 @@ async def upload_document(
             if not document_text:
                 raise ValueError("No text content could be extracted from the document")
             logger.info("Document processed successfully")
+        except ValueError as e:
+            # User-friendly error for PDF extraction failures
+            error_message = str(e)
+            logger.error(f"Error processing document: {error_message}")
+            # Clean up the file if processing fails
+            try:
+                file_path.unlink()
+            except:
+                pass
+            
+            # Return a structured error response for the chatbot
+            error_detail = {
+                "type": "PDF_EXTRACTION_FAILED",
+                "title": "PDF Text Extraction Failed",
+                "message": error_message,
+                "suggestions": [
+                    "Ensure the PDF contains selectable text (not just images)",
+                    "Try converting the PDF to a text-based format",
+                    "Check if the PDF is password-protected and unlock it",
+                    "For scanned PDFs, use OCR software to convert images to text first",
+                    "Try saving the document as a DOCX file instead"
+                ]
+            }
+            raise HTTPException(status_code=400, detail=error_detail)
         except Exception as e:
             logger.error(f"Error processing document: {str(e)}")
             # Clean up the file if processing fails

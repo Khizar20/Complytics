@@ -49,6 +49,8 @@ __tests__/
 !package-lock.json
 # Allow embeddings JSON files (needed for RAG)
 !Complytics Backend/embeddings/**/*.json
+# Allow query cache JSON file (needed for caching)
+!Complytics Backend/compliance_cache/query_cache.json
 
 # Cache and temporary files
 .cache/

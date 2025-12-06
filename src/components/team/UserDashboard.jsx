@@ -390,10 +390,47 @@ const UiTestingSummaryCards = () => {
     
     const sh = securityData?.securityheaders || {};
     const ssl = securityData?.ssllabs || {};
+    const liveHeaders = securityData?.live_headers || {};
     const endpoints = Array.isArray(ssl?.endpoints) ? ssl.endpoints : [];
     const sslGrade = (endpoints[0]?.grade || ssl?.grade || '') || '';
-    const missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
-    const presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+    
+    let missingHeaders = Array.isArray(sh?.missing) ? sh.missing : [];
+    let presentHeaders = Array.isArray(sh?.present) ? sh.present : [];
+    
+    // Fallback: If missing/present arrays are empty but we have live_headers, derive from live headers
+    if ((missingHeaders.length === 0 && presentHeaders.length === 0) && liveHeaders) {
+      const expectedHeaders = [
+        "Content-Security-Policy",
+        "Strict-Transport-Security",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+      ];
+      const liveHeadersData = liveHeaders?.headers || {};
+      
+      // Only derive if we actually have live headers data
+      if (liveHeadersData && Object.keys(liveHeadersData).length > 0) {
+        missingHeaders = [];
+        presentHeaders = [];
+        
+        expectedHeaders.forEach(headerName => {
+          const headerData = liveHeadersData[headerName];
+          // Check if header is present (could be boolean or object with present property)
+          const isPresent = headerData && (
+            headerData === true || 
+            (typeof headerData === 'object' && headerData.present === true) ||
+            (typeof headerData === 'string' && headerData.trim().length > 0)
+          );
+          
+          if (isPresent) {
+            presentHeaders.push(headerName);
+          } else {
+            missingHeaders.push(headerName);
+          }
+        });
+      }
+    }
+    
     let securityScore = typeof sh?.score === 'number' ? sh.score : undefined;
     if (securityScore === undefined) {
       // Headers contribute 60% (60 points max)
@@ -424,9 +461,37 @@ const UiTestingSummaryCards = () => {
     }
     return { securityScore, sslGrade, missingHeaders, presentHeaders };
   };
+
+  // Calculate SSL grade from security score if SSL Labs grade is missing
+  const getDisplaySslGrade = (sslGrade, securityScore, missingHeaders, mode) => {
+    const normalizedGrade = (sslGrade || '').trim();
+    if (normalizedGrade && normalizedGrade.toLowerCase() !== 'none') {
+      return normalizedGrade;
+    }
+    // If SSL Labs grade is missing, calculate from security score
+    if (typeof securityScore === 'number') {
+      if (securityScore >= 90) return 'A+';
+      if (securityScore >= 80) return 'A';
+      if (securityScore >= 70) return 'B';
+      if (securityScore >= 60) return 'C';
+      if (securityScore >= 50) return 'D';
+      return 'F';
+    }
+    // Fallback: calculate from missing headers count
+    if (mode === 'security' || mode === 'all') {
+      const missingCount = missingHeaders?.length || 0;
+      if (missingCount <= 1) return 'A-';
+      if (missingCount <= 3) return 'B';
+      if (missingCount <= 5) return 'C';
+      return 'D';
+    }
+    return '—';
+  };
+
   const a11yCounts = result ? getA11ySeverityCounts() : { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
   const a11yScore = result ? computeAccessibilityScore() : 0;
   const { securityScore, sslGrade, missingHeaders, presentHeaders } = result ? getSecuritySummaries() : { securityScore: undefined, sslGrade: '', missingHeaders: [], presentHeaders: [] };
+  const displaySslGrade = result ? getDisplaySslGrade(sslGrade, securityScore, missingHeaders, meta.mode) : '—';
 
   // Format timestamp (handles both Unix timestamp and ISO string)
   const formatTimestamp = (ts) => {
@@ -564,7 +629,7 @@ const UiTestingSummaryCards = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
-                  <h3 className="text-2xl font-bold">{sslGrade || '—'}</h3>
+                  <h3 className="text-2xl font-bold">{displaySslGrade}</h3>
                 </div>
                 <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
                   <FaChartLine className="h-6 w-6" />
@@ -1475,7 +1540,12 @@ const AzureADConfiguration = () => {
           <div className="space-y-3">
             {configData?.identity_protection_risky_users?.error ? (
               <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <div className="text-sm text-destructive">{configData.identity_protection_risky_users.error}</div>
+                <div className="text-sm text-destructive">
+                  Risky user insights need Azure AD Premium P1/P2 identity protection. Add the license to retrieve these results.
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  {configData.identity_protection_risky_users.error}
+                </div>
               </div>
             ) : configData?.identity_protection_risky_users?.value?.length >= 0 ? (
               <div>
@@ -1585,7 +1655,10 @@ const AzureADConfiguration = () => {
           <div className="space-y-3">
             {configData?.settings?.error ? (
               <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <div className="text-sm text-destructive">{configData.settings.error}</div>
+                <div className="text-sm text-destructive">
+                  Directory settings require an Azure AD Premium P1/P2 subscription. Upgrade the tenant to fetch this data.
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">{configData.settings.error}</div>
               </div>
             ) : configData?.settings?.value?.length >= 0 ? (
               <div>
@@ -1650,7 +1723,10 @@ const AzureADConfiguration = () => {
           <div className="space-y-3">
             {configData?.lifecycle_workflows?.error ? (
               <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <div className="text-sm text-destructive">{configData.lifecycle_workflows.error}</div>
+                <div className="text-sm text-destructive">
+                  Lifecycle workflows are available only with Azure AD Premium P1/P2. Provide the required license to enable this view.
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">{configData.lifecycle_workflows.error}</div>
               </div>
             ) : configData?.lifecycle_workflows?.value?.length >= 0 ? (
               <div>

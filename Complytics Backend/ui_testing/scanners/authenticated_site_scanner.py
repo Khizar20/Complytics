@@ -32,14 +32,16 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
     Extends the base SiteScanOrchestrator to handle login-protected pages.
     """
     
-    def __init__(self, credentials: Optional[Dict[str, str]] = None, **kwargs):
+    def __init__(self, credentials: Optional[Dict[str, str]] = None, authenticated_urls: Optional[List[str]] = None, **kwargs):
         super().__init__(**kwargs)
         self.credentials = credentials
         self.auth_handler = None
         self.authenticated_session = None
         self.login_required = False
         self.authenticated_urls = set()
+        self.provided_authenticated_urls = authenticated_urls or []  # Store user-provided authenticated URLs
         self.session_cookies = None  # Store cookies for passing to scans
+        self.login_page_results = []  # Store accessibility results for login pages
         
         if credentials:
             self.auth_handler = AuthenticationHandler(credentials)
@@ -185,9 +187,33 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
                     try:
                         auth_success = await self._authenticate_on_login_pages(login_pages)
                         if auth_success:
-                            logger.info("✅ Authentication successful - re-crawling with authenticated session")
-                            # Re-crawl with authenticated session
-                            crawl_result = await self._authenticated_crawl(start_url, use_selenium_crawler)
+                            logger.info("✅ Authentication successful")
+                            
+                            # If user provided authenticated URLs, add them to crawl result
+                            if self.provided_authenticated_urls:
+                                logger.info(f"Using {len(self.provided_authenticated_urls)} provided authenticated page URL(s)")
+                                # Add provided authenticated URLs to crawl result
+                                existing_urls = set(crawl_result.get("urls", []))
+                                for auth_url in self.provided_authenticated_urls:
+                                    if auth_url not in existing_urls:
+                                        crawl_result["urls"].append(auth_url)
+                                        self.authenticated_urls.add(auth_url)
+                                
+                                logger.info(f"Added provided authenticated URLs to scan list. Total URLs to scan: {len(crawl_result.get('urls', []))}")
+                            else:
+                                logger.info("No authenticated URLs provided - re-crawling with authenticated session to discover pages")
+                                # Re-crawl with authenticated session to discover authenticated pages
+                                authenticated_crawl = await self._authenticated_crawl(start_url, use_selenium_crawler)
+                                # Merge discovered authenticated URLs with initial crawl
+                                authenticated_urls = set(authenticated_crawl.get("urls", []))
+                                existing_urls = set(crawl_result.get("urls", []))
+                                # Add newly discovered authenticated URLs
+                                for url in authenticated_urls:
+                                    if url not in existing_urls:
+                                        crawl_result["urls"].append(url)
+                                        self.authenticated_urls.add(url)
+                                
+                                logger.info(f"Discovered {len(authenticated_urls - existing_urls)} additional authenticated pages")
                         else:
                             logger.warning("❌ Authentication failed on all login pages - continuing with public pages only")
                     except Exception as e:
@@ -312,6 +338,7 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
     async def _authenticate_on_login_pages(self, login_pages: List[str]) -> bool:
         """
         Attempt to authenticate on discovered login pages.
+        Tests accessibility of login pages BEFORE authentication, then authenticates.
         Only authenticates on URLs that match login patterns, not on start URL.
         
         Args:
@@ -328,6 +355,44 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             # Try authenticating on each discovered login page
             for login_url in login_pages:
                 try:
+                    logger.info(f"🔐 Processing login page: {login_url}")
+                    
+                    # Step 1: Test accessibility of login page BEFORE authentication
+                    if self.scan_mode in ("all", "accessibility"):
+                        logger.info(f"📋 Testing accessibility of login page BEFORE authentication: {login_url}")
+                        try:
+                            login_page_wcag_result = await run_wcag_scan(
+                                login_url, 
+                                credentials=None,  # No credentials - test public login page
+                                session_cookies=None
+                            )
+                            
+                            # Store login page accessibility results
+                            login_page_result = {
+                                "url": login_url,
+                                "scan_time": datetime.utcnow().isoformat(),
+                                "wcag_results": login_page_wcag_result,
+                                "page_type": "login_page",
+                                "authenticated": False,
+                                "errors": []
+                            }
+                            self.login_page_results.append(login_page_result)
+                            
+                            violations_count = len(login_page_wcag_result.get("violations", []))
+                            logger.info(f"  ✓ Login page accessibility tested: {violations_count} violations found")
+                        except Exception as e:
+                            logger.error(f"  ✗ Login page accessibility test failed: {str(e)}")
+                            # Store error result
+                            self.login_page_results.append({
+                                "url": login_url,
+                                "scan_time": datetime.utcnow().isoformat(),
+                                "wcag_results": None,
+                                "page_type": "login_page",
+                                "authenticated": False,
+                                "errors": [f"Accessibility test failed: {str(e)}"]
+                            })
+                    
+                    # Step 2: Attempt authentication
                     logger.info(f"🔐 Attempting authentication on login page: {login_url}")
                     auth_result = run_interactive_test_with_auth(login_url, self.credentials)
                     
@@ -346,7 +411,7 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
                             logger.warning("No login form detected on this page")
                             
                 except Exception as e:
-                    logger.error(f"Error authenticating on {login_url}: {str(e)}")
+                    logger.error(f"Error processing login page {login_url}: {str(e)}")
                     continue
             
             logger.warning("❌ Authentication failed on all login pages")
@@ -424,6 +489,12 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             
             logger.info(f"Scanning {len(urls)} discovered pages with authentication context")
             
+            # Include login page results if available
+            all_page_results = []
+            if self.login_page_results:
+                logger.info(f"Including {len(self.login_page_results)} login page accessibility result(s) in scan")
+                all_page_results.extend(self.login_page_results)
+            
             # Scan pages based on mode
             if self.scan_mode == "security":
                 # Security-only: scan domain-level security
@@ -439,12 +510,16 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             elif self.scan_mode == "accessibility":
                 # Accessibility-only: scan all pages for WCAG
                 page_results = await self.scan_pages_accessibility_only(urls)
-                wcag_aggregate = self.aggregate_wcag_results(page_results)
+                # Combine login page results with authenticated page results
+                all_page_results.extend(page_results)
+                wcag_aggregate = self.aggregate_wcag_results(all_page_results)
                 security_aggregate = {}
             else:  # "all" mode
                 # Scan accessibility for all pages
                 page_results = await self.scan_pages_accessibility_only(urls)
-                wcag_aggregate = self.aggregate_wcag_results(page_results)
+                # Combine login page results with authenticated page results
+                all_page_results.extend(page_results)
+                wcag_aggregate = self.aggregate_wcag_results(all_page_results)
                 
                 # Scan security once (domain-level)
                 logger.info("Running domain-level security scan...")
@@ -458,7 +533,7 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             # Ensure wcag_aggregate has proper structure
             if not wcag_aggregate:
                 wcag_aggregate = {
-                    "total_pages_scanned": len(page_results) if page_results else 0,
+                    "total_pages_scanned": len(all_page_results) if all_page_results else len(page_results) if page_results else 0,
                     "pages_with_issues": 0,
                     "total_violations": 0,
                     "unique_rules_violated": 0,
@@ -468,6 +543,15 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
                     "top_issues": []
                 }
             
+            # Add login page detection metadata to wcag_aggregate
+            if self.login_page_results:
+                login_urls = [r["url"] for r in self.login_page_results]
+                wcag_aggregate["login_page_detection"] = {
+                    "total_checked": len(self.login_page_results),
+                    "pages_with_login_detected": login_urls,
+                    "pages_without_login_detected": []
+                }
+            
             # Log aggregation results for debugging
             logger.info(f"\n📊 WCAG Aggregation Results:")
             logger.info(f"   Total violations: {wcag_aggregate.get('total_violations', 0)}")
@@ -475,13 +559,17 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             logger.info(f"   Pages with issues: {wcag_aggregate.get('pages_with_issues', 0)}")
             
             # Generate summary
+            # Use all_page_results (includes login pages) for summary generation
             summary = self.generate_site_summary(
                 crawl_result,
-                page_results if page_results else [],
+                all_page_results if all_page_results else (page_results if page_results else []),
                 wcag_aggregate,
                 security_aggregate if security_aggregate else {}
             )
             summary["scan_mode"] = self.scan_mode
+            # Add login page count to summary
+            if self.login_page_results:
+                summary["login_pages_scanned"] = len(self.login_page_results)
             
             # Log calculated score for debugging
             logger.info(f"   Calculated accessibility score: {summary.get('accessibility_score', 0)}")
@@ -491,13 +579,14 @@ class AuthenticatedSiteScanOrchestrator(SiteScanOrchestrator):
             result = {
                 "summary": summary,
                 "crawl_result": crawl_result,
-                "page_results": page_results if page_results else [],
+                "page_results": all_page_results if all_page_results else (page_results if page_results else []),
                 "wcag_aggregate": wcag_aggregate,
                 "security_aggregate": security_aggregate if security_aggregate else {},
                 "duration_seconds": duration,
                 "authenticated_scan": True,
                 "session_used": bool(self.authenticated_session),
-                "authenticated_urls": list(self.authenticated_urls)
+                "authenticated_urls": list(self.authenticated_urls),
+                "login_page_results": self.login_page_results  # Explicitly include login page results
             }
             
             return result
@@ -527,6 +616,7 @@ async def scan_authenticated_site(
     scan_mode: str = "all",
     parallel_scans: int = 3,
     use_selenium_crawler: bool = False,
+    authenticated_urls: Optional[List[str]] = None,
     db = None,
     organization_id: str = None
 ) -> Dict[str, Any]:
@@ -541,6 +631,7 @@ async def scan_authenticated_site(
         scan_mode: "all", "accessibility", or "security"
         parallel_scans: Number of concurrent page scans
         use_selenium_crawler: Whether to use Selenium for crawling
+        authenticated_urls: Optional list of authenticated page URLs to test after login
         db: Database connection
         organization_id: Organization ID for caching
         
@@ -549,6 +640,7 @@ async def scan_authenticated_site(
     """
     scanner = AuthenticatedSiteScanOrchestrator(
         credentials=credentials,
+        authenticated_urls=authenticated_urls,
         max_pages=max_pages,
         max_depth=max_depth,
         scan_mode=scan_mode,

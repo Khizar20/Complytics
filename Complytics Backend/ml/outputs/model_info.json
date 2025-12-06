@@ -4,7 +4,8 @@
   "test_size": 1095,
   "labels": [
     "critical",
-    "major",
+    "serious",
+    "moderate",
     "minor"
   ],
   "report": {
@@ -25,6 +26,12 @@
       "recall": 0.8949742430688676,
       "f1-score": 0.902689346034532,
       "support": 357.0
+    },
+    "serious": {
+      "precision": 0.8105034319012766,
+      "recall": 0.7949742430688676,
+      "f1-score": 0.802689346034532,
+      "support": 342.0
     },
     "accuracy": 0.8151598151598152,
     "macro avg": {

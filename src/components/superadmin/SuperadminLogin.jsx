@@ -1,5 +1,5 @@
 // src/components/superadmin/SuperadminLogin.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,21 @@ export default function SuperadminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated, user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if superadmin is already authenticated
+  useEffect(() => {
+    // Wait for auth context to finish loading
+    if (authLoading) {
+      return;
+    }
+
+    // Check if user is already authenticated and is a superadmin
+    if (isAuthenticated && user && user.role === 'superadmin') {
+      navigate('/superadmin/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, authLoading, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,6 +72,18 @@ export default function SuperadminLogin() {
       setIsLoading(false);
     }
   };
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <FaUserShield className="animate-pulse h-8 w-8 text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">

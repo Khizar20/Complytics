@@ -133,7 +133,7 @@ const ScheduleScan = () => {
       });
       if (!resp.ok) throw new Error(await resp.text() || 'Failed to schedule scan');
       await resp.json();
-      setSuccess('Whole-site scan scheduled successfully. You will receive an email after it completes.');
+      setSuccess('Compliance scan scheduled successfully. You will receive an email with website testing and Azure compliance results after it completes.');
       setRunAt('');
       if (!usePreviousUrl) {
         setScheduleUrl('');
@@ -271,7 +271,7 @@ const ScheduleScan = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Schedule Compliance Scan</h2>
-          <p className="text-muted-foreground">Schedule automated whole-site scans for your website</p>
+          <p className="text-muted-foreground">Schedule automated whole-site scans for your website and Azure compliance analysis</p>
         </div>
       </div>
 
@@ -284,14 +284,21 @@ const ScheduleScan = () => {
               <FaCalendarAlt className="text-xl text-primary" />
             </div>
             <div>
-              <h3 className="text-xl font-semibold text-foreground">Schedule a One-Time Whole-Site Scan</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">Runs comprehensive website testing on the selected date/time</p>
+              <h3 className="text-xl font-semibold text-foreground">Schedule a One-Time Compliance Scan</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Runs comprehensive website testing and Azure compliance analysis on the selected date/time</p>
             </div>
           </div>
         </div>
 
         {/* Card Body */}
         <div className="p-6 space-y-6">
+          {/* Info about Azure compliance */}
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              <strong>Note:</strong> Scheduled scans automatically include Azure compliance analysis if Azure settings have been fetched. 
+              The email notification will include both website testing results and Azure compliance check results.
+            </p>
+          </div>
           {/* Alert Messages */}
           {error && (
             <motion.div

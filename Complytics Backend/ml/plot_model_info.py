@@ -19,9 +19,14 @@ def plot_model_info(model_info_path: str, output_path: str = None) -> str:
     data = load_model_info(info_path)
 
     report = data.get("report", {})
+    skip_keys = {"accuracy", "macro avg", "weighted avg"}
+    
+    # Respect saved label ordering (ensures classes like "serious" are plotted)
     labels: List[str] = [
-        label for label in report.keys() if label not in {"accuracy", "macro avg", "weighted avg"}
+        label for label in data.get("labels", []) if label in report and label not in skip_keys
     ]
+    if not labels:
+        labels = [label for label in report.keys() if label not in skip_keys]
 
     metrics = ["precision", "recall", "f1-score"]
 

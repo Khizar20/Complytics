@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import FormattedResponse from '@/components/ui/FormattedResponse';
 import UiTestingRecommendations from '@/components/ui/UiTestingRecommendations';
-import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaDesktop, FaFilePdf, FaFileExcel, FaSpinner, FaChevronDown, FaChartLine, FaEye, FaEyeSlash, FaPlus, FaTimes } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { buildApiUrl } from '@/lib/api';
 
@@ -20,8 +20,14 @@ const UiTesting = () => {
   const [openFindings, setOpenFindings] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   
+  // Scan mode: 'crawl' or 'specific'
+  const [scanType, setScanType] = useState('crawl'); // 'crawl' or 'specific'
+  const [specificUrls, setSpecificUrls] = useState(['']); // Array of URL strings
+  
   // Authentication state
   const [useAuthentication, setUseAuthentication] = useState(false);
+  const [loginUrl, setLoginUrl] = useState(''); // Login URL for specific URLs mode
+  const [authenticatedUrls, setAuthenticatedUrls] = useState(['']); // Authenticated page URLs to test after login
   const [credentials, setCredentials] = useState({
     username: '',
     password: ''
@@ -32,16 +38,109 @@ const UiTesting = () => {
   const apiBase = buildApiUrl('/api');
 
   const runScan = async () => {
-    const normalized = normalizeUrl(url);
-    if (!normalized) {
-      setError('Please enter a valid URL (e.g., https://example.com)');
-      return;
+    let normalized = '';
+    let urlList = [];
+    
+    // Validate based on scan type
+    if (scanType === 'crawl') {
+      normalized = normalizeUrl(url);
+      if (!normalized) {
+        setError('Please enter a valid URL (e.g., https://example.com)');
+        return;
+      }
+    } else {
+      // Specific URLs mode
+      // Filter out empty URLs and validate
+      const nonEmptyUrls = specificUrls.filter(u => u.trim().length > 0);
+      
+      if (nonEmptyUrls.length === 0) {
+        setError('Please enter at least one URL to scan');
+        return;
+      }
+      
+      // Parse and validate URLs
+      const normalizedUrls = nonEmptyUrls
+        .map(u => {
+          const trimmed = u.trim();
+          const prefixed = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+          try {
+            const parsed = new URL(prefixed);
+            // Canonicalize by forcing lowercase host and trimming trailing slash
+            parsed.hostname = parsed.hostname.toLowerCase();
+            let href = parsed.href;
+            href = href.endsWith('/') ? href.slice(0, -1) : href;
+            return href;
+          } catch {
+            return null;
+          }
+        })
+        .filter(u => u !== null);
+      
+      if (normalizedUrls.length === 0) {
+        setError('Please provide at least one valid URL');
+        return;
+      }
+      
+      const uniqueUrls = [];
+      const seen = new Set();
+      for (const urlValue of normalizedUrls) {
+        if (seen.has(urlValue)) {
+          setError('Please enter different URLs for each field');
+          return;
+        }
+        seen.add(urlValue);
+        uniqueUrls.push(urlValue);
+      }
+      
+      urlList = uniqueUrls;
+      
+      if (urlList.length === 0) {
+        setError('Please provide at least one valid URL');
+        return;
+      }
+      
+      // Use first URL as base URL for the request
+      normalized = urlList[0];
     }
     
     // Validate credentials if authentication is enabled (skip for security-only mode)
-    if (mode !== 'security' && useAuthentication && (!credentials.username || !credentials.password)) {
-      setError('Please provide both username and password for authenticated scanning');
-      return;
+    if (mode !== 'security' && useAuthentication) {
+      if (!credentials.username || !credentials.password) {
+        setError('Please provide both username and password for authenticated scanning');
+        return;
+      }
+      // For specific URLs mode, login URL is required
+      if (scanType === 'specific') {
+        if (!loginUrl.trim()) {
+          setError('Please provide the login URL for specific URLs authentication');
+          return;
+        }
+        const normalizedLoginUrl = normalizeUrl(loginUrl);
+        if (!normalizedLoginUrl) {
+          setError('Please enter a valid login URL (e.g., https://example.com/login)');
+          return;
+        }
+      }
+      
+      // Validate authenticated URLs - must be provided
+      const nonEmptyAuthUrls = authenticatedUrls.filter(u => u.trim().length > 0);
+      if (nonEmptyAuthUrls.length === 0) {
+        setError('Please provide at least one authenticated page URL to test after login');
+        return;
+      }
+      
+      // Validate each authenticated URL
+      const invalidUrls = [];
+      for (const url of nonEmptyAuthUrls) {
+        const normalized = normalizeUrl(url);
+        if (!normalized) {
+          invalidUrls.push(url);
+        }
+      }
+      if (invalidUrls.length > 0) {
+        setError(`Please provide valid URLs for authenticated pages. Invalid: ${invalidUrls.join(', ')}`);
+        return;
+      }
     }
     
     // Disable authentication for security-only mode (security scans are domain-level)
@@ -73,11 +172,16 @@ const UiTesting = () => {
       requestBody = {
         url: normalized,
         scan_mode: mode,
-        max_pages: 50,
+        max_pages: scanType === 'specific' ? urlList.length : 50,
         max_depth: 3,
         parallel_scans: 3,
         use_selenium_crawler: false
       };
+      
+      // If specific URLs mode is selected, add URLs
+      if (scanType === 'specific' && urlList.length > 0) {
+        requestBody.specific_urls = urlList;
+      }
       
       // Add credentials if authentication is enabled (skip for security-only mode)
       if (mode !== 'security' && useAuthentication) {
@@ -85,6 +189,36 @@ const UiTesting = () => {
           username: credentials.username,
           password: credentials.password
         };
+        // For specific URLs mode, add login URL if provided
+        if (scanType === 'specific' && loginUrl.trim()) {
+          const normalizedLoginUrl = normalizeUrl(loginUrl);
+          if (normalizedLoginUrl) {
+            requestBody.login_url = normalizedLoginUrl;
+          }
+        }
+        // Add authenticated page URLs if provided
+        const nonEmptyAuthUrls = authenticatedUrls.filter(u => u.trim().length > 0);
+        if (nonEmptyAuthUrls.length > 0) {
+          const normalizedAuthUrls = nonEmptyAuthUrls
+            .map(u => {
+              const trimmed = u.trim();
+              const prefixed = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+              try {
+                const parsed = new URL(prefixed);
+                parsed.hostname = parsed.hostname.toLowerCase();
+                let href = parsed.href;
+                href = href.endsWith('/') ? href.slice(0, -1) : href;
+                return href;
+              } catch {
+                return null;
+              }
+            })
+            .filter(u => u !== null);
+          
+          if (normalizedAuthUrls.length > 0) {
+            requestBody.authenticated_urls = normalizedAuthUrls;
+          }
+        }
       }
       
       const resp = await fetch(endpoint, {
@@ -103,6 +237,12 @@ const UiTesting = () => {
       
       const data = await resp.json();
       setResult(data);
+      
+      // Store the base URL for export purposes (use first scanned URL for specific URLs mode)
+      if (scanType === 'specific' && data?.crawl_result?.urls?.length > 0) {
+        // Update url state to first scanned URL for export lookup
+        setUrl(data.crawl_result.urls[0]);
+      }
       
       // Check if authentication was required and successful
       if (data.authentication_required !== undefined) {
@@ -236,13 +376,22 @@ const UiTesting = () => {
   const download = async (type) => {
     try {
       const endpoint = type === 'pdf' ? 'pdf' : 'excel';
+      // For specific URLs scans, use the first URL or the base URL from result
+      let exportUrl = url;
+      if (scanType === 'specific' && result) {
+        // Use the first scanned URL for export lookup
+        const scannedUrls = result?.crawl_result?.urls || result?.page_results?.map(p => p.url) || [];
+        if (scannedUrls.length > 0) {
+          exportUrl = scannedUrls[0];
+        }
+      }
       const resp = await fetch(`${apiBase}/ui/export/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ url, mode }),
+        body: JSON.stringify({ url: exportUrl, mode }),
       });
       if (!resp.ok) return;
       const blob = await resp.blob();
@@ -280,16 +429,34 @@ const UiTesting = () => {
     if (normalizedGrade && normalizedGrade.toLowerCase() !== 'none') {
       return normalizedGrade;
     }
-    if (mode === 'security') {
+    // If SSL Labs grade is missing, calculate from security score
+    if (typeof securityScore === 'number') {
+      if (securityScore >= 90) return 'A+';
+      if (securityScore >= 80) return 'A';
+      if (securityScore >= 70) return 'B';
+      if (securityScore >= 60) return 'C';
+      if (securityScore >= 50) return 'D';
+      return 'F';
+    }
+    // Fallback: calculate from missing headers count (always provide a grade if we have security data)
+    if (mode === 'security' || mode === 'all' || missingHeaders !== undefined) {
       const missingCount = missingHeaders?.length || 0;
       if (missingCount <= 1) return 'A-';
       if (missingCount <= 3) return 'B';
       if (missingCount <= 5) return 'C';
       return 'D';
     }
-    return '—';
+    // Last resort: return a default grade instead of empty
+    return 'B';
   };
   const displaySslGrade = getDisplaySslGrade();
+  
+  // Check for login page detection status
+  const loginPageDetection = result?.wcag_aggregate?.login_page_detection;
+  const hasLoginPageCheck = loginPageDetection && loginPageDetection.total_checked > 0;
+  const noLoginPagesFound = hasLoginPageCheck && 
+    loginPageDetection.pages_without_login_detected.length > 0 &&
+    loginPageDetection.pages_with_login_detected.length === 0;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
@@ -302,31 +469,128 @@ const UiTesting = () => {
       </div>
 
       <div className="p-6 bg-card rounded-xl shadow-lg border border-border space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com"
-            className="md:col-span-3 w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            aria-invalid={!!error}
-          />
-          <select 
-            value={mode} 
-            onChange={(e) => {
-              const newMode = e.target.value;
-              setMode(newMode);
-              // Disable authentication when switching to security mode
-              if (newMode === 'security') {
-                setUseAuthentication(false);
-              }
-            }} 
-            className="w-full px-4 py-3 border border-border rounded-lg bg-background"
-          >
-            <option value="all">All</option>
-            <option value="accessibility">Accessibility</option>
-            <option value="security">Security</option>
-          </select>
+        {/* Scan Type Selection */}
+        <div className="flex items-center space-x-4">
+          <label className="text-sm font-medium text-foreground">Scan Type:</label>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                name="scanType"
+                value="crawl"
+                checked={scanType === 'crawl'}
+                onChange={(e) => setScanType(e.target.value)}
+                className="rounded border-border"
+              />
+              <span className="text-sm">Crawl & Scan (up to 50 pages)</span>
+            </label>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                name="scanType"
+                value="specific"
+                checked={scanType === 'specific'}
+                onChange={(e) => setScanType(e.target.value)}
+                className="rounded border-border"
+              />
+              <span className="text-sm">Scan Specific Pages</span>
+            </label>
+          </div>
         </div>
+        
+        {scanType === 'crawl' ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com"
+              className="md:col-span-3 w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              aria-invalid={!!error}
+            />
+            <select 
+              value={mode} 
+              onChange={(e) => {
+                const newMode = e.target.value;
+                setMode(newMode);
+                // Disable authentication when switching to security mode
+                if (newMode === 'security') {
+                  setUseAuthentication(false);
+                }
+              }} 
+              className="w-full px-4 py-3 border border-border rounded-lg bg-background"
+            >
+              <option value="all">All</option>
+              <option value="accessibility">Accessibility</option>
+              <option value="security">Security</option>
+            </select>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Enter page URLs to scan:
+              </label>
+              <div className="space-y-2">
+                {specificUrls.map((urlValue, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={urlValue}
+                      onChange={(e) => {
+                        const newUrls = [...specificUrls];
+                        newUrls[index] = e.target.value;
+                        setSpecificUrls(newUrls);
+                      }}
+                      placeholder={`https://example.com/page${index + 1}`}
+                      className="flex-1 px-4 py-2 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                    />
+                    {specificUrls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newUrls = specificUrls.filter((_, i) => i !== index);
+                          setSpecificUrls(newUrls);
+                        }}
+                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Remove URL"
+                        aria-label={`Remove URL ${index + 1}`}
+                      >
+                        <FaTimes className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSpecificUrls([...specificUrls, ''])}
+                  className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg hover:bg-secondary transition-colors"
+                >
+                  <FaPlus className="w-4 h-4" />
+                  <span>Add URL</span>
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Add URLs one by one. Maximum {mode === 'security' ? 'unlimited' : '50'} pages.
+              </p>
+            </div>
+            <select 
+              value={mode} 
+              onChange={(e) => {
+                const newMode = e.target.value;
+                setMode(newMode);
+                // Disable authentication when switching to security mode
+                if (newMode === 'security') {
+                  setUseAuthentication(false);
+                }
+              }} 
+              className="w-full px-4 py-3 border border-border rounded-lg bg-background"
+            >
+              <option value="all">All</option>
+              <option value="accessibility">Accessibility</option>
+              <option value="security">Security</option>
+            </select>
+          </div>
+        )}
         {mode === 'security' && (
           <p className="text-xs text-muted-foreground -mt-2">
             ℹ️ Security scans are domain-level and don't require authentication
@@ -364,12 +628,82 @@ const UiTesting = () => {
               </div>
               <p className="text-sm text-yellow-700 dark:text-yellow-300">
                 The website requires login credentials to access protected areas. 
-                Provide your credentials below to scan authenticated pages.
+                {scanType === 'specific' 
+                  ? ' Provide the login URL and credentials below. The system will first test the login page, authenticate, then test your specific URLs and authenticated pages.' 
+                  : ' Provide your credentials and authenticated page URLs below. The system will crawl the site, detect login pages, authenticate if found, then test the provided authenticated pages.'}
               </p>
+              
+              {/* Login URL field - only for specific URLs mode */}
+              {scanType === 'specific' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Login URL <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={loginUrl}
+                    onChange={(e) => setLoginUrl(e.target.value)}
+                    placeholder="https://example.com/login"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                  <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                    The URL of the login page. The system will test this page's accessibility, then authenticate and fetch authenticated pages.
+                  </p>
+                </div>
+              )}
+              
+              {/* Authenticated Page URLs field */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Authenticated Page URLs <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-yellow-600 dark:text-yellow-400 mb-2">
+                  URLs of pages to test after successful login. At least one authenticated page URL must be provided.
+                </p>
+                <div className="space-y-2">
+                  {authenticatedUrls.map((authUrl, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={authUrl}
+                        onChange={(e) => {
+                          const newUrls = authenticatedUrls.map((u, i) => i === index ? e.target.value : u);
+                          setAuthenticatedUrls(newUrls);
+                        }}
+                        placeholder={`https://example.com/secure${index > 0 ? index + 1 : ''}`}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                      />
+                      {authenticatedUrls.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newUrls = authenticatedUrls.filter((_, i) => i !== index);
+                            setAuthenticatedUrls(newUrls);
+                          }}
+                          className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="Remove URL"
+                          aria-label={`Remove authenticated URL ${index + 1}`}
+                        >
+                          <FaTimes className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAuthenticatedUrls([...authenticatedUrls, ''])}
+                    className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <FaPlus className="w-4 h-4" />
+                    <span>Add Authenticated Page URL</span>
+                  </button>
+                </div>
+              </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Username/Email
+                    Username/Email <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -381,7 +715,7 @@ const UiTesting = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Password
+                    Password <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -408,7 +742,7 @@ const UiTesting = () => {
               </div>
               <div className="text-xs text-yellow-600 dark:text-yellow-400">
                 <strong>Note:</strong> Credentials are only used during the scan and are not stored. 
-                The system will automatically detect login pages and authenticate as needed.
+                {scanType === 'specific' ? ' The system will first test the login page, authenticate, discover authenticated pages, then test your specific URLs according to the selected mode.' : ' The system will automatically detect login pages and authenticate as needed.'}
               </div>
             </motion.div>
             )}
@@ -492,12 +826,44 @@ const UiTesting = () => {
             </div>
           )}
           
+          {/* Login page detection status */}
+          {useAuthentication && hasLoginPageCheck && (
+            <div className={`p-4 rounded-lg border ${
+              noLoginPagesFound
+                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+            }`}>
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  noLoginPagesFound ? 'bg-yellow-500' : 'bg-blue-500'
+                }`}></div>
+                <h4 className={`font-semibold ${
+                  noLoginPagesFound
+                    ? 'text-yellow-900 dark:text-yellow-100'
+                    : 'text-blue-900 dark:text-blue-100'
+                }`}>
+                  Login Page Detection
+                </h4>
+              </div>
+              <p className={`text-sm mt-1 ${
+                noLoginPagesFound
+                  ? 'text-yellow-700 dark:text-yellow-300'
+                  : 'text-blue-700 dark:text-blue-300'
+              }`}>
+                {noLoginPagesFound
+                  ? `No login pages detected on ${loginPageDetection.pages_without_login_detected.length} scanned page(s). Pages were scanned as public pages.`
+                  : `Login pages detected on ${loginPageDetection.pages_with_login_detected.length} page(s).`
+                }
+              </p>
+            </div>
+          )}
+          
           {/* Site scan summary banner */}
           {isSiteScan && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">Whole-Site Scan Complete</h4>
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">Scan Completed</h4>
                   <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
                     Scanned {result?.summary?.pages_scanned || 0} pages across the website
                     {result?.duration_seconds && ` in ${(result.duration_seconds / 60).toFixed(1)} minutes`}

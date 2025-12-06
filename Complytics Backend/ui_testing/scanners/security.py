@@ -240,6 +240,54 @@ def run_security_scan(url: str) -> Dict[str, Any]:
             }
     except Exception:
         logger.exception("Failed to derive missing headers from live headers")
+    
+    # Calculate SSL grade from security score if SSL Labs failed/timed out
+    ssllabs_grade = None
+    if ssllabs_result and not ssllabs_result.get("error"):
+        endpoints = ssllabs_result.get("endpoints", [])
+        if endpoints and endpoints[0].get("grade"):
+            ssllabs_grade = endpoints[0].get("grade")
+    
+    # If SSL Labs failed or timed out, calculate grade from security headers score
+    if not ssllabs_grade:
+        headers_score = headers_result.get("score")
+        if headers_score is not None:
+            # Map security headers score (0-100) to SSL-like grade
+            if headers_score >= 90:
+                ssllabs_grade = "A+"
+            elif headers_score >= 80:
+                ssllabs_grade = "A"
+            elif headers_score >= 70:
+                ssllabs_grade = "B"
+            elif headers_score >= 60:
+                ssllabs_grade = "C"
+            elif headers_score >= 50:
+                ssllabs_grade = "D"
+            else:
+                ssllabs_grade = "F"
+            logger.info(f"SSL Labs unavailable - calculated grade {ssllabs_grade} from security headers score {headers_score}")
+        else:
+            # Fallback: calculate from missing headers count
+            missing_count = len(headers_result.get("missing", []))
+            if missing_count <= 1:
+                ssllabs_grade = "A-"
+            elif missing_count <= 3:
+                ssllabs_grade = "B"
+            elif missing_count <= 5:
+                ssllabs_grade = "C"
+            else:
+                ssllabs_grade = "D"
+            logger.info(f"SSL Labs unavailable - calculated grade {ssllabs_grade} from missing headers count {missing_count}")
+    
+    # Update ssllabs_result with calculated grade if needed
+    if ssllabs_grade and (not ssllabs_result.get("endpoints") or not ssllabs_result.get("endpoints", [{}])[0].get("grade")):
+        if not ssllabs_result.get("endpoints"):
+            ssllabs_result["endpoints"] = []
+        if not ssllabs_result["endpoints"]:
+            ssllabs_result["endpoints"] = [{}]
+        ssllabs_result["endpoints"][0]["grade"] = ssllabs_grade
+        ssllabs_result["grade"] = ssllabs_grade  # Also add at top level for easy access
+    
     return {
         "securityheaders": headers_result,
         "ssllabs": ssllabs_result,
