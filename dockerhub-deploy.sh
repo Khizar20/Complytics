@@ -157,3 +157,12 @@ echo "   az containerapp update --name $BACKEND_APP --resource-group $RESOURCE_G
 
 
 
+
+
+
+
+
+
+
+
+

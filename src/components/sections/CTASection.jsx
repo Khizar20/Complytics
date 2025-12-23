@@ -171,52 +171,52 @@ const CTASection = () => {
   };
 
   return (
-    <section id="contact" className="section py-24 relative overflow-hidden">
-      <div className="gradient-blur bottom-0 left-1/4 opacity-40"></div>
+    <section id="contact" className="section py-24 relative overflow-hidden bg-gradient-to-b from-blue-50/30 to-blue-50/50">
+      <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl opacity-40"></div>
       
-      <div className="grid md:grid-cols-2 gap-12 items-center">
+      <div className="grid md:grid-cols-2 gap-12 items-center relative z-10">
         <div>
-          <h2 className="section-title">Ready to Simplify Your Compliance Journey?</h2>
-          <p className="section-subtitle mb-8">
+          <h2 className="text-4xl md:text-5xl font-bold text-black mb-6">Ready to Simplify Your Compliance Journey?</h2>
+          <p className="text-lg md:text-xl text-gray-600 mb-8 leading-relaxed">
             Join hundreds of organizations that have transformed their security compliance with Complytics.
           </p>
           
           <div className="space-y-6 mb-8">
             <div className="flex items-start">
-              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
-                <FaShieldAlt size={20} className="text-primary" />
+              <div className="mr-4 mt-1 p-3 bg-blue-600 rounded-full shadow-lg">
+                <FaShieldAlt size={20} className="text-white" />
               </div>
               <div>
-                <h3 className="font-medium">Enhance Your Security Posture</h3>
-                <p className="text-muted-foreground">Maintain continuous compliance with automated security checks and remediation.</p>
+                <h3 className="font-bold text-black mb-1">Enhance Your Security Posture</h3>
+                <p className="text-gray-600">Maintain continuous compliance with automated security checks and remediation.</p>
               </div>
             </div>
             
             <div className="flex items-start">
-              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
-                <FaClock size={20} className="text-primary" />
+              <div className="mr-4 mt-1 p-3 bg-blue-600 rounded-full shadow-lg">
+                <FaClock size={20} className="text-white" />
               </div>
               <div>
-                <h3 className="font-medium">Save Valuable Time</h3>
-                <p className="text-muted-foreground">Reduce manual compliance efforts by up to 80% with our automation platform.</p>
+                <h3 className="font-bold text-black mb-1">Save Valuable Time</h3>
+                <p className="text-gray-600">Reduce manual compliance efforts by up to 80% with our automation platform.</p>
               </div>
             </div>
             
             <div className="flex items-start">
-              <div className="mr-4 mt-1 p-2 bg-primary/10 rounded-full">
-                <FaEnvelope size={20} className="text-primary" />
+              <div className="mr-4 mt-1 p-3 bg-blue-600 rounded-full shadow-lg">
+                <FaEnvelope size={20} className="text-white" />
               </div>
               <div>
-                <h3 className="font-medium">Expert Support</h3>
-                <p className="text-muted-foreground">Our compliance experts are ready to guide you through your security journey.</p>
+                <h3 className="font-bold text-black mb-1">Expert Support</h3>
+                <p className="text-gray-600">Our compliance experts are ready to guide you through your security journey.</p>
               </div>
             </div>
           </div>
         </div>
         
         <div>
-          <div className="glass-card rounded-xl p-8 md:p-10">
-            <h3 className="text-xl font-semibold mb-6">Get in Touch</h3>
+          <div className="bg-white border-2 border-black rounded-xl p-8 md:p-10 shadow-2xl">
+            <h3 className="text-2xl font-bold text-black mb-6">Get in Touch</h3>
             
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="grid grid-cols-2 gap-4">
@@ -230,7 +230,7 @@ const CTASection = () => {
                     required
                     value={formData.firstName}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-2 border ${errors.firstName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                    className={`w-full px-4 py-3 border-2 ${errors.firstName ? 'border-red-500' : 'border-black'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all`}
                     placeholder="John"
                   />
                   {errors.firstName && (
@@ -248,7 +248,7 @@ const CTASection = () => {
                     required
                     value={formData.lastName}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-2 border ${errors.lastName ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                    className={`w-full px-4 py-3 border-2 ${errors.lastName ? 'border-red-500' : 'border-black'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all`}
                     placeholder="Smith"
                   />
                   {errors.lastName && (
@@ -267,7 +267,7 @@ const CTASection = () => {
                   required
                   value={formData.email}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-full px-4 py-3 border-2 border-black rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all"
                   placeholder="john@company.com"
                 />
               </div>
@@ -282,7 +282,7 @@ const CTASection = () => {
                   required
                   value={formData.company}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-full px-4 py-3 border-2 border-black rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all"
                   placeholder="Acme Inc."
                 />
               </div>
@@ -297,7 +297,7 @@ const CTASection = () => {
                   required
                   value={formData.domain}
                   onChange={handleInputChange}
-                  className={`w-full px-4 py-2 border ${errors.domain ? 'border-red-500' : 'border-gray-200'} rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                    className={`w-full px-4 py-3 border-2 ${errors.domain ? 'border-red-500' : 'border-black'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all`}
                   placeholder="acme.com"
                 />
                 {errors.domain && (
@@ -306,7 +306,7 @@ const CTASection = () => {
               </div>
               
               <Button 
-                className="w-full" 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 py-6 text-lg font-semibold" 
                 size="lg" 
                 type="submit"
                 disabled={isSubmitting}

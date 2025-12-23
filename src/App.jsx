@@ -10,7 +10,7 @@ import CustomCursor from './components/ui/CustomCursor'
 
 function App() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-blue-50/30">
       <CustomCursor />
       <Navbar />
       <main className="relative">

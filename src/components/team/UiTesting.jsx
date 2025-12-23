@@ -459,52 +459,59 @@ const UiTesting = () => {
     loginPageDetection.pages_with_login_detected.length === 0;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <FaDesktop className="text-2xl text-primary" />
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-10 p-8">
+      <div className="flex items-center space-x-4 mb-6">
+        <div className="p-3 bg-gradient-to-br from-blue-600 to-blue-500 rounded-xl shadow-lg">
+          <FaDesktop className="text-3xl text-white" />
+        </div>
         <div>
-          <h2 className="text-2xl font-bold text-foreground">UI Testing</h2>
-          <p className="text-muted-foreground">Whole-site WCAG accessibility + Security + SSL testing with AI recommendations</p>
+          <h2 className="text-4xl md:text-5xl font-bold text-black">UI Testing</h2>
+          <p className="text-lg text-gray-600 mt-2">Whole-site WCAG accessibility + Security + SSL testing with AI recommendations</p>
         </div>
       </div>
 
-      <div className="p-6 bg-card rounded-xl shadow-lg border border-border space-y-4">
+      <motion.div 
+        whileHover={{ scale: 1.01 }}
+        className="p-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl border-2 border-blue-200 relative overflow-hidden group space-y-6"
+      >
+        <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+        <div className="relative z-10">
         {/* Scan Type Selection */}
-        <div className="flex items-center space-x-4">
-          <label className="text-sm font-medium text-foreground">Scan Type:</label>
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2 cursor-pointer">
+        <div className="flex items-center space-x-4 mb-4">
+          <label className="text-sm font-bold text-gray-900">Scan Type:</label>
+          <div className="flex items-center space-x-6 bg-blue-50/50 backdrop-blur-sm rounded-full p-1 border-2 border-blue-200">
+            <label className="flex items-center space-x-2 cursor-pointer px-4 py-2 rounded-full transition-all">
               <input
                 type="radio"
                 name="scanType"
                 value="crawl"
                 checked={scanType === 'crawl'}
                 onChange={(e) => setScanType(e.target.value)}
-                className="rounded border-border"
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300"
               />
-              <span className="text-sm">Crawl & Scan (up to 50 pages)</span>
+              <span className={`text-sm font-semibold ${scanType === 'crawl' ? 'text-blue-700' : 'text-gray-600'}`}>Crawl & Scan (up to 50 pages)</span>
             </label>
-            <label className="flex items-center space-x-2 cursor-pointer">
+            <label className="flex items-center space-x-2 cursor-pointer px-4 py-2 rounded-full transition-all">
               <input
                 type="radio"
                 name="scanType"
                 value="specific"
                 checked={scanType === 'specific'}
                 onChange={(e) => setScanType(e.target.value)}
-                className="rounded border-border"
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300"
               />
-              <span className="text-sm">Scan Specific Pages</span>
+              <span className={`text-sm font-semibold ${scanType === 'specific' ? 'text-blue-700' : 'text-gray-600'}`}>Scan Specific Pages</span>
             </label>
           </div>
         </div>
         
         {scanType === 'crawl' ? (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
-              className="md:col-span-3 w-full px-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className="md:col-span-3 w-full px-5 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
               aria-invalid={!!error}
             />
             <select 
@@ -517,7 +524,7 @@ const UiTesting = () => {
                   setUseAuthentication(false);
                 }
               }} 
-              className="w-full px-4 py-3 border border-border rounded-lg bg-background"
+              className="w-full px-5 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
             >
               <option value="all">All</option>
               <option value="accessibility">Accessibility</option>
@@ -525,14 +532,14 @@ const UiTesting = () => {
             </select>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
+              <label className="block text-sm font-bold text-gray-900 mb-3">
                 Enter page URLs to scan:
               </label>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {specificUrls.map((urlValue, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <div key={index} className="flex items-center gap-3">
                     <input
                       type="text"
                       value={urlValue}
@@ -542,7 +549,7 @@ const UiTesting = () => {
                         setSpecificUrls(newUrls);
                       }}
                       placeholder={`https://example.com/page${index + 1}`}
-                      className="flex-1 px-4 py-2 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                      className="flex-1 px-5 py-3 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm text-sm"
                     />
                     {specificUrls.length > 1 && (
                       <button
@@ -551,7 +558,7 @@ const UiTesting = () => {
                           const newUrls = specificUrls.filter((_, i) => i !== index);
                           setSpecificUrls(newUrls);
                         }}
-                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        className="p-3 text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 rounded-xl transition-all shadow-md hover:shadow-lg"
                         title="Remove URL"
                         aria-label={`Remove URL ${index + 1}`}
                       >
@@ -563,13 +570,13 @@ const UiTesting = () => {
                 <button
                   type="button"
                   onClick={() => setSpecificUrls([...specificUrls, ''])}
-                  className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg hover:bg-secondary transition-colors"
+                  className="flex items-center gap-2 px-5 py-2.5 text-sm border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-blue-500 transition-all shadow-sm font-semibold text-gray-900"
                 >
                   <FaPlus className="w-4 h-4" />
                   <span>Add URL</span>
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
+              <p className="text-xs text-gray-600 mt-3 font-medium">
                 Add URLs one by one. Maximum {mode === 'security' ? 'unlimited' : '50'} pages.
               </p>
             </div>
@@ -583,7 +590,7 @@ const UiTesting = () => {
                   setUseAuthentication(false);
                 }
               }} 
-              className="w-full px-4 py-3 border border-border rounded-lg bg-background"
+              className="w-full px-5 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
             >
               <option value="all">All</option>
               <option value="accessibility">Accessibility</option>
@@ -592,23 +599,25 @@ const UiTesting = () => {
           </div>
         )}
         {mode === 'security' && (
-          <p className="text-xs text-muted-foreground -mt-2">
-            ℹ️ Security scans are domain-level and don't require authentication
-          </p>
+          <div className="p-4 bg-blue-50/80 backdrop-blur-sm border-2 border-blue-200 rounded-xl">
+            <p className="text-sm text-blue-800 font-medium">
+              ℹ️ Security scans are domain-level and don't require authentication
+            </p>
+          </div>
         )}
         
         {/* Authentication Section - Only show for accessibility and "all" modes */}
         {mode !== 'security' && (
-          <div className="space-y-3">
-            <div className="flex items-center space-x-2">
+          <div className="space-y-6 mt-8">
+            <div className="flex items-center space-x-3">
               <input
                 type="checkbox"
                 id="useAuthentication"
                 checked={useAuthentication}
                 onChange={(e) => setUseAuthentication(e.target.checked)}
-                className="rounded border-border"
+                className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-blue-500/50"
               />
-              <label htmlFor="useAuthentication" className="text-sm font-medium text-foreground">
+              <label htmlFor="useAuthentication" className="text-sm font-bold text-gray-900 cursor-pointer">
                 Enable authentication for login-protected pages
               </label>
             </div>
@@ -618,15 +627,15 @@ const UiTesting = () => {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3"
+              className="bg-gradient-to-r from-yellow-50/80 to-orange-50/80 backdrop-blur-sm border-2 border-yellow-300 rounded-xl p-6 space-y-4 shadow-sm"
             >
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                <h4 className="font-semibold text-yellow-800 dark:text-yellow-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-3 h-3 bg-yellow-600 rounded-full shadow-md"></div>
+                <h4 className="font-bold text-lg text-yellow-900">
                   Authentication Required
                 </h4>
               </div>
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              <p className="text-sm text-yellow-800 font-medium leading-relaxed">
                 The website requires login credentials to access protected areas. 
                 {scanType === 'specific' 
                   ? ' Provide the login URL and credentials below. The system will first test the login page, authenticate, then test your specific URLs and authenticated pages.' 
@@ -636,17 +645,17 @@ const UiTesting = () => {
               {/* Login URL field - only for specific URLs mode */}
               {scanType === 'specific' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Login URL <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">
+                    Login URL <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
                     value={loginUrl}
                     onChange={(e) => setLoginUrl(e.target.value)}
                     placeholder="https://example.com/login"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                   />
-                  <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                  <p className="text-xs text-yellow-700 mt-2 font-medium">
                     The URL of the login page. The system will test this page's accessibility, then authenticate and fetch authenticated pages.
                   </p>
                 </div>
@@ -654,15 +663,15 @@ const UiTesting = () => {
               
               {/* Authenticated Page URLs field */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Authenticated Page URLs <span className="text-red-500">*</span>
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  Authenticated Page URLs <span className="text-red-600">*</span>
                 </label>
-                <p className="text-xs text-yellow-600 dark:text-yellow-400 mb-2">
+                <p className="text-xs text-yellow-700 mb-3 font-medium">
                   URLs of pages to test after successful login. At least one authenticated page URL must be provided.
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {authenticatedUrls.map((authUrl, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div key={index} className="flex items-center gap-3">
                       <input
                         type="text"
                         value={authUrl}
@@ -671,7 +680,7 @@ const UiTesting = () => {
                           setAuthenticatedUrls(newUrls);
                         }}
                         placeholder={`https://example.com/secure${index > 0 ? index + 1 : ''}`}
-                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                        className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm text-sm"
                       />
                       {authenticatedUrls.length > 1 && (
                         <button
@@ -680,7 +689,7 @@ const UiTesting = () => {
                             const newUrls = authenticatedUrls.filter((_, i) => i !== index);
                             setAuthenticatedUrls(newUrls);
                           }}
-                          className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          className="p-3 text-white bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 rounded-xl transition-all shadow-md hover:shadow-lg"
                           title="Remove URL"
                           aria-label={`Remove authenticated URL ${index + 1}`}
                         >
@@ -692,7 +701,7 @@ const UiTesting = () => {
                   <button
                     type="button"
                     onClick={() => setAuthenticatedUrls([...authenticatedUrls, ''])}
-                    className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className="flex items-center gap-2 px-5 py-2.5 text-sm border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-blue-500 transition-all shadow-sm font-semibold text-gray-900"
                   >
                     <FaPlus className="w-4 h-4" />
                     <span>Add Authenticated Page URL</span>
@@ -700,22 +709,22 @@ const UiTesting = () => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Username/Email <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">
+                    Username/Email <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
                     value={credentials.username}
                     onChange={(e) => setCredentials({...credentials, username: e.target.value})}
                     placeholder="Enter your username or email"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Password <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">
+                    Password <span className="text-red-600">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -723,40 +732,42 @@ const UiTesting = () => {
                       value={credentials.password}
                       onChange={(e) => setCredentials({...credentials, password: e.target.value})}
                       placeholder="Enter your password"
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-blue-600 focus:outline-none transition-colors"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? (
-                        <FaEyeSlash className="w-4 h-4" />
+                        <FaEyeSlash className="w-5 h-5" />
                       ) : (
-                        <FaEye className="w-4 h-4" />
+                        <FaEye className="w-5 h-5" />
                       )}
                     </button>
                   </div>
                 </div>
               </div>
-              <div className="text-xs text-yellow-600 dark:text-yellow-400">
-                <strong>Note:</strong> Credentials are only used during the scan and are not stored. 
-                {scanType === 'specific' ? ' The system will first test the login page, authenticate, discover authenticated pages, then test your specific URLs according to the selected mode.' : ' The system will automatically detect login pages and authenticate as needed.'}
+              <div className="p-4 bg-yellow-100/50 border-2 border-yellow-300 rounded-xl">
+                <p className="text-xs text-yellow-900 font-semibold">
+                  <strong>Note:</strong> Credentials are only used during the scan and are not stored. 
+                  {scanType === 'specific' ? ' The system will first test the login page, authenticate, discover authenticated pages, then test your specific URLs according to the selected mode.' : ' The system will automatically detect login pages and authenticate as needed.'}
+                </p>
               </div>
             </motion.div>
             )}
           </div>
         )}
         {showProgress && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="space-y-3 p-4 bg-blue-50/50 backdrop-blur-sm border-2 border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between text-sm font-semibold text-gray-900">
               <span>Scanning…</span>
               <span>{progress}%</span>
             </div>
-            <div className="w-full bg-secondary rounded-lg h-3 overflow-hidden">
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden shadow-inner">
               <motion.div
-                className="h-3 bg-primary"
+                className="h-4 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-md"
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
                 transition={{ type: 'spring', stiffness: 120, damping: 20 }}
@@ -764,52 +775,81 @@ const UiTesting = () => {
             </div>
           </div>
         )}
-        <div className="flex items-center gap-3">
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={runScan} disabled={loading}
-            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+        <div className="flex items-center gap-4 pt-6">
+          <motion.button 
+            whileHover={{ scale: 1.02 }} 
+            whileTap={{ scale: 0.98 }} 
+            onClick={runScan} 
+            disabled={loading}
+            className="px-8 py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 flex items-center gap-2 font-bold shadow-lg hover:shadow-xl transition-all"
+          >
             {loading ? <FaSpinner className="animate-spin" /> : null}
             <span>{loading ? 'Scanning…' : 'Run Scan'}</span>
           </motion.button>
-          <button onClick={() => download('pdf')} disabled={!result || loading} className="px-4 py-2 border rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title={!result ? 'Run a scan to enable downloads' : ''}>
-            <FaFilePdf /> PDF
+          <button 
+            onClick={() => download('pdf')} 
+            disabled={!result || loading} 
+            className="px-5 py-2.5 border-2 border-gray-300 rounded-xl flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 hover:border-blue-500 transition-all shadow-sm font-semibold text-gray-900" 
+            title={!result ? 'Run a scan to enable downloads' : ''}
+          >
+            <FaFilePdf className="text-red-600" /> PDF
           </button>
-          <button onClick={() => download('excel')} disabled={!result || loading} className="px-4 py-2 border rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title={!result ? 'Run a scan to enable downloads' : ''}>
-            <FaFileExcel /> Excel
+          <button 
+            onClick={() => download('excel')} 
+            disabled={!result || loading} 
+            className="px-5 py-2.5 border-2 border-gray-300 rounded-xl flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 hover:border-green-500 transition-all shadow-sm font-semibold text-gray-900" 
+            title={!result ? 'Run a scan to enable downloads' : ''}
+          >
+            <FaFileExcel className="text-green-600" /> Excel
           </button>
-          {error && <span className="text-destructive text-sm ml-2">{error}</span>}
+          {error && (
+            <div className="ml-auto px-4 py-2 bg-red-50 border-2 border-red-300 text-red-800 rounded-xl text-sm font-semibold">
+              {error}
+            </div>
+          )}
         </div>
-      </div>
+        </div>
+      </motion.div>
       {showSuccessPopup && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg">
-          Scan completed successfully.
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          className="fixed bottom-6 right-6 z-50 px-6 py-4 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl shadow-2xl border-2 border-green-300"
+        >
+          <p className="font-bold">Scan completed successfully.</p>
+        </motion.div>
       )}
 
       {result && (
         <div className="space-y-6">
           {/* Authentication status banner */}
           {(result.authentication_required !== undefined || authRequired) && (
-            <div className={`p-4 rounded-lg border ${
-              result.authentication_successful 
-                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
-                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-            }`}>
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  result.authentication_successful ? 'bg-green-500' : 'bg-red-500'
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-5 rounded-xl border-2 backdrop-blur-sm ${
+                result.authentication_successful 
+                  ? 'bg-green-50/90 border-green-300' 
+                  : 'bg-red-50/90 border-red-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-3 h-3 rounded-full shadow-md ${
+                  result.authentication_successful ? 'bg-green-600' : 'bg-red-600'
                 }`}></div>
-                <h4 className={`font-semibold ${
+                <h4 className={`font-bold text-lg ${
                   result.authentication_successful 
-                    ? 'text-green-900 dark:text-green-100' 
-                    : 'text-red-900 dark:text-red-100'
+                    ? 'text-green-900' 
+                    : 'text-red-900'
                 }`}>
                   {result.authentication_required ? 'Authentication Required' : 'No Authentication Required'}
                 </h4>
               </div>
-              <p className={`text-sm mt-1 ${
+              <p className={`text-sm mt-2 font-medium ${
                 result.authentication_successful 
-                  ? 'text-green-700 dark:text-green-300' 
-                  : 'text-red-700 dark:text-red-300'
+                  ? 'text-green-800' 
+                  : 'text-red-800'
               }`}>
                 {result.authentication_required 
                   ? (result.authentication_successful 
@@ -819,56 +859,64 @@ const UiTesting = () => {
                 }
               </p>
               {result.session_used && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                <p className="text-xs text-green-700 font-semibold mt-2">
                   Session cookies were used to maintain authentication during the scan
                 </p>
               )}
-            </div>
+            </motion.div>
           )}
           
           {/* Login page detection status */}
           {useAuthentication && hasLoginPageCheck && (
-            <div className={`p-4 rounded-lg border ${
-              noLoginPagesFound
-                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-            }`}>
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  noLoginPagesFound ? 'bg-yellow-500' : 'bg-blue-500'
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-5 rounded-xl border-2 backdrop-blur-sm ${
+                noLoginPagesFound
+                  ? 'bg-yellow-50/90 border-yellow-300'
+                  : 'bg-blue-50/90 border-blue-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`w-3 h-3 rounded-full shadow-md ${
+                  noLoginPagesFound ? 'bg-yellow-600' : 'bg-blue-600'
                 }`}></div>
-                <h4 className={`font-semibold ${
+                <h4 className={`font-bold text-lg ${
                   noLoginPagesFound
-                    ? 'text-yellow-900 dark:text-yellow-100'
-                    : 'text-blue-900 dark:text-blue-100'
+                    ? 'text-yellow-900'
+                    : 'text-blue-900'
                 }`}>
                   Login Page Detection
                 </h4>
               </div>
-              <p className={`text-sm mt-1 ${
+              <p className={`text-sm mt-2 font-medium ${
                 noLoginPagesFound
-                  ? 'text-yellow-700 dark:text-yellow-300'
-                  : 'text-blue-700 dark:text-blue-300'
+                  ? 'text-yellow-800'
+                  : 'text-blue-800'
               }`}>
                 {noLoginPagesFound
                   ? `No login pages detected on ${loginPageDetection.pages_without_login_detected.length} scanned page(s). Pages were scanned as public pages.`
                   : `Login pages detected on ${loginPageDetection.pages_with_login_detected.length} page(s).`
                 }
               </p>
-            </div>
+            </motion.div>
           )}
           
           {/* Site scan summary banner */}
           {isSiteScan && (
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-6 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border-2 border-blue-300 rounded-xl shadow-lg"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h4 className="font-semibold text-blue-900 dark:text-blue-100">Scan Completed</h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  <h4 className="font-bold text-xl text-blue-900 mb-2">Scan Completed</h4>
+                  <p className="text-sm text-blue-800 font-semibold mt-1">
                     Scanned {result?.summary?.pages_scanned || 0} pages across the website
                     {result?.duration_seconds && ` in ${(result.duration_seconds / 60).toFixed(1)} minutes`}
                   </p>
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  <p className="text-xs text-blue-700 font-medium mt-2">
                     Discovered {result?.summary?.pages_discovered || 0} pages total
                   </p>
                   {/* Scanned Pages Dropdown */}
@@ -879,7 +927,7 @@ const UiTesting = () => {
                       </label>
                       <div className="relative">
                         <select 
-                          className="w-full max-w-md px-3 py-2 pr-8 text-xs border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer appearance-none"
+                          className="w-full max-w-md px-4 py-2.5 pr-10 text-sm border-2 border-blue-300 rounded-xl bg-white text-blue-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer appearance-none shadow-sm font-medium"
                           onChange={(e) => {
                             if (e.target.value) {
                               window.open(e.target.value, '_blank', 'noopener,noreferrer');
@@ -898,147 +946,189 @@ const UiTesting = () => {
                             );
                           })}
                         </select>
-                        <FaChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 text-blue-600 dark:text-blue-400 pointer-events-none text-xs" />
+                        <FaChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-600 pointer-events-none text-sm" />
                       </div>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      <p className="text-xs text-blue-700 font-medium mt-2">
                         Select a page from the dropdown to open it in a new tab
                       </p>
                     </div>
                   )}
                 </div>
                 <div className="text-right ml-4">
-                  <div className="text-xs text-blue-600 dark:text-blue-400">
+                  <div className="text-xs text-blue-700 font-semibold">
                     {result?.crawl_result?.stats?.from_sitemap || 0} from sitemap • {result?.crawl_result?.stats?.from_crawl || 0} from crawling
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Pages Scanned Card - Only show for site scans */}
             {isSiteScan && mode !== 'security' && (
-              <div className="glass-card p-6 rounded-lg border-l-4 border-indigo-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Pages Scanned</p>
-                    <h3 className="text-2xl font-bold">{result?.summary?.pages_scanned || 0}</h3>
+              <motion.div
+                whileHover={{ scale: 1.03, y: -5 }}
+                className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-indigo-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Pages Scanned</p>
+                      <h3 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-indigo-500 bg-clip-text text-transparent">{result?.summary?.pages_scanned || 0}</h3>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-500 text-white shadow-lg">
+                      <FaChartLine className="h-6 w-6" />
+                    </div>
                   </div>
-                  <div className="p-3 rounded-full bg-indigo-500/10 text-indigo-500">
-                    <FaChartLine className="h-6 w-6" />
+                  <div className="mt-3 text-xs text-gray-600 font-medium">
+                    Discovered: {result?.summary?.pages_discovered || 0} • 
+                    Successful: {result?.summary?.pages_scanned_successfully || 0}
                   </div>
                 </div>
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Discovered: {result?.summary?.pages_discovered || 0} • 
-                  Successful: {result?.summary?.pages_scanned_successfully || 0}
-                </div>
-              </div>
+              </motion.div>
             )}
             
             {(mode === 'all' || mode === 'accessibility') && (
-              <div className="glass-card p-6 rounded-lg border-l-4 border-blue-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Accessibility Score</p>
-                    <h3 className="text-2xl font-bold">{a11yScore}</h3>
+              <motion.div
+                whileHover={{ scale: 1.03, y: -5 }}
+                className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-blue-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Accessibility Score</p>
+                      <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">{a11yScore}</h3>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-lg">
+                      <FaDesktop className="h-6 w-6" />
+                    </div>
                   </div>
-                  <div className="p-3 rounded-full bg-blue-500/10 text-blue-500">
-                    <FaDesktop className="h-6 w-6" />
-                  </div>
+                  <div className="mt-3 text-xs text-gray-600 font-medium">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
                 </div>
-                <div className="mt-3 text-xs text-muted-foreground">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
-              </div>
+              </motion.div>
             )}
             {(mode === 'all' || mode === 'accessibility') && (
-              <div className="glass-card p-6 rounded-lg border-l-4 border-red-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">WCAG Violations</p>
-                    <h3 className="text-2xl font-bold">
-                      {isSiteScan 
-                        ? (result?.wcag_aggregate?.total_violations || 0)
-                        : violations.length}
-                    </h3>
+              <motion.div
+                whileHover={{ scale: 1.03, y: -5 }}
+                className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-red-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">WCAG Violations</p>
+                      <h3 className="text-3xl font-bold bg-gradient-to-r from-red-600 to-red-500 bg-clip-text text-transparent">
+                        {isSiteScan 
+                          ? (result?.wcag_aggregate?.total_violations || 0)
+                          : violations.length}
+                      </h3>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-red-600 to-red-500 text-white shadow-lg">
+                      <FaChartLine className="h-6 w-6" />
+                    </div>
                   </div>
-                  <div className="p-3 rounded-full bg-red-500/10 text-red-500">
-                    <FaChartLine className="h-6 w-6" />
-                  </div>
+                  {isSiteScan && (
+                    <div className="mt-3 text-xs text-gray-600 font-medium">
+                      Unique issues: {result?.wcag_aggregate?.unique_rules_violated || 0} • 
+                      Pages affected: {result?.wcag_aggregate?.pages_with_issues || 0}
+                    </div>
+                  )}
                 </div>
-                {isSiteScan && (
-                  <div className="mt-3 text-xs text-muted-foreground">
-                    Unique issues: {result?.wcag_aggregate?.unique_rules_violated || 0} • 
-                    Pages affected: {result?.wcag_aggregate?.pages_with_issues || 0}
-                  </div>
-                )}
-              </div>
+              </motion.div>
             )}
             {(mode === 'all' || mode === 'security') && (
-              <div className="glass-card p-6 rounded-lg border-l-4 border-green-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Security Score</p>
-                    <h3 className="text-2xl font-bold">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+              <motion.div
+                whileHover={{ scale: 1.03, y: -5 }}
+                className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-green-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Security Score</p>
+                      <h3 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-500 bg-clip-text text-transparent">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-green-600 to-green-500 text-white shadow-lg">
+                      <FaChartLine className="h-6 w-6" />
+                    </div>
                   </div>
-                  <div className="p-3 rounded-full bg-green-500/10 text-green-500">
-                    <FaChartLine className="h-6 w-6" />
-                  </div>
+                  <div className="mt-3 text-xs text-gray-600 font-medium">Missing headers: {missingHeaders.length}</div>
                 </div>
-                <div className="mt-3 text-xs text-muted-foreground">Missing headers: {missingHeaders.length}</div>
-              </div>
+              </motion.div>
             )}
             {(mode === 'all' || mode === 'security') && (
-              <div className="glass-card p-6 rounded-lg border-l-4 border-purple-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
-                    <h3 className="text-2xl font-bold">{displaySslGrade}</h3>
-                  </div>
-                  <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
-                    <FaChartLine className="h-6 w-6" />
+              <motion.div
+                whileHover={{ scale: 1.03, y: -5 }}
+                className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-purple-500/20 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">SSL Labs Grade</p>
+                      <h3 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-500 bg-clip-text text-transparent">{displaySslGrade}</h3>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-purple-600 to-purple-500 text-white shadow-lg">
+                      <FaChartLine className="h-6 w-6" />
+                    </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
           </div>
           {(mode === 'all' || mode === 'accessibility') && (
-            <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-              <h3 className="text-lg font-semibold mb-4">Accessibility (WCAG)</h3>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border-2 border-blue-200 relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+              <div className="relative z-10">
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Accessibility (WCAG)</h3>
               {violations.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                       {violations.map((v, i) => (
-                    <details key={i} className="border border-border rounded-lg overflow-hidden">
-                      <summary className="px-4 py-3 bg-secondary/50 cursor-pointer hover:bg-secondary/70 transition-colors flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                              v.impact === 'critical' ? 'bg-red-100 text-red-800' :
-                              v.impact === 'serious' ? 'bg-orange-100 text-orange-800' :
-                              v.impact === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-green-100 text-green-800'
+                    <motion.details
+                      key={i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white/50 backdrop-blur-sm hover:border-blue-300 transition-all shadow-sm hover:shadow-md"
+                    >
+                      <summary className="px-6 py-4 bg-gradient-to-r from-gray-50/80 to-blue-50/80 backdrop-blur-sm cursor-pointer hover:from-blue-50/80 hover:to-indigo-50/80 transition-all flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1">
+                          <span className={`px-3 py-1.5 text-xs rounded-full font-bold border-2 ${
+                              v.impact === 'critical' ? 'bg-red-100 text-red-800 border-red-300' :
+                              v.impact === 'serious' ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                              v.impact === 'moderate' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                              'bg-green-100 text-green-800 border-green-300'
                             }`}>{v.impact}</span>
-                          <span className="font-mono text-xs font-semibold">{v.id}</span>
-                          <span className="text-sm flex-1">{v.description}</span>
+                          <span className="font-mono text-xs font-bold text-gray-700">{v.id}</span>
+                          <span className="text-sm font-semibold text-gray-900 flex-1">{v.description}</span>
                           {isSiteScan && (
-                            <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                            <span className="text-xs bg-gradient-to-r from-blue-600 to-blue-500 text-white px-3 py-1.5 rounded-full font-bold shadow-sm">
                               {v.pages_affected || 0} page(s)
                             </span>
                           )}
                         </div>
                       </summary>
-                      <div className="px-4 py-3 bg-card space-y-3">
+                      <div className="px-6 py-5 bg-white/80 backdrop-blur-sm space-y-4">
                         {/* Help Text */}
                         {v.help && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">How to fix:</p>
-                            <p className="text-sm">{v.help}</p>
+                          <div className="p-4 bg-blue-50/80 backdrop-blur-sm border-2 border-blue-200 rounded-xl">
+                            <p className="text-xs font-bold text-blue-900 mb-2 uppercase tracking-wide">How to fix:</p>
+                            <p className="text-sm text-gray-800 font-medium">{v.help}</p>
                           </div>
                         )}
                         
                         {/* Help URL */}
                         {v.helpUrl && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">Learn more:</p>
+                          <div className="p-4 bg-indigo-50/80 backdrop-blur-sm border-2 border-indigo-200 rounded-xl">
+                            <p className="text-xs font-bold text-indigo-900 mb-2 uppercase tracking-wide">Learn more:</p>
                             <a href={v.helpUrl} target="_blank" rel="noopener noreferrer" 
-                               className="text-sm text-primary hover:underline break-all">
+                               className="text-sm text-blue-700 hover:text-blue-900 font-semibold hover:underline break-all">
                               {v.helpUrl}
                             </a>
                           </div>
@@ -1046,18 +1136,18 @@ const UiTesting = () => {
                         
                         {/* For site scans: Show affected pages */}
                         {isSiteScan && v.pages_affected_urls && v.pages_affected_urls.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                          <div className="p-4 bg-gray-50/80 backdrop-blur-sm border-2 border-gray-200 rounded-xl">
+                            <p className="text-xs font-bold text-gray-900 mb-3 uppercase tracking-wide">
                               Affected pages ({v.total_instances || 0} total instances):
                             </p>
-                            <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                            <ul className="text-xs space-y-2 max-h-40 overflow-y-auto">
                               {v.pages_affected_urls.map((pageUrl, idx) => (
-                                <li key={idx} className="text-muted-foreground break-all">
+                                <li key={idx} className="text-gray-700 break-all font-medium">
                                   • {pageUrl}
                                 </li>
                               ))}
                               {v.pages_affected > (v.pages_affected_urls?.length || 0) && (
-                                <li className="text-muted-foreground italic">
+                                <li className="text-gray-600 italic font-semibold">
                                   ... and {v.pages_affected - v.pages_affected_urls.length} more pages
                                 </li>
                               )}
@@ -1067,13 +1157,13 @@ const UiTesting = () => {
                         
                         {/* For single-page scans: Show target nodes */}
                         {!isSiteScan && v.nodes && v.nodes.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                          <div className="p-4 bg-gray-50/80 backdrop-blur-sm border-2 border-gray-200 rounded-xl">
+                            <p className="text-xs font-bold text-gray-900 mb-3 uppercase tracking-wide">
                               Elements affected ({v.nodes.length} instances):
                             </p>
-                            <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                            <ul className="text-xs space-y-2 max-h-40 overflow-y-auto">
                               {v.nodes.map((n, idx) => (
-                                <li key={idx} className="font-mono text-muted-foreground break-all">
+                                <li key={idx} className="font-mono text-gray-700 break-all font-medium">
                                   • {(n.target || []).join(' ')}
                                 </li>
                               ))}
@@ -1083,18 +1173,18 @@ const UiTesting = () => {
                         
                         {/* Sample HTML Nodes (for site scans) */}
                         {isSiteScan && v.sample_nodes && v.sample_nodes.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                          <div className="p-4 bg-gray-50/80 backdrop-blur-sm border-2 border-gray-200 rounded-xl">
+                            <p className="text-xs font-bold text-gray-900 mb-4 uppercase tracking-wide">
                               Sample violations (showing {v.sample_nodes.length} of {v.total_instances}):
                             </p>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                               {v.sample_nodes.map((node, idx) => (
-                                <div key={idx} className="border border-border/50 rounded p-2 bg-secondary/20">
+                                <div key={idx} className="border-2 border-gray-300 rounded-xl p-4 bg-white/80 backdrop-blur-sm shadow-sm">
                                   {/* CSS Selector */}
                                   {node.target && node.target.length > 0 && (
-                                    <div className="mb-1">
-                                      <span className="text-xs font-semibold text-muted-foreground">Selector:</span>
-                                      <code className="ml-1 text-xs font-mono bg-secondary px-1 py-0.5 rounded">
+                                    <div className="mb-2">
+                                      <span className="text-xs font-bold text-gray-900">Selector:</span>
+                                      <code className="ml-2 text-xs font-mono bg-gray-100 px-2 py-1 rounded-lg border border-gray-300 text-gray-800">
                                         {node.target.join(' ')}
                                       </code>
                                     </div>
@@ -1102,9 +1192,9 @@ const UiTesting = () => {
                                   
                                   {/* Page URL */}
                                   {node.page_url && (
-                                    <div className="mb-1">
-                                      <span className="text-xs font-semibold text-muted-foreground">On page:</span>
-                                      <span className="ml-1 text-xs text-muted-foreground break-all">
+                                    <div className="mb-2">
+                                      <span className="text-xs font-bold text-gray-900">On page:</span>
+                                      <span className="ml-2 text-xs text-gray-700 break-all font-medium">
                                         {node.page_url}
                                       </span>
                                     </div>
@@ -1112,9 +1202,9 @@ const UiTesting = () => {
                                   
                                   {/* Failure Summary */}
                                   {node.failureSummary && (
-                                    <div className="mb-1">
-                                      <span className="text-xs font-semibold text-muted-foreground">Issue:</span>
-                                      <span className="ml-1 text-xs text-muted-foreground">
+                                    <div className="mb-2">
+                                      <span className="text-xs font-bold text-gray-900">Issue:</span>
+                                      <span className="ml-2 text-xs text-gray-700 font-medium">
                                         {node.failureSummary}
                                       </span>
                                     </div>
@@ -1122,11 +1212,11 @@ const UiTesting = () => {
                                   
                                   {/* HTML Snippet */}
                                   {node.html && (
-                                    <details className="mt-2">
-                                      <summary className="text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground">
+                                    <details className="mt-3">
+                                      <summary className="text-xs font-bold text-blue-700 cursor-pointer hover:text-blue-900 transition-colors">
                                         View HTML snippet ▼
                                       </summary>
-                                      <pre className="mt-1 text-xs font-mono bg-background p-2 rounded border border-border overflow-x-auto max-h-32">
+                                      <pre className="mt-2 text-xs font-mono bg-gray-900 text-gray-100 p-3 rounded-lg border-2 border-gray-700 overflow-x-auto max-h-32">
                                         <code>{node.html}</code>
                                       </pre>
                                     </details>
@@ -1139,11 +1229,11 @@ const UiTesting = () => {
                         
                         {/* Tags */}
                         {v.tags && v.tags.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-1">WCAG Standards:</p>
-                            <div className="flex flex-wrap gap-1">
+                          <div className="p-4 bg-purple-50/80 backdrop-blur-sm border-2 border-purple-200 rounded-xl">
+                            <p className="text-xs font-bold text-purple-900 mb-3 uppercase tracking-wide">WCAG Standards:</p>
+                            <div className="flex flex-wrap gap-2">
                               {v.tags.map((tag, idx) => (
-                                <span key={idx} className="px-2 py-0.5 bg-secondary text-xs rounded">
+                                <span key={idx} className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-purple-500 text-white text-xs rounded-lg font-bold shadow-sm">
                                   {tag}
                                 </span>
                               ))}
@@ -1151,57 +1241,101 @@ const UiTesting = () => {
                           </div>
                         )}
                       </div>
-                    </details>
+                    </motion.details>
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">No WCAG violations detected.</div>
+                <div className="text-center py-12">
+                  <div className="mx-auto w-20 h-20 bg-green-100/50 rounded-full flex items-center justify-center mb-4">
+                    <FaDesktop className="h-10 w-10 text-green-600" />
+                  </div>
+                  <p className="text-lg font-bold text-gray-900">No WCAG violations detected.</p>
+                  <p className="text-sm text-gray-600 mt-2">Great job! Your site meets accessibility standards.</p>
+                </div>
               )}
-            </div>
+              </div>
+            </motion.div>
           )}
 
           {(mode === 'all' || mode === 'security') && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-semibold">SecurityHeaders</h3>
-                  <button onClick={() => setOpenSecurity((v) => !v)} className="text-sm flex items-center gap-1">
-                    <span>{openSecurity ? 'Hide' : 'Show'}</span>
-                    <FaChevronDown className={`transition-transform ${openSecurity ? 'rotate-180' : ''}`} />
-                  </button>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-6"
+            >
+              <div className="p-6 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border-2 border-green-200 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl -mr-16 -mt-16"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-gray-900">SecurityHeaders</h3>
+                    <button 
+                      onClick={() => setOpenSecurity((v) => !v)} 
+                      className="px-4 py-2 text-sm font-semibold bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl hover:from-green-700 hover:to-green-600 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                    >
+                      <span>{openSecurity ? 'Hide' : 'Show'}</span>
+                      <FaChevronDown className={`transition-transform ${openSecurity ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {openSecurity && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }} 
+                        animate={{ height: 'auto', opacity: 1 }} 
+                        exit={{ height: 0, opacity: 0 }} 
+                        transition={{ duration: 0.25 }}
+                      >
+                        <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border-2 border-gray-300 rounded-xl p-4 bg-gray-50 font-mono">{JSON.stringify(securityData?.securityheaders || {}, null, 2)}</pre>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <AnimatePresence initial={false}>
-                  {openSecurity && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                      <pre className="text-xs whitespace-pre-wrap max-h-72 overflow-auto border rounded p-3 bg-background">{JSON.stringify(securityData?.securityheaders || {}, null, 2)}</pre>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
-            </div>
+            </motion.div>
           )}
 
-          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-            <h3 className="text-lg font-semibold mb-4">AI Recommendations</h3>
-            <UiTestingRecommendations content={result.recommendations || ''} />
-          </div>
-
-          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold">Structured Findings</h3>
-              <button onClick={() => setOpenFindings((v) => !v)} className="text-sm flex items-center gap-1">
-                <span>{openFindings ? 'Hide' : 'Show'}</span>
-                <FaChevronDown className={`transition-transform ${openFindings ? 'rotate-180' : ''}`} />
-              </button>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border-2 border-blue-200 relative overflow-hidden group"
+          >
+            <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+            <div className="relative z-10">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">AI Recommendations</h3>
+              <UiTestingRecommendations content={result.recommendations || ''} />
             </div>
-            <AnimatePresence initial={false}>
-              {openFindings && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}>
-                  <pre className="text-xs whitespace-pre-wrap max-h-96 overflow-auto border rounded p-3 bg-background">{JSON.stringify(result.findings || {}, null, 2)}</pre>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border-2 border-blue-200 relative overflow-hidden group"
+          >
+            <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-2xl font-bold text-gray-900">Structured Findings</h3>
+                <button 
+                  onClick={() => setOpenFindings((v) => !v)} 
+                  className="px-4 py-2 text-sm font-semibold bg-gradient-to-r from-indigo-600 to-indigo-500 text-white rounded-xl hover:from-indigo-700 hover:to-indigo-600 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                >
+                  <span>{openFindings ? 'Hide' : 'Show'}</span>
+                  <FaChevronDown className={`transition-transform ${openFindings ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+              <AnimatePresence initial={false}>
+                {openFindings && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }} 
+                    animate={{ height: 'auto', opacity: 1 }} 
+                    exit={{ height: 0, opacity: 0 }} 
+                    transition={{ duration: 0.25 }}
+                  >
+                    <pre className="text-xs whitespace-pre-wrap max-h-96 overflow-auto border-2 border-gray-300 rounded-xl p-4 bg-gray-50 font-mono">{JSON.stringify(result.findings || {}, null, 2)}</pre>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
         </div>
       )}
     </motion.div>

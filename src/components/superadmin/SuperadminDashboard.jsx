@@ -59,46 +59,46 @@ const cardHoverVariants = {
 
 // Skeleton loader components
 const RequestSkeleton = () => (
-  <motion.div className="glass-card p-6 rounded-lg space-y-4" variants={itemVariants}>
+  <motion.div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg space-y-4" variants={itemVariants}>
     <div className="flex items-center space-x-4">
-      <div className="h-12 w-12 bg-muted rounded-full animate-pulse"></div>
+      <div className="h-12 w-12 bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl animate-pulse"></div>
       <div className="flex-1 space-y-2">
-        <div className="h-4 bg-muted rounded w-3/4 animate-pulse"></div>
-        <div className="h-3 bg-muted rounded w-1/2 animate-pulse"></div>
+        <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4 animate-pulse"></div>
+        <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2 animate-pulse"></div>
       </div>
     </div>
     <div className="space-y-2">
-      <div className="h-3 bg-muted rounded w-full animate-pulse"></div>
-      <div className="h-3 bg-muted rounded w-5/6 animate-pulse"></div>
+      <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-full animate-pulse"></div>
+      <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-5/6 animate-pulse"></div>
     </div>
-    <div className="h-10 bg-muted rounded-md w-24 animate-pulse"></div>
+    <div className="h-10 bg-gradient-to-r from-gray-200 to-gray-300 rounded-xl w-24 animate-pulse"></div>
   </motion.div>
 );
 
 const OrganizationSkeleton = () => (
-  <motion.div className="glass-card p-6 rounded-lg space-y-4" variants={itemVariants}>
+  <motion.div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg space-y-4" variants={itemVariants}>
     <div className="flex items-center space-x-4">
-      <div className="h-12 w-12 bg-muted rounded-full animate-pulse"></div>
+      <div className="h-12 w-12 bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl animate-pulse"></div>
       <div className="flex-1 space-y-2">
-        <div className="h-4 bg-muted rounded w-full animate-pulse"></div>
-        <div className="h-3 bg-muted rounded w-3/4 animate-pulse"></div>
+        <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-full animate-pulse"></div>
+        <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4 animate-pulse"></div>
       </div>
     </div>
   </motion.div>
 );
 
 const UserSkeleton = () => (
-  <motion.div className="glass-card p-6 rounded-lg space-y-4" variants={itemVariants}>
+  <motion.div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg space-y-4" variants={itemVariants}>
     <div className="flex items-center space-x-4">
-      <div className="h-12 w-12 bg-muted rounded-full animate-pulse"></div>
+      <div className="h-12 w-12 bg-gradient-to-br from-gray-200 to-gray-300 rounded-xl animate-pulse"></div>
       <div className="flex-1 space-y-2">
-        <div className="h-4 bg-muted rounded w-3/4 animate-pulse"></div>
-        <div className="h-3 bg-muted rounded w-1/2 animate-pulse"></div>
+        <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-3/4 animate-pulse"></div>
+        <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-1/2 animate-pulse"></div>
       </div>
     </div>
     <div className="space-y-2">
-      <div className="h-3 bg-muted rounded w-full animate-pulse"></div>
-      <div className="h-3 bg-muted rounded w-5/6 animate-pulse"></div>
+      <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-full animate-pulse"></div>
+      <div className="h-3 bg-gradient-to-r from-gray-200 to-gray-300 rounded w-5/6 animate-pulse"></div>
     </div>
   </motion.div>
 );
@@ -518,24 +518,24 @@ const SuperadminDashboard = () => {
 
   return (
     <>
-      <div className="flex min-h-screen bg-background">
+      <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50/50">
         {/* Sidebar */}
         <motion.div 
           initial={{ x: -100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className={`fixed top-0 left-0 h-full bg-card shadow-lg z-50 transition-all duration-300 ${
+          className={`fixed top-0 left-0 h-full bg-gradient-to-b from-gray-900 via-black to-gray-900 backdrop-blur-xl shadow-2xl z-50 transition-all duration-300 ${
             isSidebarOpen ? 'w-64' : 'w-20'
           }`}
         >
           <div className="flex flex-col h-full">
             {/* Logo */}
-            <div className="p-4 border-b border-border">
+            <div className="p-6 border-b border-gray-700">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">C</span>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-700 via-gray-600 to-gray-800 flex items-center justify-center shadow-lg transform rotate-[-2deg]">
+                  <span className="text-white font-bold text-xl">C</span>
                 </div>
-                {isSidebarOpen && <span className="font-bold text-lg">Complytics</span>}
+                {isSidebarOpen && <span className="font-bold text-xl text-white">Complytics</span>}
               </div>
             </div>
 
@@ -544,13 +544,13 @@ const SuperadminDashboard = () => {
               {sidebarItems.map((item) => (
                 <motion.button
                   key={item.id}
-                  whileHover={{ scale: 1.02 }}
+                  whileHover={{ scale: 1.02, x: 4 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={item.onClick}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
+                  className={`w-full flex items-center space-x-3 p-3 rounded-xl transition-all duration-300 font-semibold ${
                     activeTab === item.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-secondary'
+                      ? 'bg-gradient-to-r from-gray-700 to-gray-600 text-white shadow-lg shadow-gray-700/50'
+                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                   }`}
                 >
                   <span className="text-lg">{item.icon}</span>
@@ -560,12 +560,12 @@ const SuperadminDashboard = () => {
             </nav>
 
             {/* Logout Button */}
-            <div className="p-4 border-t border-border">
+            <div className="p-4 border-t border-gray-700">
               <motion.button
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: 1.02, x: 4 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleLogout}
-                className="w-full flex items-center space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10"
+                className="w-full flex items-center space-x-3 p-3 rounded-xl text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-all duration-300 font-semibold"
               >
                 <FaSignOutAlt />
                 {isSidebarOpen && <span>Logout</span>}
@@ -582,20 +582,20 @@ const SuperadminDashboard = () => {
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5 }}
-            className="flex justify-between items-center mb-8"
+            className="flex justify-between items-start mb-10"
           >
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-600">
+              <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-blue-600 via-blue-500 to-blue-700 bg-clip-text text-transparent mb-3">
                 Superadmin Dashboard
               </h1>
-              <p className="mt-2 text-muted-foreground">
+              <p className="text-gray-600 text-lg font-medium">
                 Manage organizations and user registrations
               </p>
             </div>
               <Button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 variant="outline"
-                className="lg:hidden"
+                className="lg:hidden border-2 border-gray-300 hover:bg-blue-600 hover:text-white hover:border-blue-600"
               >
                 {isSidebarOpen ? 'Close Sidebar' : 'Open Sidebar'}
               </Button>
@@ -611,16 +611,17 @@ const SuperadminDashboard = () => {
             {/* Pending Requests Card */}
             <motion.div 
               variants={itemVariants}
-              className="glass-card p-6 rounded-lg border-l-4 border-primary"
-              whileHover={{ scale: 1.02 }}
+              className="bg-gradient-to-br from-white to-blue-50/50 p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              whileHover={{ scale: 1.03, y: -5 }}
             >
-              <div className="flex items-center justify-between">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-blue-500/20 transition-all"></div>
+              <div className="relative z-10 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Pending Requests</p>
-                  <h3 className="text-2xl font-bold">{requests.length}</h3>
+                  <p className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Pending Requests</p>
+                  <h3 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">{requests.length}</h3>
                 </div>
-                <div className="p-3 rounded-full bg-primary/10 text-primary">
-                  <FaUserPlus className="h-6 w-6" />
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30 group-hover:scale-110 transition-transform">
+                  <FaUserPlus className="h-7 w-7" />
                 </div>
               </div>
             </motion.div>
@@ -628,16 +629,17 @@ const SuperadminDashboard = () => {
             {/* Active Organizations Card */}
             <motion.div 
               variants={itemVariants}
-              className="glass-card p-6 rounded-lg border-l-4 border-green-500"
-              whileHover={{ scale: 1.02 }}
+              className="bg-gradient-to-br from-white to-green-50/50 p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              whileHover={{ scale: 1.03, y: -5 }}
             >
-              <div className="flex items-center justify-between">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-green-500/20 transition-all"></div>
+              <div className="relative z-10 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Active Organizations</p>
-                  <h3 className="text-2xl font-bold">{organizations.length}</h3>
+                  <p className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Active Organizations</p>
+                  <h3 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-green-500 bg-clip-text text-transparent">{organizations.length}</h3>
                 </div>
-                <div className="p-3 rounded-full bg-green-500/10 text-green-500">
-                  <FaBuilding className="h-6 w-6" />
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-green-600 to-green-500 text-white shadow-lg shadow-green-500/30 group-hover:scale-110 transition-transform">
+                  <FaBuilding className="h-7 w-7" />
                 </div>
               </div>
             </motion.div>
@@ -645,16 +647,17 @@ const SuperadminDashboard = () => {
             {/* Active Users Card */}
             <motion.div 
               variants={itemVariants}
-              className="glass-card p-6 rounded-lg border-l-4 border-blue-500"
-              whileHover={{ scale: 1.02 }}
+              className="bg-gradient-to-br from-white to-purple-50/50 p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              whileHover={{ scale: 1.03, y: -5 }}
             >
-              <div className="flex items-center justify-between">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-purple-500/20 transition-all"></div>
+              <div className="relative z-10 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Active Users</p>
-                  <h3 className="text-2xl font-bold">{activeUsers.length}</h3>
+                  <p className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Active Users</p>
+                  <h3 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-purple-500 bg-clip-text text-transparent">{activeUsers.length}</h3>
                 </div>
-                <div className="p-3 rounded-full bg-blue-500/10 text-blue-500">
-                  <FaUsers className="h-6 w-6" />
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-500/30 group-hover:scale-110 transition-transform">
+                  <FaUsers className="h-7 w-7" />
                 </div>
               </div>
             </motion.div>
@@ -662,16 +665,17 @@ const SuperadminDashboard = () => {
             {/* Framework Documents Card */}
             <motion.div 
               variants={itemVariants}
-              className="glass-card p-6 rounded-lg border-l-4 border-purple-500"
-              whileHover={{ scale: 1.02 }}
+              className="bg-gradient-to-br from-white to-orange-50/50 p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+              whileHover={{ scale: 1.03, y: -5 }}
             >
-              <div className="flex items-center justify-between">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-orange-500/20 transition-all"></div>
+              <div className="relative z-10 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Framework Documents</p>
-                  <h3 className="text-2xl font-bold">{frameworks.length}</h3>
+                  <p className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">Framework Documents</p>
+                  <h3 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">{frameworks.length}</h3>
                 </div>
-                <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
-                  <FaCog className="h-6 w-6" />
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-600 to-orange-500 text-white shadow-lg shadow-orange-500/30 group-hover:scale-110 transition-transform">
+                  <FaCog className="h-7 w-7" />
                 </div>
               </div>
             </motion.div>
@@ -680,24 +684,56 @@ const SuperadminDashboard = () => {
           {/* Inline success/error containers removed; toast notifications are used instead */}
 
           {/* Tabs */}
-          <div className="flex border-b border-border mb-6">
+          <div className="flex flex-wrap gap-3 mb-8 bg-white/60 backdrop-blur-sm p-2 rounded-2xl shadow-lg">
             <button
-              className={`px-4 py-2 font-medium ${activeTab === 'registrations' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'}`}
+              className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${
+                activeTab === 'registrations' 
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+              }`}
               onClick={() => setActiveTab('registrations')}
             >
               Pending Registrations
             </button>
             <button
-              className={`px-4 py-2 font-medium ${activeTab === 'organizations' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'}`}
+              className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${
+                activeTab === 'organizations' 
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+              }`}
               onClick={() => setActiveTab('organizations')}
             >
               Active Organizations
             </button>
             <button
-              className={`px-4 py-2 font-medium ${activeTab === 'users' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'}`}
+              className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${
+                activeTab === 'users' 
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+              }`}
               onClick={() => setActiveTab('users')}
             >
               Active Users
+            </button>
+            <button
+              className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${
+                activeTab === 'deletions' 
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+              }`}
+              onClick={() => setActiveTab('deletions')}
+            >
+              Deletion Requests
+            </button>
+            <button
+              className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${
+                activeTab === 'frameworks' 
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+              }`}
+              onClick={() => setActiveTab('frameworks')}
+            >
+              Frameworks
             </button>
           </div>
 
@@ -709,12 +745,12 @@ const SuperadminDashboard = () => {
                 {[1, 2, 3].map((i) => <RequestSkeleton key={i} />)}
               </motion.div>
             ) : requests.length === 0 ? (
-              <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
-                <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
-                  <FaUserTie className="h-8 w-8 text-muted-foreground" />
+              <motion.div variants={itemVariants} className="bg-white/80 backdrop-blur-sm p-12 text-center rounded-2xl shadow-xl">
+                <div className="mx-auto flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl mb-6 shadow-lg">
+                  <FaUserTie className="h-10 w-10 text-blue-600" />
                 </div>
-                <h3 className="text-lg font-medium">No pending requests</h3>
-                <p className="text-muted-foreground mt-2">All registration requests have been processed</p>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">No pending requests</h3>
+                <p className="text-gray-600 mt-3 text-lg">All registration requests have been processed</p>
               </motion.div>
             ) : (
               <motion.div initial="hidden" animate="show" variants={containerVariants} className="grid gap-6">
@@ -723,9 +759,11 @@ const SuperadminDashboard = () => {
                     <motion.div
                       key={request._id}
                       variants={itemVariants}
-                      whileHover={cardHoverVariants.hover}
-                      className="glass-card p-6 rounded-lg border border-border/50"
+                      whileHover={{ y: -5, scale: 1.01 }}
+                      className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
                     >
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/0 to-blue-500/0 group-hover:from-blue-500/5 group-hover:via-blue-500/5 group-hover:to-blue-500/5 transition-all duration-300"></div>
+                      <div className="relative z-10">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="flex items-start space-x-4">
                           <div className="flex-shrink-0">
@@ -734,14 +772,14 @@ const SuperadminDashboard = () => {
                             </div>
                           </div>
                           <div>
-                            <h3 className="font-medium text-lg">
+                            <h3 className="font-bold text-lg text-black">
                               {request.user_data?.organization_name || 'No organization name'}
                             </h3>
-                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+                            <div className="flex items-center text-sm text-gray-600 mt-1">
                               <FaEnvelope className="mr-2" />
                               {request.user_data?.email || 'No email'}
                             </div>
-                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+                            <div className="flex items-center text-sm text-gray-600 mt-1">
                               <FaUserTie className="mr-2" />
                               {request.user_data?.first_name} {request.user_data?.last_name}
                             </div>
@@ -750,16 +788,16 @@ const SuperadminDashboard = () => {
 
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Submitted:</span>
-                            <span className="ml-1">
+                            <span className="font-bold text-black">Submitted:</span>
+                            <span className="ml-1 text-gray-700">
                               {request.created_at ? 
                                 new Date(request.created_at).toLocaleDateString() : 
                                 'Unknown date'}
                             </span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Domain:</span>
-                            <span className="ml-1">
+                            <span className="font-bold text-black">Domain:</span>
+                            <span className="ml-1 text-gray-700">
                               {request.user_data?.organization_domain || 'No domain'}
                             </span>
                           </div>
@@ -770,7 +808,7 @@ const SuperadminDashboard = () => {
                             variant="default" 
                             size="sm" 
                             onClick={() => openApproveDialog(request)}
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold shadow-lg shadow-blue-500/30 rounded-xl px-5 py-2.5 transition-all hover:scale-105"
                             disabled={approvingId === request._id}
                           >
                             {approvingId === request._id ? (
@@ -784,7 +822,7 @@ const SuperadminDashboard = () => {
                             variant="destructive" 
                             size="sm" 
                             onClick={() => openRejectDialog(request)}
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold shadow-lg shadow-red-500/30 rounded-xl px-5 py-2.5 transition-all hover:scale-105"
                             disabled={rejectingId === request._id}
                           >
                             {rejectingId === request._id ? (
@@ -795,6 +833,7 @@ const SuperadminDashboard = () => {
                             Reject
                           </Button>
                         </div>
+                      </div>
                       </div>
                     </motion.div>
                   ))}
@@ -808,12 +847,12 @@ const SuperadminDashboard = () => {
                 {[1, 2, 3].map((i) => <OrganizationSkeleton key={i} />)}
               </motion.div>
             ) : organizations.length === 0 ? (
-              <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
-                <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
-                  <FaBuilding className="h-8 w-8 text-muted-foreground" />
+              <motion.div variants={itemVariants} className="bg-white/80 backdrop-blur-sm p-12 text-center rounded-2xl shadow-xl">
+                <div className="mx-auto flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl mb-6 shadow-lg">
+                  <FaBuilding className="h-10 w-10 text-green-600" />
                 </div>
-                <h3 className="text-lg font-medium">No active organizations</h3>
-                <p className="text-muted-foreground mt-2">Approved organizations will appear here</p>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">No active organizations</h3>
+                <p className="text-gray-600 mt-3 text-lg">Approved organizations will appear here</p>
               </motion.div>
             ) : (
               <motion.div initial="hidden" animate="show" variants={containerVariants} className="grid gap-6">
@@ -821,9 +860,11 @@ const SuperadminDashboard = () => {
                   <motion.div
                     key={org._id}
                     variants={itemVariants}
-                    whileHover={cardHoverVariants.hover}
-                    className="glass-card p-6 rounded-lg border border-border/50"
+                    whileHover={{ y: -5, scale: 1.01 }}
+                    className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
                   >
+                    <div className="absolute inset-0 bg-gradient-to-r from-green-500/0 via-green-500/0 to-green-500/0 group-hover:from-green-500/5 group-hover:via-green-500/5 group-hover:to-green-500/5 transition-all duration-300"></div>
+                    <div className="relative z-10">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="flex items-start space-x-4">
                         <div className="flex-shrink-0">
@@ -832,8 +873,8 @@ const SuperadminDashboard = () => {
                           </div>
                         </div>
                         <div>
-                          <h3 className="font-medium text-lg">{org.name}</h3>
-                          <div className="flex items-center text-sm text-muted-foreground mt-1">
+                          <h3 className="font-bold text-lg text-black">{org.name}</h3>
+                          <div className="flex items-center text-sm text-gray-600 mt-1">
                             <FaGlobe className="mr-2" />
                             {org.domain}
                           </div>
@@ -841,19 +882,20 @@ const SuperadminDashboard = () => {
                       </div>
 
                       <div className="space-y-2">
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Status:</span>
-                          <span className={`ml-2 px-2 py-1 text-xs rounded-full ${org.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {org.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-sm">
-                          <span className="font-medium">Created:</span>
-                          <span className="ml-1">
-                            {new Date(org.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
+                          <div className="flex items-center text-sm">
+                            <span className="font-bold text-black">Status:</span>
+                            <span className={`ml-2 px-3 py-1 text-xs rounded-full font-semibold ${org.is_active ? 'bg-green-100 text-green-800 border-2 border-green-500' : 'bg-red-100 text-red-800 border-2 border-red-500'}`}>
+                              {org.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="flex items-center text-sm">
+                            <span className="font-bold text-black">Created:</span>
+                            <span className="ml-1 text-gray-700">
+                              {new Date(org.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
                       </div>
+                    </div>
                     </div>
                   </motion.div>
                 ))}
@@ -866,12 +908,12 @@ const SuperadminDashboard = () => {
                 {[1, 2, 3].map((i) => <UserSkeleton key={i} />)}
               </motion.div>
             ) : activeUsers.length === 0 ? (
-              <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
-                <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
-                  <FaUserCheck className="h-8 w-8 text-muted-foreground" />
+              <motion.div variants={itemVariants} className="bg-white/80 backdrop-blur-sm p-12 text-center rounded-2xl shadow-xl">
+                <div className="mx-auto flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl mb-6 shadow-lg">
+                  <FaUserCheck className="h-10 w-10 text-purple-600" />
                 </div>
-                <h3 className="text-lg font-medium">No active users</h3>
-                <p className="text-muted-foreground mt-2">All users are currently inactive</p>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">No active users</h3>
+                <p className="text-gray-600 mt-3 text-lg">All users are currently inactive</p>
               </motion.div>
             ) : (
               <motion.div initial="hidden" animate="show" variants={containerVariants} className="grid gap-6">
@@ -879,9 +921,11 @@ const SuperadminDashboard = () => {
                   <motion.div
                     key={user._id}
                     variants={itemVariants}
-                    whileHover={cardHoverVariants.hover}
-                    className="glass-card p-6 rounded-lg border border-border/50"
+                    whileHover={{ y: -5, scale: 1.01 }}
+                    className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
                   >
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/0 to-purple-500/0 group-hover:from-purple-500/5 group-hover:via-purple-500/5 group-hover:to-purple-500/5 transition-all duration-300"></div>
+                    <div className="relative z-10">
                     <div className="flex flex-col gap-4">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="flex items-start space-x-4">
@@ -891,10 +935,10 @@ const SuperadminDashboard = () => {
                             </div>
                           </div>
                           <div>
-                            <h3 className="font-medium text-lg">
+                            <h3 className="font-bold text-lg text-black">
                               {user.first_name} {user.last_name}
                             </h3>
-                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+                            <div className="flex items-center text-sm text-gray-600 mt-1">
                               <FaEnvelope className="mr-2" />
                               {user.email}
                             </div>
@@ -903,13 +947,13 @@ const SuperadminDashboard = () => {
 
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Role:</span>
-                            <span className="ml-1 capitalize">{user.role}</span>
+                            <span className="font-bold text-black">Role:</span>
+                            <span className="ml-1 capitalize text-gray-700">{user.role}</span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Status:</span>
-                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                              user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            <span className="font-bold text-black">Status:</span>
+                            <span className={`ml-2 px-3 py-1 text-xs rounded-full font-semibold ${
+                              user.is_active ? 'bg-green-100 text-green-800 border-2 border-green-500' : 'bg-red-100 text-red-800 border-2 border-red-500'
                             }`}>
                               {user.is_active ? 'Active' : 'Inactive'}
                             </span>
@@ -918,21 +962,21 @@ const SuperadminDashboard = () => {
 
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Organization:</span>
-                            <span className="ml-1">
+                            <span className="font-bold text-black">Organization:</span>
+                            <span className="ml-1 text-gray-700">
                               {getOrganizationName(user.organization_id)}
                             </span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Joined:</span>
-                            <span className="ml-1">
+                            <span className="font-bold text-black">Joined:</span>
+                            <span className="ml-1 text-gray-700">
                               {new Date(user.created_at).toLocaleDateString()}
                             </span>
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex justify-end pt-2 border-t border-border/50">
+                      <div className="flex justify-end pt-2 border-t-2 border-black">
                         <Button
                           variant="destructive"
                           size="sm"
@@ -941,7 +985,7 @@ const SuperadminDashboard = () => {
                             setShowDeleteUserDialog(true);
                           }}
                           disabled={deletingUserId === user._id}
-                          className="flex items-center gap-2"
+                          className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold shadow-lg shadow-red-500/30 rounded-xl px-5 py-2.5 transition-all hover:scale-105"
                         >
                           {deletingUserId === user._id ? (
                             <>
@@ -957,6 +1001,7 @@ const SuperadminDashboard = () => {
                         </Button>
                       </div>
                     </div>
+                    </div>
                   </motion.div>
                 ))}
               </motion.div>
@@ -964,26 +1009,28 @@ const SuperadminDashboard = () => {
           ) : activeTab === 'deletions' ? (
             <motion.div initial="hidden" animate="show" variants={containerVariants} className="grid gap-6">
               {deletionRequests.length === 0 ? (
-                <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
-                  <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
-                    <FaTimesCircle className="h-8 w-8 text-muted-foreground" />
+                <motion.div variants={itemVariants} className="bg-white/80 backdrop-blur-sm p-12 text-center rounded-2xl shadow-xl">
+                  <div className="mx-auto flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl mb-6 shadow-lg">
+                    <FaTimesCircle className="h-10 w-10 text-red-600" />
                   </div>
-                  <h3 className="text-lg font-medium">No deletion requests</h3>
-                  <p className="text-muted-foreground mt-2">New requests will appear here</p>
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">No deletion requests</h3>
+                  <p className="text-gray-600 mt-3 text-lg">New requests will appear here</p>
                 </motion.div>
               ) : (
                 deletionRequests.map((req) => (
-                  <motion.div key={req._id} variants={itemVariants} className="glass-card p-6 rounded-lg border border-border/50">
+                  <motion.div key={req._id} variants={itemVariants} whileHover={{ y: -5, scale: 1.01 }} className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 group relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-red-500/0 via-red-500/0 to-red-500/0 group-hover:from-red-500/5 group-hover:via-red-500/5 group-hover:to-red-500/5 transition-all duration-300"></div>
+                    <div className="relative z-10">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div>
-                        <h3 className="font-medium text-lg">Requester</h3>
-                        <div className="text-sm text-muted-foreground">User ID: {req.requester_user_id}</div>
-                        <div className="text-sm text-muted-foreground">Org ID: {req.organization_id || 'N/A'}</div>
+                        <h3 className="font-bold text-lg text-black">Requester</h3>
+                        <div className="text-sm text-gray-600">User ID: {req.requester_user_id}</div>
+                        <div className="text-sm text-gray-600">Org ID: {req.organization_id || 'N/A'}</div>
                       </div>
                       <div>
-                        <div className="text-sm"><span className="font-medium">Status:</span> {req.status}</div>
-                        <div className="text-sm"><span className="font-medium">Reason:</span> {req.reason || 'None'}</div>
-                        <div className="text-sm"><span className="font-medium">Requested:</span> {req.created_at ? new Date(req.created_at).toLocaleString() : ''}</div>
+                        <div className="text-sm"><span className="font-bold text-black">Status:</span> <span className="text-gray-700">{req.status}</span></div>
+                        <div className="text-sm"><span className="font-bold text-black">Reason:</span> <span className="text-gray-700">{req.reason || 'None'}</span></div>
+                        <div className="text-sm"><span className="font-bold text-black">Requested:</span> <span className="text-gray-700">{req.created_at ? new Date(req.created_at).toLocaleString() : ''}</span></div>
                       </div>
                       <div className="flex items-center justify-end gap-2">
                         {req.status === 'pending' && (
@@ -992,7 +1039,7 @@ const SuperadminDashboard = () => {
                               variant="default" 
                               size="sm"
                               onClick={() => { setSelectedRequest(req); setShowApproveDeletionDialog(true); }}
-                              className="flex items-center gap-2"
+                              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold shadow-lg shadow-blue-500/30 rounded-xl px-5 py-2.5 transition-all hover:scale-105"
                               disabled={approvingId === req._id}
                             >
                               {approvingId === req._id ? <FaSpinner className="animate-spin" /> : null}
@@ -1002,7 +1049,7 @@ const SuperadminDashboard = () => {
                               variant="destructive" 
                               size="sm"
                               onClick={() => { setSelectedRequest(req); setShowRejectDeletionDialog(true); }}
-                              className="flex items-center gap-2"
+                              className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold shadow-lg shadow-red-500/30 rounded-xl px-5 py-2.5 transition-all hover:scale-105"
                               disabled={rejectingId === req._id}
                             >
                               {rejectingId === req._id ? <FaSpinner className="animate-spin" /> : null}
@@ -1012,6 +1059,7 @@ const SuperadminDashboard = () => {
                         )}
                       </div>
                     </div>
+                    </div>
                   </motion.div>
                 ))
               )}
@@ -1019,9 +1067,9 @@ const SuperadminDashboard = () => {
           ) : (
             /* Frameworks Tab */
             <motion.div initial="hidden" animate="show" variants={containerVariants} className="space-y-6">
-              <div className="glass-card p-6">
-                <h2 className="text-2xl font-bold mb-4">Framework Document Management</h2>
-                <p className="text-muted-foreground mb-6">
+              <div className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-xl">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent mb-4">Framework Document Management</h2>
+                <p className="text-gray-600 mb-6 text-lg">
                   Upload new compliance framework documents to be processed and indexed by the RAG system.
                 </p>
 
@@ -1038,10 +1086,10 @@ const SuperadminDashboard = () => {
                     />
                     <label
                       htmlFor="framework-upload"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg cursor-pointer ${
+                      className={`flex items-center space-x-2 px-6 py-3 rounded-xl cursor-pointer font-semibold shadow-lg transition-all duration-300 ${
                         uploadingFramework
-                          ? 'bg-muted cursor-not-allowed'
-                          : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                          ? 'bg-gray-300 cursor-not-allowed text-gray-600'
+                          : 'bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-700 hover:to-blue-600 hover:scale-105 shadow-blue-500/30'
                       }`}
                     >
                       {uploadingFramework ? (
@@ -1054,13 +1102,13 @@ const SuperadminDashboard = () => {
                   </div>
 
                   {frameworkUploadSuccess && (
-                    <div className="p-4 bg-green-100 text-green-700 rounded-lg">
+                    <div className="p-4 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 text-green-700 rounded-xl font-semibold shadow-lg">
                       {frameworkUploadSuccess}
                     </div>
                   )}
 
                   {frameworkUploadError && (
-                    <div className="p-4 bg-red-100 text-red-700 rounded-lg">
+                    <div className="p-4 bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 text-red-700 rounded-xl font-semibold shadow-lg">
                       {frameworkUploadError}
                     </div>
                   )}
@@ -1082,12 +1130,12 @@ const SuperadminDashboard = () => {
                   ))}
                 </motion.div>
               ) : frameworks.length === 0 ? (
-                <motion.div variants={itemVariants} className="glass-card p-8 text-center rounded-xl">
-                  <div className="mx-auto flex items-center justify-center w-16 h-16 bg-muted rounded-full mb-4">
-                    <FaCog className="h-8 w-8 text-muted-foreground" />
+                <motion.div variants={itemVariants} className="bg-white/80 backdrop-blur-sm p-12 text-center rounded-2xl shadow-xl">
+                  <div className="mx-auto flex items-center justify-center w-20 h-20 bg-gradient-to-br from-orange-100 to-orange-200 rounded-2xl mb-6 shadow-lg">
+                    <FaCog className="h-10 w-10 text-orange-600" />
                   </div>
-                  <h3 className="text-lg font-medium">No framework documents</h3>
-                  <p className="text-muted-foreground mt-2">Upload framework documents to get started</p>
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">No framework documents</h3>
+                  <p className="text-gray-600 mt-3 text-lg">Upload framework documents to get started</p>
                 </motion.div>
               ) : (
                 <div className="grid gap-6">
@@ -1095,9 +1143,11 @@ const SuperadminDashboard = () => {
                     <motion.div
                       key={framework.id}
                       variants={itemVariants}
-                      whileHover={cardHoverVariants.hover}
-                      className="glass-card p-6 rounded-lg border border-border/50"
+                      whileHover={{ y: -5, scale: 1.01 }}
+                      className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 group relative overflow-hidden"
                     >
+                      <div className="absolute inset-0 bg-gradient-to-r from-orange-500/0 via-orange-500/0 to-orange-500/0 group-hover:from-orange-500/5 group-hover:via-orange-500/5 group-hover:to-orange-500/5 transition-all duration-300"></div>
+                      <div className="relative z-10">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="flex items-start space-x-4">
                           <div className="flex-shrink-0">
@@ -1106,8 +1156,8 @@ const SuperadminDashboard = () => {
                             </div>
                           </div>
                           <div>
-                            <h3 className="font-medium text-lg">{framework.filename}</h3>
-                            <div className="flex items-center text-sm text-muted-foreground mt-1">
+                            <h3 className="font-bold text-lg text-black">{framework.filename}</h3>
+                            <div className="flex items-center text-sm text-gray-600 mt-1">
                               <span className="capitalize">{framework.file_type}</span>
                             </div>
                           </div>
@@ -1115,16 +1165,16 @@ const SuperadminDashboard = () => {
 
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Status:</span>
-                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                              framework.status === 'processed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                            <span className="font-bold text-black">Status:</span>
+                            <span className={`ml-2 px-3 py-1 text-xs rounded-full font-semibold ${
+                              framework.status === 'processed' ? 'bg-green-100 text-green-800 border-2 border-green-500' : 'bg-yellow-100 text-yellow-800 border-2 border-yellow-500'
                             }`}>
                               {framework.status}
                             </span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Uploaded:</span>
-                            <span className="ml-1">
+                            <span className="font-bold text-black">Uploaded:</span>
+                            <span className="ml-1 text-gray-700">
                               {new Date(framework.upload_date).toLocaleDateString()}
                             </span>
                           </div>
@@ -1132,18 +1182,19 @@ const SuperadminDashboard = () => {
 
                         <div className="space-y-2">
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Segments:</span>
-                            <span className="ml-1">{framework.segments_count}</span>
+                            <span className="font-bold text-black">Segments:</span>
+                            <span className="ml-1 text-gray-700">{framework.segments_count}</span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Embeddings:</span>
-                            <span className="ml-1">{framework.embeddings_count}</span>
+                            <span className="font-bold text-black">Embeddings:</span>
+                            <span className="ml-1 text-gray-700">{framework.embeddings_count}</span>
                           </div>
                           <div className="flex items-center text-sm">
-                            <span className="font-medium">Index Vectors:</span>
-                            <span className="ml-1">{framework.index_vectors}</span>
+                            <span className="font-bold text-black">Index Vectors:</span>
+                            <span className="ml-1 text-gray-700">{framework.index_vectors}</span>
                           </div>
                         </div>
+                      </div>
                       </div>
                     </motion.div>
                   ))}

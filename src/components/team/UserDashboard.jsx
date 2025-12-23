@@ -117,35 +117,51 @@ const ChatbotAnalytics = () => {
   const hasTimeseries = Array.isArray(analytics.queriesOverTime);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
-          <div className="flex items-center space-x-3">
-            <FaQuestionCircle className="text-2xl text-primary" />
+        <motion.div 
+          whileHover={{ scale: 1.02, y: -3 }} 
+          className="bg-white/80 backdrop-blur-sm p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 relative overflow-hidden group border-2 border-blue-500/30 hover:border-blue-500/60"
+        >
+          <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-blue-500/20 transition-all"></div>
+          <div className="relative z-10 flex items-center space-x-3">
+            <div className="p-3 rounded-lg bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-md">
+              <FaQuestionCircle className="text-xl" />
+            </div>
             <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Total Queries</h4>
-              <p className="text-2xl font-bold">{analytics.totalQueries}</p>
+              <h4 className="text-xs font-semibold text-gray-500 mb-0.5 uppercase tracking-wide">Total Queries</h4>
+              <p className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">{analytics.totalQueries}</p>
             </div>
           </div>
         </motion.div>
 
-        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
-          <div className="flex items-center space-x-3">
-            <FaClock className="text-2xl text-primary" />
+        <motion.div 
+          whileHover={{ scale: 1.02, y: -3 }} 
+          className="bg-white/80 backdrop-blur-sm p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 relative overflow-hidden group border-2 border-green-500/30 hover:border-green-500/60"
+        >
+          <div className="absolute top-0 right-0 w-20 h-20 bg-green-500/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-green-500/20 transition-all"></div>
+          <div className="relative z-10 flex items-center space-x-3">
+            <div className="p-3 rounded-lg bg-gradient-to-br from-green-600 to-green-500 text-white shadow-md">
+              <FaClock className="text-xl" />
+            </div>
             <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Avg Response Time</h4>
-              <p className="text-2xl font-bold">{analytics.averageResponseTime}s</p>
+              <h4 className="text-xs font-semibold text-gray-500 mb-0.5 uppercase tracking-wide">Avg Response Time</h4>
+              <p className="text-2xl font-bold bg-gradient-to-r from-green-600 to-green-500 bg-clip-text text-transparent">{analytics.averageResponseTime}s</p>
             </div>
           </div>
         </motion.div>
 
-        <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-card rounded-xl shadow-lg">
-          <div className="flex items-center justify-between">
+        <motion.div 
+          whileHover={{ scale: 1.02, y: -3 }} 
+          className="bg-white/80 backdrop-blur-sm p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 relative overflow-hidden group border-2 border-purple-500/30 hover:border-purple-500/60"
+        >
+          <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-purple-500/20 transition-all"></div>
+          <div className="relative z-10 flex items-center justify-between">
             <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Success Rate</h4>
-              <p className="text-xs text-muted-foreground">Resolved queries</p>
+              <h4 className="text-xs font-semibold text-gray-500 mb-0.5 uppercase tracking-wide">Success Rate</h4>
+              <p className="text-xs text-gray-600 font-medium">Resolved queries</p>
             </div>
-            <RadialSuccess value={analytics.successRate || 0} size={88} />
+            <RadialSuccess value={analytics.successRate || 0} size={70} />
           </div>
         </motion.div>
       </div>
@@ -156,22 +172,22 @@ const ChatbotAnalytics = () => {
 
 const SeverityBarChart = ({ counts }) => {
   const items = [
-    { key: 'critical', label: 'Critical', value: counts.critical || 0, color: 'bg-red-500' },
-    { key: 'serious', label: 'Serious', value: counts.serious || 0, color: 'bg-orange-500' },
-    { key: 'moderate', label: 'Moderate', value: counts.moderate || 0, color: 'bg-yellow-500' },
-    { key: 'minor', label: 'Minor', value: counts.minor || 0, color: 'bg-green-500' },
+    { key: 'critical', label: 'Critical', value: counts.critical || 0, color: 'bg-gradient-to-r from-red-600 to-red-500', textColor: 'text-red-700' },
+    { key: 'serious', label: 'Serious', value: counts.serious || 0, color: 'bg-gradient-to-r from-orange-600 to-orange-500', textColor: 'text-orange-700' },
+    { key: 'moderate', label: 'Moderate', value: counts.moderate || 0, color: 'bg-gradient-to-r from-yellow-500 to-yellow-400', textColor: 'text-yellow-700' },
+    { key: 'minor', label: 'Minor', value: counts.minor || 0, color: 'bg-gradient-to-r from-green-600 to-green-500', textColor: 'text-green-700' },
   ];
   const maxVal = Math.max(1, ...items.map(i => i.value));
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {items.map((i) => (
-        <div key={i.key} className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{i.label}</span>
-            <span className="font-medium">{i.value}</span>
+        <div key={i.key} className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">{i.label}</span>
+            <span className="text-base font-bold text-gray-900">{i.value}</span>
           </div>
-          <div className="h-3 w-full bg-secondary rounded">
-            <div className={`h-3 rounded ${i.color}`} style={{ width: `${(i.value / maxVal) * 100}%` }} />
+          <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden shadow-inner">
+            <div className={`h-full ${i.color} rounded-full transition-all duration-500 shadow-md`} style={{ width: `${(i.value / maxVal) * 100}%` }} />
           </div>
         </div>
       ))}
@@ -181,26 +197,45 @@ const SeverityBarChart = ({ counts }) => {
 
 const HeadersDonutChart = ({ presentCount, missingCount }) => {
   const total = Math.max(0, (presentCount || 0) + (missingCount || 0));
-  const radius = 30;
+  const radius = 35;
   const circumference = 2 * Math.PI * radius;
   const missingRatio = total > 0 ? missingCount / total : 0;
   const missingLength = missingRatio * circumference;
   const remainingLength = circumference - missingLength;
+  const presentRatio = total > 0 ? presentCount / total : 0;
+  const presentLength = presentRatio * circumference;
   return (
-    <div className="flex items-center gap-4">
-      <svg width="110" height="110" viewBox="0 0 110 110">
-        <g transform="translate(55,55)">
-          <circle r={radius} fill="none" stroke="var(--border)" strokeWidth="12" />
+    <div className="flex items-center gap-6">
+      <svg width="120" height="120" viewBox="0 0 120 120" className="drop-shadow-lg">
+        <g transform="translate(60,60)">
+          <circle r={radius} fill="none" stroke="#e5e7eb" strokeWidth="14" />
           <g transform="rotate(-90)">
-            <circle r={radius} fill="none" stroke="rgb(239,68,68)" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${missingLength} ${remainingLength}`} />
+            {presentCount > 0 && (
+              <circle r={radius} fill="none" stroke="rgb(34,197,94)" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${presentLength} ${circumference}`} />
+            )}
+            {missingCount > 0 && (
+              <circle r={radius} fill="none" stroke="rgb(239,68,68)" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${missingLength} ${circumference}`} transform={`rotate(${presentLength * 360 / circumference})`} />
+            )}
           </g>
-          <text x="0" y="-2" textAnchor="middle" className="fill-foreground font-bold" style={{ fontSize: 16 }}>{total}</text>
-          <text x="0" y="12" textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>Headers</text>
+          <text x="0" y="-4" textAnchor="middle" className="fill-gray-900 font-bold" style={{ fontSize: 20 }}>{total}</text>
+          <text x="0" y="14" textAnchor="middle" className="fill-gray-600 font-semibold" style={{ fontSize: 11 }}>Headers</text>
         </g>
       </svg>
-      <div className="space-y-1 text-sm">
-        <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Missing: <span className="font-medium">{missingCount}</span></div>
-        <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-gray-300" /> Present: <span className="font-medium">{presentCount}</span></div>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="inline-block w-4 h-4 rounded-full bg-gradient-to-r from-green-600 to-green-500 shadow-md"></span>
+          <div>
+            <span className="text-sm font-semibold text-gray-700">Present: </span>
+            <span className="text-base font-bold text-gray-900">{presentCount}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="inline-block w-4 h-4 rounded-full bg-gradient-to-r from-red-600 to-red-500 shadow-md"></span>
+          <div>
+            <span className="text-sm font-semibold text-gray-700">Missing: </span>
+            <span className="text-base font-bold text-gray-900">{missingCount}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -526,142 +561,215 @@ const UiTestingSummaryCards = () => {
   };
 
   return (
-    <div className="mb-6">
-      <h3 className="text-lg font-semibold mb-2">Latest UI Testing Results</h3>
-      <div className="text-xs text-muted-foreground mb-3">
-        {meta.url ? (
-          <>
-            <span className="font-medium">Website:</span> {meta.url}
-            {meta.ts && <span className="ml-3"><span className="font-medium">Scanned:</span> {formatTimestamp(meta.ts)}</span>}
-            <span className="ml-3"><span className="font-medium">Mode:</span> {meta.mode.charAt(0).toUpperCase() + meta.mode.slice(1)}</span>
-          </>
-        ) : (
-          'No whole-site scans available. Run a scan from the UI Testing page.'
-        )}
-      </div>
+    <div className="mb-8">
+      <h3 className="text-xl font-bold text-gray-900 mb-3">Latest UI Testing Results</h3>
+      {meta.url ? (
+        <div className="flex flex-wrap gap-3 mb-4">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-br from-blue-50 to-blue-100/80 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-blue-200 shadow-sm"
+          >
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-0.5">Website</p>
+            <p className="text-sm font-medium text-gray-800 break-all">{meta.url}</p>
+          </motion.div>
+          {meta.ts && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-gradient-to-br from-green-50 to-green-100/80 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-green-200 shadow-sm"
+            >
+              <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-0.5">Scanned</p>
+              <p className="text-sm font-medium text-gray-800">{formatTimestamp(meta.ts)}</p>
+            </motion.div>
+          )}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-gradient-to-br from-purple-50 to-purple-100/80 backdrop-blur-sm px-4 py-2.5 rounded-xl border border-purple-200 shadow-sm"
+          >
+            <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-0.5">Mode</p>
+            <p className="text-sm font-medium text-gray-800">{meta.mode.charAt(0).toUpperCase() + meta.mode.slice(1)}</p>
+          </motion.div>
+        </div>
+      ) : (
+        <div className="text-sm text-gray-600 mb-4 font-medium">
+          No whole-site scans available. Run a scan from the UI Testing page.
+        </div>
+      )}
       {result ? (
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {(meta.mode === 'all' || meta.mode === 'accessibility') && (
-            <div className="glass-card p-6 rounded-lg border-l-4 border-blue-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Accessibility Score</p>
-                  <h3 className="text-2xl font-bold">{a11yScore}</h3>
+            <motion.div 
+              whileHover={{ scale: 1.03, y: -5 }}
+              className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-blue-500/30 hover:border-blue-500/60"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-blue-500/20 transition-all"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Accessibility Score</p>
+                    <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">{a11yScore}</h3>
+                  </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 text-white shadow-lg">
+                    <FaDesktop className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-full bg-blue-500/10 text-blue-500">
-                  <FaDesktop className="h-6 w-6" />
-                </div>
+                <div className="text-xs text-gray-600 font-medium">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
               </div>
-              <div className="mt-3 text-xs text-muted-foreground">Crit {a11yCounts.critical} • Serious {a11yCounts.serious} • Moderate {a11yCounts.moderate} • Minor {a11yCounts.minor}</div>
-            </div>
+            </motion.div>
           )}
           {(meta.mode === 'all' || meta.mode === 'accessibility') && (
-            <div className="glass-card p-6 rounded-lg border-l-4 border-red-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">WCAG Violations</p>
-                  <h3 className="text-2xl font-bold">{getTotalViolationsCount()}</h3>
+            <motion.div 
+              whileHover={{ scale: 1.03, y: -5 }}
+              className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-red-500/30 hover:border-red-500/60"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-red-500/20 transition-all"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">WCAG Violations</p>
+                    <h3 className="text-3xl font-bold bg-gradient-to-r from-red-600 to-red-500 bg-clip-text text-transparent">{getTotalViolationsCount()}</h3>
+                  </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-red-600 to-red-500 text-white shadow-lg">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-full bg-red-500/10 text-red-500">
-                  <FaChartLine className="h-6 w-6" />
-                </div>
+                {result?.wcag_aggregate?.unique_rules_violated && (
+                  <div className="mt-2 text-xs text-gray-600 font-medium">
+                    {result.wcag_aggregate.unique_rules_violated} unique issues across {result.wcag_aggregate.pages_with_issues || 0} pages
+                  </div>
+                )}
               </div>
-              {result?.wcag_aggregate?.unique_rules_violated && (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {result.wcag_aggregate.unique_rules_violated} unique issues across {result.wcag_aggregate.pages_with_issues || 0} pages
-                </div>
-              )}
-            </div>
+            </motion.div>
           )}
           
           {/* Pages Scanned Card - Always shown for whole-site scans */}
-          <div className="glass-card p-6 rounded-lg border-l-4 border-orange-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Pages Scanned</p>
-                <h3 className="text-2xl font-bold">{result?.summary?.pages_scanned || result?.wcag_aggregate?.total_pages_scanned || 0}</h3>
+          <motion.div 
+            whileHover={{ scale: 1.03, y: -5 }}
+            className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-orange-500/30 hover:border-orange-500/60"
+          >
+            <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-orange-500/20 transition-all"></div>
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Pages Scanned</p>
+                  <h3 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-500 bg-clip-text text-transparent">{result?.summary?.pages_scanned || result?.wcag_aggregate?.total_pages_scanned || 0}</h3>
+                </div>
+                <div className="p-4 rounded-xl bg-gradient-to-br from-orange-600 to-orange-500 text-white shadow-lg">
+                  <FaGlobe className="h-6 w-6" />
+                </div>
               </div>
-              <div className="p-3 rounded-full bg-orange-500/10 text-orange-500">
-                <FaGlobe className="h-6 w-6" />
+              <div className="text-xs text-gray-600 font-medium">
+                {result?.summary?.pages_discovered && (
+                  <span>{result.summary.pages_discovered} pages discovered</span>
+                )}
               </div>
             </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              {result?.summary?.pages_discovered && (
-                <span>{result.summary.pages_discovered} pages discovered</span>
-              )}
-            </div>
-          </div>
+          </motion.div>
 
           {/* Scan Duration Card - Always shown for whole-site scans */}
-          <div className="glass-card p-6 rounded-lg border-l-4 border-cyan-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Scan Duration</p>
-                <h3 className="text-2xl font-bold">{formatDuration(result?.duration_seconds || 0)}</h3>
+          <motion.div 
+            whileHover={{ scale: 1.03, y: -5 }}
+            className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-cyan-500/30 hover:border-cyan-500/60"
+          >
+            <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-cyan-500/20 transition-all"></div>
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Scan Duration</p>
+                  <h3 className="text-3xl font-bold bg-gradient-to-r from-cyan-600 to-cyan-500 bg-clip-text text-transparent">{formatDuration(result?.duration_seconds || 0)}</h3>
+                </div>
+                <div className="p-4 rounded-xl bg-gradient-to-br from-cyan-600 to-cyan-500 text-white shadow-lg">
+                  <FaClock className="h-6 w-6" />
+                </div>
               </div>
-              <div className="p-3 rounded-full bg-cyan-500/10 text-cyan-500">
-                <FaClock className="h-6 w-6" />
+              <div className="text-xs text-gray-600 font-medium">
+                {result?.duration_seconds && (
+                  <span>{result.duration_seconds}s total</span>
+                )}
               </div>
             </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              {result?.duration_seconds && (
-                <span>{result.duration_seconds}s total</span>
-              )}
-            </div>
-          </div>
+          </motion.div>
 
           {(meta.mode === 'all' || meta.mode === 'security') && (
-            <div className="glass-card p-6 rounded-lg border-l-4 border-green-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Security Score</p>
-                  <h3 className="text-2xl font-bold">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+            <motion.div 
+              whileHover={{ scale: 1.03, y: -5 }}
+              className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-green-500/30 hover:border-green-500/60"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-green-500/20 transition-all"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Security Score</p>
+                    <h3 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-500 bg-clip-text text-transparent">{typeof securityScore === 'number' ? securityScore : '—'}</h3>
+                  </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-green-600 to-green-500 text-white shadow-lg">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-full bg-green-500/10 text-green-500">
-                  <FaChartLine className="h-6 w-6" />
-                </div>
+                <div className="text-xs text-gray-600 font-medium">Missing headers: {missingHeaders.length}</div>
               </div>
-              <div className="mt-3 text-xs text-muted-foreground">Missing headers: {missingHeaders.length}</div>
-            </div>
+            </motion.div>
           )}
           {(meta.mode === 'all' || meta.mode === 'security') && (
-            <div className="glass-card p-6 rounded-lg border-l-4 border-purple-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">SSL Labs Grade</p>
-                  <h3 className="text-2xl font-bold">{displaySslGrade}</h3>
-                </div>
-                <div className="p-3 rounded-full bg-purple-500/10 text-purple-500">
-                  <FaChartLine className="h-6 w-6" />
+            <motion.div 
+              whileHover={{ scale: 1.03, y: -5 }}
+              className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-purple-500/30 hover:border-purple-500/60"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-purple-500/20 transition-all"></div>
+              <div className="relative z-10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">SSL Labs Grade</p>
+                    <h3 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-500 bg-clip-text text-transparent">{displaySslGrade}</h3>
+                  </div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-purple-600 to-purple-500 text-white shadow-lg">
+                    <FaChartLine className="h-6 w-6" />
+                  </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
         </div>
       ) : (
-        <div className="p-6 bg-secondary/50 rounded-lg border text-center">
+        <div className="p-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl text-center">
           <div className="text-sm text-muted-foreground mb-2">No whole-site scan results available</div>
           <div className="text-xs text-muted-foreground">Visit the UI Testing page to run your first whole-site scan and see results here.</div>
         </div>
       )}
 
       {result && (
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-            <h4 className="text-base font-semibold mb-3">WCAG Severity Distribution</h4>
-            <SeverityBarChart counts={a11yCounts} />
-          </div>
-          <div className="p-6 bg-card rounded-xl shadow-lg border border-border">
-            <h4 className="text-base font-semibold mb-3">Security Headers Coverage</h4>
-            <HeadersDonutChart presentCount={presentHeaders.length} missingCount={missingHeaders.length} />
-            {missingHeaders.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {missingHeaders.map((h) => (
-                  <span key={h} className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 border border-red-200">{h}</span>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <motion.div 
+            whileHover={{ scale: 1.02, y: -3 }}
+            className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-blue-500/30 hover:border-blue-500/60"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-blue-500/20 transition-all"></div>
+            <div className="relative z-10">
+              <h4 className="text-xl font-bold text-gray-900 mb-6">WCAG Severity Distribution</h4>
+              <SeverityBarChart counts={a11yCounts} />
+            </div>
+          </motion.div>
+          <motion.div 
+            whileHover={{ scale: 1.02, y: -3 }}
+            className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group border-2 border-green-500/30 hover:border-green-500/60"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-green-500/20 transition-all"></div>
+            <div className="relative z-10">
+              <h4 className="text-xl font-bold text-gray-900 mb-6">Security Headers Coverage</h4>
+              <HeadersDonutChart presentCount={presentHeaders.length} missingCount={missingHeaders.length} />
+              {missingHeaders.length > 0 && (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {missingHeaders.map((h) => (
+                    <span key={h} className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-red-100 text-red-800 border-2 border-red-300 shadow-sm">{h}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
       )}
     </div>
@@ -814,19 +922,22 @@ const AzureConnectionMiniCard = () => {
 
   return (
     <motion.div
-      whileHover={{ scale: 1.02 }}
-      className="p-4 bg-card rounded-xl shadow-lg flex items-center justify-between"
+      whileHover={{ scale: 1.03, y: -3 }}
+      className="p-6 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-between group relative overflow-hidden"
     >
-      <div className="flex items-center space-x-3">
-        <FaCloud className={connected ? 'text-green-600' : 'text-gray-500'} />
-        <div>
-          <div className="text-sm font-semibold">Azure AD</div>
-          <div className="text-xs text-muted-foreground">
+      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/0 to-blue-500/0 group-hover:from-blue-500/5 group-hover:via-blue-500/5 group-hover:to-blue-500/5 transition-all duration-300"></div>
+      <div className="relative z-10 flex items-center space-x-4 w-full">
+        <div className={`p-4 rounded-xl ${connected ? 'bg-gradient-to-br from-green-600 to-green-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'} text-white shadow-lg`}>
+          <FaCloud className="h-6 w-6" />
+        </div>
+        <div className="flex-1">
+          <div className="text-base font-bold text-gray-900">Azure AD</div>
+          <div className="text-sm text-gray-600 font-medium">
             {loading ? 'Checking connection…' : (connected ? 'Connected' : 'Not connected')}
           </div>
         </div>
       </div>
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400'}`}>
+      <span className={`px-4 py-2 rounded-xl text-xs font-bold border-2 ${connected ? 'bg-green-100 text-green-800 border-green-500' : 'bg-gray-100 text-gray-800 border-gray-400'}`}>
         {loading ? '…' : (connected ? 'Connected' : 'Not Connected')}
       </span>
     </motion.div>
@@ -4150,40 +4261,57 @@ const UserDashboard = () => {
           >
             {/* Report Content - everything inside will be captured in export */}
             <div ref={reportRef} className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-foreground">
-                  {userData.role === 'it_team' ? 'IT Team Dashboard' :
-                   userData.role === 'compliance_team' ? 'Compliance Team Dashboard' :
-                   'Management Team Dashboard'}
-                </h2>
-                <div className="flex items-center space-x-2">
-                  <FaShieldAlt className="text-primary" />
-                  <span className="text-sm text-muted-foreground capitalize">
-                    {userData.role.replace('_', ' ')}
-                  </span>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-4xl md:text-5xl font-bold mb-4">
+                    {userData.role === 'it_team' ? (
+                      <>
+                        <span className="text-blue-600">IT Team</span>{' '}
+                        <span className="text-black">Dashboard</span>
+                      </>
+                    ) : userData.role === 'compliance_team' ? (
+                      <>
+                        <span className="text-blue-600">Compliance Team</span>{' '}
+                        <span className="text-black">Dashboard</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-blue-600">Management Team</span>{' '}
+                        <span className="text-black">Dashboard</span>
+                      </>
+                    )}
+                  </h2>
+                  <div className="flex items-center space-x-2">
+                    <FaShieldAlt className="text-blue-600" />
+                    <span className="text-sm text-gray-600 font-semibold capitalize">
+                      {userData.role.replace('_', ' ')}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-4">Chatbot Analytics</h3>
+              <div className="mb-10">
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Chatbot Analytics</h3>
                 <div className="w-full">
                   <ChatbotAnalytics />
                 </div>
               </div>
 
               {/* UI Testing summary cards (consistent for all roles) */}
-              <UiTestingSummaryCards />
+              <div className="mb-10">
+                <UiTestingSummaryCards />
+              </div>
 
               {/* Azure Compliance Checker Latest Result */}
               {(userData.role === 'compliance_team' || userData.role === 'management_team' || userData.role === 'it_team') && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold mb-4">Latest Azure Compliance Analysis</h3>
+                <div className="mb-10">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-6">Latest Azure Compliance Analysis</h3>
                   <AzureComplianceLatestResult />
                 </div>
               )}
 
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-4">Integrations</h3>
+              <div className="mb-10">
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">Integrations</h3>
                 <div className="grid grid-cols-1">
                   <AzureConnectionMiniCard />
                 </div>
@@ -4191,8 +4319,8 @@ const UserDashboard = () => {
             </div>
 
             {/* Reports - actions placed at end of dashboard */}
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-3">Reports</h3>
+            <div className="mt-12">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Reports</h3>
               
               {/* Azure Compliance Reports List - Only for compliance_team and management_team, NOT for it_team */}
               {(userData?.role === 'compliance_team' || userData?.role === 'management_team') && <AzureComplianceReportsList />}
@@ -5544,14 +5672,14 @@ const UserDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50/50">
       {/* Mobile Sidebar Toggle */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="p-2 rounded-lg bg-card shadow-lg"
+          className="p-3 rounded-xl bg-white/80 backdrop-blur-sm shadow-lg border-2 border-gray-200 hover:bg-blue-50"
         >
-          {isSidebarOpen ? <FaTimes /> : <FaBars />}
+          {isSidebarOpen ? <FaTimes className="text-gray-700" /> : <FaBars className="text-gray-700" />}
         </button>
       </div>
 
@@ -5560,16 +5688,16 @@ const UserDashboard = () => {
         initial={{ x: -300 }}
         animate={{ x: isSidebarOpen ? 0 : -300 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="fixed top-0 left-0 h-full w-64 bg-card shadow-lg z-40 lg:translate-x-0"
+        className="fixed top-0 left-0 h-full w-64 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-900 backdrop-blur-xl shadow-2xl z-40 lg:translate-x-0"
       >
         <div className="h-full flex flex-col">
           {/* Logo Section */}
-          <div className="p-4 border-b border-border bg-card">
+          <div className="p-6 border-b border-white/20">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-                <span className="text-white font-bold text-lg">C</span>
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 via-blue-300 to-blue-500 flex items-center justify-center shadow-lg transform rotate-[-2deg]">
+                <span className="text-white font-bold text-xl">C</span>
               </div>
-              <span className="font-bold text-lg">Complytics</span>
+              <span className="font-bold text-xl text-white">Complytics</span>
             </div>
           </div>
 
@@ -5577,13 +5705,13 @@ const UserDashboard = () => {
             {getSidebarItems().map((item) => (
               <motion.button
                 key={item.id}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: 1.02, x: 4 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-start space-x-3 p-3 rounded-lg transition-colors text-left ${
+                className={`w-full flex items-center justify-start space-x-3 p-3 rounded-xl transition-all duration-300 text-left font-semibold ${
                   activeTab === item.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-secondary'
+                    ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white shadow-lg shadow-blue-400/50'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 <span className="text-lg">{item.icon}</span>
@@ -5592,12 +5720,12 @@ const UserDashboard = () => {
             ))}
           </nav>
 
-          <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-white/20">
             <motion.button
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ scale: 1.02, x: 4 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleLogout}
-              className="w-full flex items-center justify-start space-x-3 p-3 rounded-lg text-destructive hover:bg-destructive/10 text-left"
+              className="w-full flex items-center justify-start space-x-3 p-3 rounded-xl text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all duration-300 text-left font-semibold"
             >
               <FaSignOutAlt />
               <span className="text-left">Logout</span>

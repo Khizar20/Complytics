@@ -471,62 +471,81 @@ const AzureComplianceChecker = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50/30 via-white to-blue-50/30 p-8">
+      <div className="max-w-7xl mx-auto space-y-10">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <FaCloud className="text-4xl text-blue-600" />
-            <h1 className="text-4xl font-bold text-gray-900">Azure Compliance Checker</h1>
-          </div>
-          <p className="text-gray-600 text-lg">
-            Analyze your Azure configurations and policies against best practices and compliance frameworks
-          </p>
-        </div>
-
-        {/* Status Banner */}
-        {checkerStatus && checkerStatus.status !== 'ready' && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <FaExclamationTriangle className="text-yellow-600" />
-              <p className="text-yellow-800">
-                {checkerStatus.message}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center gap-4 mb-3">
+            <div className="p-3 bg-gradient-to-br from-blue-600 to-blue-500 rounded-xl shadow-lg">
+              <FaCloud className="text-4xl text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold text-black">Azure Compliance Checker</h1>
+              <p className="text-gray-600 text-lg mt-2">
+                Analyze your Azure configurations and policies against best practices and compliance frameworks
               </p>
             </div>
           </div>
+        </motion.div>
+
+        {/* Status Banner */}
+        {checkerStatus && checkerStatus.status !== 'ready' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-5 bg-yellow-50/90 backdrop-blur-sm border-2 border-yellow-300 rounded-xl shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <FaExclamationTriangle className="text-yellow-600 text-xl" />
+              <p className="text-yellow-800 font-semibold">
+                {checkerStatus.message}
+              </p>
+            </div>
+          </motion.div>
         )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 bg-white rounded-2xl shadow-lg p-6 border border-blue-100"
+          whileHover={{ scale: 1.01 }}
+          className="mb-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl p-8 border-2 border-blue-200 relative overflow-hidden group"
         >
-          <div className="flex items-center gap-3 mb-3">
-            <FaCloud className="text-2xl text-indigo-600" />
-            <h2 className="text-2xl font-bold text-gray-900">Fetched Azure Settings Snapshot</h2>
-          </div>
+          <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 bg-gradient-to-br from-indigo-600 to-indigo-500 rounded-xl shadow-lg">
+                <FaCloud className="text-2xl text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">Fetched Azure Settings Snapshot</h2>
+            </div>
 
           {snapshotLoading ? (
-            <div className="flex items-center gap-2 text-gray-600">
-              <FaSpinner className="animate-spin" />
+            <div className="flex items-center gap-3 text-gray-700 font-medium">
+              <FaSpinner className="animate-spin text-xl" />
               Loading snapshot...
             </div>
           ) : snapshot ? (
             <div>
-              <p className="text-gray-700">
-                <strong>Last fetched:</strong>{' '}
-                {snapshot.timestamp ? new Date(snapshot.timestamp).toLocaleString() : 'Unknown'}
-              </p>
-              <p className="text-sm text-gray-600 mt-3 leading-relaxed">
+              <div className="p-4 bg-gradient-to-r from-indigo-50/80 to-blue-50/80 backdrop-blur-sm border-2 border-indigo-200 rounded-xl mb-4">
+                <p className="text-gray-800 font-semibold">
+                  <span className="text-indigo-700">Last fetched:</span>{' '}
+                  {snapshot.timestamp ? new Date(snapshot.timestamp).toLocaleString() : 'Unknown'}
+                </p>
+              </div>
+              <p className="text-sm text-gray-700 mt-4 leading-relaxed font-medium">
                 We captured these Azure settings automatically via Microsoft Graph. Due to API and licensing limitations
                 this snapshot may not include every Azure control. You can analyze this partial snapshot for quick insights,
                 or upload a full Azure configuration document for a comprehensive review.
               </p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-6 flex flex-wrap items-center gap-4">
                 <button
                   onClick={handleAnalyzeSnapshot}
                   disabled={analyzingSnapshot || checkerStatus?.status !== 'ready'}
-                  className="flex items-center gap-2 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors relative overflow-hidden"
+                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white py-3 px-6 rounded-xl hover:from-indigo-700 hover:to-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl font-semibold relative overflow-hidden"
                 >
                   {analyzingSnapshot ? (
                     <>
@@ -543,7 +562,7 @@ const AzureComplianceChecker = () => {
                     </>
                   )}
                 </button>
-                <span className="text-xs text-gray-500 italic">
+                <span className="text-xs text-gray-600 italic font-medium">
                   Tip: Upload a detailed configuration file for deeper analysis.
                 </span>
               </div>
@@ -585,58 +604,71 @@ const AzureComplianceChecker = () => {
               <p className="text-sm text-red-700">{snapshotError}</p>
             </div>
           )}
+          </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Upload Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl shadow-lg p-6"
+            whileHover={{ scale: 1.02 }}
+            className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl p-8 border-2 border-blue-200 relative overflow-hidden group"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <FaCloudUploadAlt className="text-2xl text-blue-600" />
-              <h2 className="text-2xl font-bold text-gray-900">Upload Document</h2>
-            </div>
+            <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-gradient-to-br from-blue-600 to-blue-500 rounded-xl shadow-lg">
+                  <FaCloudUploadAlt className="text-2xl text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">Upload Document</h2>
+              </div>
 
-            {/* File Upload Area */}
-            <div
-              className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
-              onClick={() => document.getElementById('fileInput').click()}
-            >
-              {getFileIcon()}
-              <p className="mt-4 text-gray-700 font-medium">
-                {file ? file.name : 'Click to upload or drag and drop'}
-              </p>
-              <p className="mt-2 text-sm text-gray-500">
-                PDF, DOCX, TXT, or JSON (Max 10MB)
-              </p>
-              <input
-                id="fileInput"
-                type="file"
-                accept=".pdf,.docx,.doc,.txt,.json"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-            </div>
+              {/* File Upload Area */}
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center hover:border-blue-500 hover:bg-blue-50/30 transition-all cursor-pointer relative overflow-hidden group/upload"
+                onClick={() => document.getElementById('fileInput').click()}
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover/upload:opacity-100 transition-opacity"></div>
+                <div className="relative z-10">
+                  {getFileIcon()}
+                  <p className="mt-4 text-gray-800 font-bold text-lg">
+                    {file ? file.name : 'Click to upload or drag and drop'}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-600 font-medium">
+                    PDF, DOCX, TXT, or JSON (Max 10MB)
+                  </p>
+                </div>
+                <input
+                  id="fileInput"
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.json"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
 
             {/* File Info */}
             {file && (
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-gray-700">
-                  <strong>File:</strong> {file.name}
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 p-5 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border-2 border-blue-200 rounded-xl shadow-sm"
+              >
+                <p className="text-sm text-gray-800 font-semibold mb-2">
+                  <span className="text-blue-700">File:</span> {file.name}
                 </p>
-                <p className="text-sm text-gray-700">
-                  <strong>Size:</strong> {(file.size / 1024).toFixed(2)} KB
+                <p className="text-sm text-gray-800 font-semibold">
+                  <span className="text-blue-700">Size:</span> {(file.size / 1024).toFixed(2)} KB
                 </p>
-              </div>
+              </motion.div>
             )}
 
             {/* Analyze Button */}
             <button
               onClick={handleAnalyze}
               disabled={!file || analyzing || checkerStatus?.status !== 'ready'}
-              className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 relative overflow-hidden"
+              className="mt-6 w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3.5 px-6 rounded-xl font-bold hover:from-blue-700 hover:to-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 relative overflow-hidden shadow-lg hover:shadow-xl"
             >
               {analyzing ? (
                 <>
@@ -685,6 +717,7 @@ const AzureComplianceChecker = () => {
                 <p className="text-red-800 text-sm">{error}</p>
               </div>
             )}
+            </div>
           </motion.div>
 
           {/* Info Panel */}
@@ -692,29 +725,33 @@ const AzureComplianceChecker = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-6 text-white"
+            whileHover={{ scale: 1.02 }}
+            className="bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl hover:shadow-2xl p-8 text-white relative overflow-hidden"
           >
-            <h2 className="text-2xl font-bold mb-4">What We Check</h2>
-            <div className="space-y-3">
-              {[
-                { icon: FaShieldAlt, text: 'Security Controls & Encryption' },
-                { icon: FaCheckCircle, text: 'Identity & Access Management' },
-                { icon: FaChartPie, text: 'Storage & Data Protection' },
-                { icon: FaListAlt, text: 'Networking & Connectivity' },
-                { icon: FaInfoCircle, text: 'Monitoring & Governance' },
-                { icon: FaServer, text: 'Compute & Database Best Practices' }
-              ].map((item, index) => (
-                <div key={index} className="flex items-center gap-3">
-                  <item.icon className="text-xl" />
-                  <span>{item.text}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 p-4 bg-white/10 rounded-lg">
-              <p className="text-sm">
-                <strong>Supported Files:</strong> Azure configuration files, policy documents, 
-                security guidelines, and architectural documentation.
-              </p>
+            <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full blur-3xl -mr-24 -mt-24"></div>
+            <div className="relative z-10">
+              <h2 className="text-2xl font-bold mb-6">What We Check</h2>
+              <div className="space-y-4">
+                {[
+                  { icon: FaShieldAlt, text: 'Security Controls & Encryption' },
+                  { icon: FaCheckCircle, text: 'Identity & Access Management' },
+                  { icon: FaChartPie, text: 'Storage & Data Protection' },
+                  { icon: FaListAlt, text: 'Networking & Connectivity' },
+                  { icon: FaInfoCircle, text: 'Monitoring & Governance' },
+                  { icon: FaServer, text: 'Compute & Database Best Practices' }
+                ].map((item, index) => (
+                  <div key={index} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 transition-colors">
+                    <item.icon className="text-xl" />
+                    <span className="font-medium">{item.text}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-8 p-5 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
+                <p className="text-sm font-semibold">
+                  <strong>Supported Files:</strong> Azure configuration files, policy documents, 
+                  security guidelines, and architectural documentation.
+                </p>
+              </div>
             </div>
           </motion.div>
         </div>
@@ -726,29 +763,31 @@ const AzureComplianceChecker = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mt-6 bg-white rounded-2xl shadow-lg p-6"
+              className="mt-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl p-8 border-2 border-blue-200 relative overflow-hidden group"
             >
-              {/* Results Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Analysis Results</h2>
-                <button
-                  onClick={handleGenerateReport}
-                  disabled={generatingReport}
-                  className="flex items-center gap-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300"
-                >
-                  {generatingReport ? (
-                    <>
-                      <FaSpinner className="animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <FaDownload />
-                      Export PDF Report
-                    </>
-                  )}
-                </button>
-              </div>
+              <div className="absolute top-0 right-0 w-48 h-48 bg-green-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+              <div className="relative z-10">
+                {/* Results Header */}
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-3xl font-bold text-gray-900">Analysis Results</h2>
+                  <button
+                    onClick={handleGenerateReport}
+                    disabled={generatingReport}
+                    className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-500 text-white py-3 px-6 rounded-xl hover:from-green-700 hover:to-green-600 transition-all disabled:bg-gray-300 shadow-lg hover:shadow-xl font-semibold"
+                  >
+                    {generatingReport ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <FaDownload />
+                        Export PDF Report
+                      </>
+                    )}
+                  </button>
+                </div>
 
               {/* Overall Score Section */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -785,34 +824,40 @@ const AzureComplianceChecker = () => {
 
               {/* Framework Scores Grid */}
               {analysis.framework_scores && (
-                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
-                  <h3 className="font-bold text-gray-900 mb-4 text-lg flex items-center gap-2">
-                    <FaChartPie className="text-blue-600" />
+                <div className="mb-8 p-6 bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-purple-50/80 backdrop-blur-sm rounded-xl border-2 border-blue-200 shadow-sm">
+                  <h3 className="font-bold text-gray-900 mb-6 text-xl flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-500 rounded-lg">
+                      <FaChartPie className="text-white" />
+                    </div>
                     Framework Compliance Scores
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {Object.entries(analysis.framework_scores).map(([framework, score]) => {
                       const status = score >= 80 ? 'Compliant' : score >= 60 ? 'Partial' : 'Non-Compliant';
                       return (
-                        <div key={framework} className="bg-white p-4 rounded-lg shadow-sm">
+                        <motion.div 
+                          key={framework} 
+                          whileHover={{ scale: 1.05, y: -5 }}
+                          className="bg-white/90 backdrop-blur-sm p-5 rounded-xl shadow-lg hover:shadow-xl border-2 border-gray-200 transition-all"
+                        >
                           <div className="text-center">
-                            <div className="text-sm font-semibold text-gray-600 uppercase mb-2">
+                            <div className="text-sm font-bold text-gray-700 uppercase mb-3">
                               {framework === 'gdpr' ? 'GDPR' : 
                                framework === 'iso27001' ? 'ISO 27001' :
                                framework === 'iso27017' ? 'ISO 27017' :
                                framework === 'iso27018' ? 'ISO 27018' :
                                framework.charAt(0).toUpperCase() + framework.slice(1)}
                             </div>
-                            <div className="text-3xl font-bold mb-1" style={{ 
+                            <div className="text-4xl font-bold mb-2" style={{ 
                               color: score >= 80 ? '#22c55e' : score >= 60 ? '#eab308' : '#ef4444' 
                             }}>
                               {score}
                             </div>
-                            <div className={`text-xs px-2 py-1 rounded-full font-semibold inline-block ${getStatusColor(status)}`}>
+                            <div className={`text-xs px-3 py-1.5 rounded-full font-bold inline-block border-2 ${getStatusColor(status)}`}>
                               {status}
                             </div>
                           </div>
-                        </div>
+                        </motion.div>
                       );
                     })}
                   </div>
@@ -820,34 +865,43 @@ const AzureComplianceChecker = () => {
               )}
 
               {/* Summary */}
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-bold text-gray-900 mb-2">Summary</h3>
-                <p className="text-gray-700 whitespace-pre-line">{analysis.summary}</p>
+              <div className="mb-8 p-6 bg-gradient-to-r from-gray-50/80 to-blue-50/80 backdrop-blur-sm rounded-xl border-2 border-gray-200 shadow-sm">
+                <h3 className="font-bold text-gray-900 mb-3 text-xl">Summary</h3>
+                <p className="text-gray-800 whitespace-pre-line leading-relaxed font-medium">{analysis.summary}</p>
               </div>
 
               {/* Framework-Specific Findings */}
               <div>
-                <h3 className="font-bold text-gray-900 mb-4 text-xl">Detailed Findings by Framework</h3>
+                <h3 className="font-bold text-gray-900 mb-6 text-2xl">Detailed Findings by Framework</h3>
                 
                 {analysis.frameworks ? (
                   /* Multi-framework results */
-                  <div className="space-y-6">
+                  <div className="space-y-8">
                     {Object.entries(analysis.frameworks).map(([frameworkName, frameworkData], fIndex) => (
-                      <div key={frameworkName} className="border-2 border-gray-200 rounded-xl p-5 bg-white">
-                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
-                          <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                            <FaShieldAlt className="text-blue-600" />
+                      <motion.div 
+                        key={frameworkName} 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: fIndex * 0.1 }}
+                        whileHover={{ scale: 1.01 }}
+                        className="border-2 border-gray-200 rounded-2xl p-6 bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-gray-200">
+                          <h4 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                            <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-500 rounded-lg">
+                              <FaShieldAlt className="text-white" />
+                            </div>
                             {frameworkName === 'gdpr' ? 'GDPR' : 
                              frameworkName === 'iso27001' ? 'ISO 27001' :
                              frameworkName === 'iso27017' ? 'ISO 27017' :
                              frameworkName === 'iso27018' ? 'ISO 27018' :
                              frameworkData.framework_name || frameworkName.toUpperCase()}
                           </h4>
-                          <div className="flex items-center gap-3">
-                            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(frameworkData.status)}`}>
+                          <div className="flex items-center gap-4">
+                            <span className={`px-4 py-2 rounded-full text-sm font-bold border-2 ${getStatusColor(frameworkData.status)}`}>
                               {frameworkData.status}
                             </span>
-                            <span className="text-2xl font-bold" style={{
+                            <span className="text-3xl font-bold" style={{
                               color: frameworkData.score >= 80 ? '#22c55e' : frameworkData.score >= 60 ? '#eab308' : '#ef4444'
                             }}>
                               {frameworkData.score}/100
@@ -857,22 +911,22 @@ const AzureComplianceChecker = () => {
 
                         {/* Framework Recommendation */}
                         {frameworkData.recommendation && (
-                          <div className="mb-3 p-3 bg-blue-50 rounded-lg">
-                            <strong className="text-blue-900">Recommendation:</strong>
-                            <p className="text-blue-800 text-sm mt-1">{frameworkData.recommendation}</p>
+                          <div className="mb-4 p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm rounded-xl border-2 border-blue-200 shadow-sm">
+                            <strong className="text-blue-900 font-bold">Recommendation:</strong>
+                            <p className="text-blue-800 text-sm mt-2 font-medium leading-relaxed">{frameworkData.recommendation}</p>
                           </div>
                         )}
 
                         {/* Gaps */}
                         {frameworkData.gaps && frameworkData.gaps.length > 0 && (
-                          <div className="mb-3 p-3 bg-red-50 rounded-lg border border-red-200">
-                            <strong className="text-red-900 flex items-center gap-2">
-                              <FaExclamationTriangle className="text-red-600" />
+                          <div className="mb-4 p-5 bg-red-50/90 backdrop-blur-sm rounded-xl border-2 border-red-300 shadow-sm">
+                            <strong className="text-red-900 flex items-center gap-2 font-bold text-lg mb-3">
+                              <FaExclamationTriangle className="text-red-600 text-xl" />
                               Gaps Identified:
                             </strong>
-                            <ul className="list-disc list-inside mt-2 space-y-1">
+                            <ul className="list-disc list-inside mt-2 space-y-2">
                               {frameworkData.gaps.map((gap, idx) => (
-                                <li key={idx} className="text-red-800 text-sm">{gap}</li>
+                                <li key={idx} className="text-red-800 text-sm font-medium">{gap}</li>
                               ))}
                             </ul>
                           </div>
@@ -880,14 +934,14 @@ const AzureComplianceChecker = () => {
 
                         {/* Compliant Areas */}
                         {frameworkData.compliant_areas && frameworkData.compliant_areas.length > 0 && (
-                          <div className="mb-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                            <strong className="text-green-900 flex items-center gap-2">
-                              <FaCheckCircle className="text-green-600" />
+                          <div className="mb-4 p-5 bg-green-50/90 backdrop-blur-sm rounded-xl border-2 border-green-300 shadow-sm">
+                            <strong className="text-green-900 flex items-center gap-2 font-bold text-lg mb-3">
+                              <FaCheckCircle className="text-green-600 text-xl" />
                               Compliant Areas:
                             </strong>
-                            <ul className="list-disc list-inside mt-2 space-y-1">
+                            <ul className="list-disc list-inside mt-2 space-y-2">
                               {frameworkData.compliant_areas.map((area, idx) => (
-                                <li key={idx} className="text-green-800 text-sm">{area}</li>
+                                <li key={idx} className="text-green-800 text-sm font-medium">{area}</li>
                               ))}
                             </ul>
                           </div>
@@ -916,7 +970,7 @@ const AzureComplianceChecker = () => {
                             </ul>
                           </div>
                         )}
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 ) : analysis.findings && analysis.findings.length > 0 ? (
@@ -993,6 +1047,7 @@ const AzureComplianceChecker = () => {
                   <p className="text-gray-500">No detailed findings available.</p>
                 )}
               </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1004,46 +1059,50 @@ const AzureComplianceChecker = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mt-6 bg-white rounded-2xl shadow-lg p-6"
+              className="mt-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl p-8 border-2 border-blue-200 relative overflow-hidden group"
             >
-              <div className="mb-6 space-y-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <FaListAlt className="text-blue-600" />
-                    Compliance Checklist
-                  </h2>
-                  <p className="text-gray-600 mt-1">
-                    Generate an actionable checklist to achieve full compliance based on identified gaps
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <span className="text-sm font-medium text-gray-700">Generate Checklist:</span>
-                  {Object.keys(analysis.frameworks || {}).map((fw) => (
+              <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+              <div className="relative z-10">
+                <div className="mb-8 space-y-5">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-gradient-to-br from-purple-600 to-purple-500 rounded-lg">
+                        <FaListAlt className="text-white" />
+                      </div>
+                      Compliance Checklist
+                    </h2>
+                    <p className="text-gray-700 mt-2 font-medium">
+                      Generate an actionable checklist to achieve full compliance based on identified gaps
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 pt-3">
+                    <span className="text-sm font-bold text-gray-900">Generate Checklist:</span>
+                    {Object.keys(analysis.frameworks || {}).map((fw) => (
+                      <button
+                        key={fw}
+                        onClick={() => handleGenerateChecklist(fw)}
+                        disabled={generatingChecklist}
+                        className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl hover:from-blue-700 hover:to-blue-600 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-bold shadow-lg hover:shadow-xl"
+                      >
+                        {fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27017' ? 'ISO 27017' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()}
+                      </button>
+                    ))}
                     <button
-                      key={fw}
-                      onClick={() => handleGenerateChecklist(fw)}
+                      onClick={() => handleGenerateChecklist()}
                       disabled={generatingChecklist}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium shadow-sm hover:shadow-md"
+                      className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white rounded-xl hover:from-indigo-700 hover:to-indigo-600 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-bold shadow-lg hover:shadow-xl"
                     >
-                      {fw === 'gdpr' ? 'GDPR' : fw === 'iso27001' ? 'ISO 27001' : fw === 'iso27017' ? 'ISO 27017' : fw === 'iso27018' ? 'ISO 27018' : fw.toUpperCase()}
+                      {generatingChecklist ? (
+                        <>
+                          <FaSpinner className="animate-spin inline mr-2" />
+                          Generating...
+                        </>
+                      ) : (
+                        'All Frameworks'
+                      )}
                     </button>
-                  ))}
-                  <button
-                    onClick={() => handleGenerateChecklist()}
-                    disabled={generatingChecklist}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium shadow-sm hover:shadow-md"
-                  >
-                    {generatingChecklist ? (
-                      <>
-                        <FaSpinner className="animate-spin inline mr-2" />
-                        Generating...
-                      </>
-                    ) : (
-                      'All Frameworks'
-                    )}
-                  </button>
+                  </div>
                 </div>
-              </div>
 
               {checklist && (
                 <motion.div
@@ -1263,6 +1322,7 @@ const AzureComplianceChecker = () => {
                   <p>Click a framework button above to generate a compliance checklist</p>
                 </div>
               )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

@@ -111,42 +111,50 @@ const LoginForm = () => {
   // Show loading state while checking authentication
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-blue-50/30">
         <div className="text-center">
-          <FaSpinner className="animate-spin h-8 w-8 text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Checking authentication...</p>
+          <FaSpinner className="animate-spin h-10 w-10 text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600 font-medium">Checking authentication...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full mx-auto p-8 bg-card rounded-xl shadow-lg">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50/30 via-blue-50/20 to-blue-50/30">
+      {/* Background decorative elements */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl"></div>
+      
+      <div className="max-w-md w-full mx-auto relative z-10">
+        <div className="bg-white border-2 border-black rounded-2xl shadow-2xl p-8 md:p-10">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FaUser className="h-8 w-8 text-primary" />
+            <div className="flex items-center justify-center mb-6">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-600 via-blue-500 to-blue-700 flex items-center justify-center shadow-lg transform rotate-[-2deg] mr-3">
+                <span className="text-white font-bold text-xl">C</span>
+              </div>
+              <span className="font-bold text-2xl text-black">Complytics</span>
           </div>
-          <h2 className="text-2xl font-bold text-foreground">Welcome Back</h2>
-          <p className="text-muted-foreground mt-2">
+            <h2 className="text-3xl font-bold text-black mb-2">Welcome Back</h2>
+            <p className="text-gray-600 text-base">
             Sign in to your Complytics account
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-destructive/10 text-destructive rounded-lg">
+            <div className="mb-6 p-4 bg-red-50 border-2 border-red-500 text-red-700 rounded-lg font-medium">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
+              <label htmlFor="email" className="block text-sm font-bold text-black mb-2">
               Email Address
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaUser className="h-5 w-5 text-muted-foreground" />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <FaUser className="h-5 w-5 text-blue-600" />
               </div>
               <input
                 id="email"
@@ -156,19 +164,19 @@ const LoginForm = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="block w-full pl-10 pr-3 py-3 border border-border rounded-lg bg-background focus:ring-primary focus:border-primary"
+                  className="block w-full pl-12 pr-4 py-3 border-2 border-black rounded-lg bg-white text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all font-medium"
                 placeholder="your@email.com"
               />
             </div>
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-foreground mb-1">
+              <label htmlFor="password" className="block text-sm font-bold text-black mb-2">
               Password
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaLock className="h-5 w-5 text-muted-foreground" />
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <FaLock className="h-5 w-5 text-blue-600" />
               </div>
               <input
                 id="password"
@@ -178,7 +186,7 @@ const LoginForm = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full pl-10 pr-3 py-3 border border-border rounded-lg bg-background focus:ring-primary focus:border-primary"
+                  className="block w-full pl-12 pr-4 py-3 border-2 border-black rounded-lg bg-white text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-all font-medium"
                 placeholder="••••••••"
               />
             </div>
@@ -188,7 +196,7 @@ const LoginForm = () => {
             <div className="text-sm">
               <Link
                 to="/forgot-password"
-                className="font-medium text-primary hover:text-primary/80"
+                  className="font-bold text-blue-600 hover:text-blue-700 transition-colors"
               >
                 Forgot password?
               </Link>
@@ -198,7 +206,7 @@ const LoginForm = () => {
           <div>
             <Button
               type="submit"
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                className="w-full flex justify-center py-4 px-4 rounded-lg shadow-lg text-base font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 transition-all duration-300 transform hover:scale-[1.02]"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -213,13 +221,13 @@ const LoginForm = () => {
           </div>
         </form>
 
-        <div className="mt-6">
+          <div className="mt-8">
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
+                <div className="w-full border-t-2 border-black" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-card text-muted-foreground">
+                <span className="px-3 bg-white text-gray-600 font-medium">
                 Don't have an account?
               </span>
             </div>
@@ -228,10 +236,11 @@ const LoginForm = () => {
           <div className="mt-6">
             <button
               onClick={scrollToCTA}
-              className="w-full flex justify-center py-2 px-4 border border-border rounded-md shadow-sm text-sm font-medium text-foreground bg-background hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                className="w-full flex justify-center py-3 px-4 border-2 border-black rounded-lg shadow-lg text-base font-bold text-black bg-white hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 transition-all duration-300"
             >
               Request access
             </button>
+            </div>
           </div>
         </div>
       </div>

@@ -4,8 +4,8 @@ import json
 import logging
 import time
 import faiss
-import google.generativeai as genai
-import requests
+from google import genai
+from google.genai import types
 import pdfplumber
 import numpy as np
 import re
@@ -33,17 +33,51 @@ logger = logging.getLogger(__name__)
 # Configuration
 _GEMINI_KEYS = []
 _ACTIVE_GEMINI_INDEX: Optional[int] = None
+# Track exhausted keys with cooldown timestamps: {key_index: cooldown_until_timestamp}
+_EXHAUSTED_KEYS: Dict[int, float] = {}
+_EXHAUSTION_COOLDOWN_SECONDS = 300  # 5 minutes cooldown for exhausted keys
+# Track permanently invalid keys (leaked, revoked, etc.): {key_index: reason}
+_INVALID_KEYS: Dict[int, str] = {}
+# Track permanently invalid keys (leaked, revoked, etc.): {key_index: reason}
+_INVALID_KEYS: Dict[int, str] = {}
 
-for key_candidate in (
-    os.getenv("GOOGLE_API_KEY1"),
-    os.getenv("GOOGLE_API_KEY2"),
-    os.getenv("GOOGLE_API_KEY3"),
-    os.getenv("GOOGLE_API_KEY4"),
-):
-    if key_candidate:
-        value = key_candidate.strip()
-        if value and value not in _GEMINI_KEYS:
-            _GEMINI_KEYS.append(value)
+def _reload_gemini_keys():
+    """Reload Gemini API keys from environment variables."""
+    global _GEMINI_KEYS, _ACTIVE_GEMINI_INDEX
+    _GEMINI_KEYS = []
+    _ACTIVE_GEMINI_INDEX = None
+    
+    # Reload .env file if it exists
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        from dotenv import load_dotenv
+        load_dotenv(env_path, override=True)
+    else:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+    
+    for key_candidate in (
+        os.getenv("GOOGLE_API_KEY1"),
+        os.getenv("GOOGLE_API_KEY2"),
+        os.getenv("GOOGLE_API_KEY3"),
+        os.getenv("GOOGLE_API_KEY4"),
+    ):
+        if key_candidate:
+            value = key_candidate.strip()
+            if value and value not in _GEMINI_KEYS:
+                _GEMINI_KEYS.append(value)
+    
+    logger.info(f"✅ Loaded {len(_GEMINI_KEYS)} Gemini API key(s) from environment")
+    if _GEMINI_KEYS:
+        # Show first 10 chars of each key for verification
+        key_previews = [f"KEY{i+1}: {key[:10]}..." for i, key in enumerate(_GEMINI_KEYS)]
+        logger.info(f"   Keys: {', '.join(key_previews)}")
+        logger.info(f"   Note: If keys are from different Google Cloud projects/accounts, each will have separate quotas")
+    else:
+        logger.warning("⚠️  No Gemini API keys found in environment variables!")
+
+# Initial load
+_reload_gemini_keys()
 
 # Initialize the embedding model
 logger.info("Initializing embedding model...")
@@ -275,74 +309,158 @@ def classify_document_type(text: str, allow_general_docs: bool = False) -> str:
     return "other"
 
 # Set up the Gemini model
-generation_config = {
-    "temperature": 0.1,
-    "top_p": 1,
-    "top_k": 1,
-    "max_output_tokens": 3200,
-}
-
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-]
-
-model = None
+MODEL_ID = "gemini-3-flash-preview"
+client = None
 
 
 def _configure_model_for_index(index: int) -> bool:
-    global model, _ACTIVE_GEMINI_INDEX
+    global client, _ACTIVE_GEMINI_INDEX
     if index < 0 or index >= len(_GEMINI_KEYS):
         return False
+    
+    # Never configure invalid keys
+    if _is_key_invalid(index):
+        logger.debug(f"Refusing to configure invalid key #{index + 1}")
+        return False
+    
     key = _GEMINI_KEYS[index]
     if not key:
         return False
     try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            generation_config=generation_config,
-            safety_settings=safety_settings
-        )
+        client = genai.Client(api_key=key)
         _ACTIVE_GEMINI_INDEX = index
-        logger.info("Gemini configured successfully with key #%d", index + 1)
+        key_preview = key[:10] + "..." if len(key) > 10 else key
+        logger.info("Gemini configured successfully with key #%d (%s)", index + 1, key_preview)
         return True
     except Exception as exc:
         logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
-        model = None
+        client = None
         return False
 
 
 def _ensure_model_initialized() -> bool:
-    if model is not None:
+    global client, _ACTIVE_GEMINI_INDEX
+    if client is not None:
+        # Check if current key is still valid
+        if _ACTIVE_GEMINI_INDEX is not None and _is_key_invalid(_ACTIVE_GEMINI_INDEX):
+            logger.warning(f"Current key #{_ACTIVE_GEMINI_INDEX + 1} is invalid, reinitializing...")
+            client = None
+            _ACTIVE_GEMINI_INDEX = None
+    
+    if client is not None:
         return True
+    
+    # Try to initialize with a valid, non-exhausted key
     for idx in range(len(_GEMINI_KEYS)):
+        # Skip invalid keys
+        if _is_key_invalid(idx):
+            logger.debug(f"Skipping invalid key #{idx + 1} during initialization")
+            continue
+        # Skip exhausted keys (in cooldown)
+        if _is_key_exhausted(idx):
+            logger.debug(f"Skipping exhausted key #{idx + 1} during initialization")
+            continue
         if _configure_model_for_index(idx):
             return True
+    
+    # If all non-exhausted keys failed, try exhausted keys (cooldown might have expired)
+    logger.warning("All non-exhausted keys failed, trying exhausted keys...")
+    for idx in range(len(_GEMINI_KEYS)):
+        if _is_key_invalid(idx):
+            continue
+        if _configure_model_for_index(idx):
+            logger.info(f"Initialized with exhausted key #{idx + 1} (cooldown expired)")
+            return True
+    
     if not _GEMINI_KEYS:
         logger.warning("Gemini not configured: no API key available (expected GOOGLE_API_KEY1 / GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4)")
     else:
-        logger.warning("Gemini not configured: all provided API keys failed")
+        invalid_count = len(_INVALID_KEYS)
+        exhausted_count = len([k for k in _EXHAUSTED_KEYS if time.time() < _EXHAUSTED_KEYS[k]])
+        logger.warning(f"Gemini not configured: {invalid_count} invalid key(s), {exhausted_count} exhausted key(s), all keys unavailable")
     return False
 
 
-def _switch_to_fallback_key() -> bool:
-    if len(_GEMINI_KEYS) <= 1:
+def _is_key_invalid(key_index: int) -> bool:
+    """Check if a key is permanently invalid (leaked, revoked, etc.)."""
+    return key_index in _INVALID_KEYS
+
+def _is_key_exhausted(key_index: int) -> bool:
+    """Check if a key is currently in cooldown due to exhaustion."""
+    # Don't check exhausted status for invalid keys - they're permanently disabled
+    if _is_key_invalid(key_index):
+        return True  # Treat invalid keys as exhausted so they're skipped
+    
+    if key_index not in _EXHAUSTED_KEYS:
         return False
-    current = _ACTIVE_GEMINI_INDEX
-    for idx in range(len(_GEMINI_KEYS)):
-        if idx == current:
+    cooldown_until = _EXHAUSTED_KEYS[key_index]
+    if time.time() < cooldown_until:
+        return True
+    # Cooldown expired, remove from exhausted list
+    del _EXHAUSTED_KEYS[key_index]
+    logger.info(f"Key #{key_index + 1} cooldown expired, available for use again")
+    return False
+
+def _mark_key_exhausted(key_index: int, cooldown_seconds: int = None):
+    """Mark a key as exhausted and set cooldown period."""
+    if cooldown_seconds is None:
+        cooldown_seconds = _EXHAUSTION_COOLDOWN_SECONDS
+    _EXHAUSTED_KEYS[key_index] = time.time() + cooldown_seconds
+    logger.warning(f"Key #{key_index + 1} marked as exhausted, cooldown for {cooldown_seconds}s")
+
+def _switch_to_fallback_key(skip_exhausted: bool = True) -> bool:
+    """Switch to next available key, optionally skipping exhausted keys."""
+    # Use the improved rotation function which handles invalid keys properly
+    return _try_all_keys_rotation()
+
+def _try_all_keys_rotation() -> bool:
+    """Try rotating through all available keys systematically."""
+    if not _GEMINI_KEYS:
+        return False
+    
+    current = _ACTIVE_GEMINI_INDEX if _ACTIVE_GEMINI_INDEX is not None else -1
+    
+    # Try all keys in order, starting from next key
+    for offset in range(1, len(_GEMINI_KEYS) + 1):
+        idx = (current + offset) % len(_GEMINI_KEYS)
+        # Skip if invalid (permanently disabled)
+        if _is_key_invalid(idx):
+            logger.debug(f"Skipping invalid key #{idx + 1} in rotation ({_INVALID_KEYS.get(idx, 'unknown reason')})")
+            continue
+        # Skip if exhausted (in cooldown)
+        if _is_key_exhausted(idx):
+            logger.debug(f"Skipping exhausted key #{idx + 1} in rotation (cooldown active)")
             continue
         if _configure_model_for_index(idx):
-            logger.info("Gemini failover succeeded using key #%d", idx + 1)
+            logger.info(f"Rotated to key #{idx + 1} (attempt {offset}/{len(_GEMINI_KEYS)})")
             return True
-    logger.warning("Gemini failover failed: no alternate API keys succeeded")
+    
+    # If all are exhausted (but not invalid), try anyway after checking cooldown
+    logger.warning("All non-exhausted keys failed, checking if any exhausted keys are ready...")
+    for offset in range(1, len(_GEMINI_KEYS) + 1):
+        idx = (current + offset) % len(_GEMINI_KEYS)
+        # Never try invalid keys
+        if _is_key_invalid(idx):
+            continue
+        # Only try exhausted keys if cooldown has expired
+        if idx in _EXHAUSTED_KEYS:
+            cooldown_until = _EXHAUSTED_KEYS[idx]
+            if time.time() < cooldown_until:
+                remaining = int(cooldown_until - time.time())
+                logger.debug(f"Key #{idx + 1} still in cooldown ({remaining}s remaining)")
+                continue
+        if _configure_model_for_index(idx):
+            logger.info(f"Rotated to key #{idx + 1} (cooldown expired)")
+            return True
+    
     return False
 
 
-_ensure_model_initialized()
+# Initialize model with first available key
+if _ensure_model_initialized():
+    logger.info(f"✅ Initialized Gemini model with key #{_ACTIVE_GEMINI_INDEX + 1 if _ACTIVE_GEMINI_INDEX is not None else 'unknown'}")
+else:
+    logger.warning("⚠️  Failed to initialize Gemini model with any available key")
 
 # Optimized rate limiting configuration (env-driven)
 CALLS_PER_MINUTE = int(os.getenv("GEMINI_CALLS_PER_MINUTE", "40"))
@@ -410,32 +528,76 @@ def _wait_for_inflight(cache_key: str):
         evt.wait(timeout=5)
         # After wait, re-check the map
 
-def _ollama_params() -> tuple:
-    base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434/v1").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL") or "llama3.1"
-    return base, model
+def _extract_retry_delay(error_message: str) -> Optional[int]:
+    """Extract retry delay from Gemini API error message."""
+    if not error_message:
+        return None
+    
+    # Look for "Please retry in X.XXs" pattern
+    match = re.search(r'retry in ([\d.]+)s', error_message, re.IGNORECASE)
+    if match:
+        return int(float(match.group(1)) + 1)  # Add 1 second buffer
+    
+    # Look for retry_delay seconds in structured error
+    match = re.search(r'retry_delay\s*{\s*seconds:\s*(\d+)', error_message, re.IGNORECASE)
+    if match:
+        return int(match.group(1)) + 1
+    
+    # Look for "Please retry in X.XX seconds"
+    match = re.search(r'retry in ([\d.]+)\s*seconds?', error_message, re.IGNORECASE)
+    if match:
+        return int(float(match.group(1)) + 1)
+    
+    return None
 
-def _generate_via_ollama(prompt: str, temperature: float = 0.1, max_tokens: int = 3200) -> str:
-    try:
-        base, model_name = _ollama_params()
-        # Clamp tokens for faster local generation and allow env override
-        max_tokens_ollama = int(os.getenv("OLLAMA_MAX_TOKENS", "800"))
-        max_tokens_ollama = max(1, min(max_tokens_ollama, max_tokens))
-        req_timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
-        payload = {
-            "model": model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": float(max(0.0, min(1.0, temperature))),
-            "max_tokens": max_tokens_ollama,
-        }
-        r = requests.post(f"{base}/chat/completions", json=payload, timeout=req_timeout)
-        r.raise_for_status()
-        data = r.json()
-        text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-        return text
-    except Exception as e:
-        logger.info(f"Ollama generation failed: {e}")
-        return ""
+def _is_quota_exhausted(error_message: str) -> bool:
+    """Check if error indicates quota exhaustion (not just rate limit)."""
+    if not error_message:
+        return False
+    
+    error_lower = error_message.lower()
+    quota_indicators = [
+        "quota exceeded",
+        "free_tier_requests",
+        "limit: 0",
+        "check your plan and billing",
+        "exceeded your current quota",
+        "quota_limit_value"
+    ]
+    
+    # Check for RATE_LIMIT_EXCEEDED with quota_limit_value: "0" (this is quota exhaustion, not rate limit)
+    if "rate_limit_exceeded" in error_lower and "quota_limit_value" in error_lower:
+        if '"0"' in error_message or "value: \"0\"" in error_message or "quota_limit_value\" value: \"0\"" in error_message:
+            return True
+    
+    return any(indicator in error_lower for indicator in quota_indicators)
+
+def _is_key_leaked_or_invalid(error_message: str) -> bool:
+    """Check if error indicates key is leaked, revoked, or permanently invalid."""
+    if not error_message:
+        return False
+    
+    error_lower = error_message.lower()
+    invalid_indicators = [
+        "api key was reported as leaked",
+        "api key was leaked",
+        "leaked",
+        "revoked",
+        "invalid api key",
+        "api key not valid"
+    ]
+    
+    # Only return True if it's clearly a key issue, not a general 403
+    if "403" in error_message:
+        if any(indicator in error_lower for indicator in ["leaked", "revoked", "invalid", "api key"]):
+            return True
+    
+    return any(indicator in error_lower for indicator in invalid_indicators)
+
+def _mark_key_invalid(key_index: int, reason: str):
+    """Mark a key as permanently invalid (leaked, revoked, etc.)."""
+    _INVALID_KEYS[key_index] = reason
+    logger.error(f"Key #{key_index + 1} marked as PERMANENTLY INVALID: {reason}")
 
 @sleep_and_retry
 @limits(calls=CALLS_PER_MINUTE, period=60)
@@ -456,11 +618,12 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
         logger.error("Gemini model unavailable; returning empty response")
         return ""
 
-    # Reduced retry attempts for speed
-    max_retries = 3
-    base_delay = 1.5
+    # Reduced retry attempts to avoid excessive API calls
+    max_retries = 2
+    base_delay = 3.0  # Increased base delay
 
     inflight_evt = _wait_for_inflight(cache_key)
+    last_key_index = _ACTIVE_GEMINI_INDEX
     try:
         for attempt in range(max_retries):
             try:
@@ -473,34 +636,78 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
                     max_tokens=max_tokens,
                     optimized=True,
                 )
-                response = model.generate_content(
-                    prompt,
-                    generation_config={
-                        "temperature": temperature,
-                        "max_output_tokens": max_tokens
-                    }
+                response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_level="low"),
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                    )
                 )
-                result = response.text.strip()
-                QUERY_CACHE[cache_key] = result
-                if len(QUERY_CACHE) % 20 == 0:
-                    save_query_cache()
-                return result
-            except Exception as e:
-                if any(k in str(e) for k in ["429", "ResourceExhausted", "quota"]):
-                    if _switch_to_fallback_key():
-                        logger.info("Switched to fallback Gemini API key after rate limit")
-                        continue
-                    retry_delay = base_delay * (1.5 ** attempt)
-                    logger.info(f"Rate limit hit, retrying in {retry_delay:.1f}s (attempt {attempt+1}/{max_retries})")
-                    time.sleep(retry_delay)
-                    if attempt == max_retries - 1:
-                        break
+                if response and response.text:
+                    result = response.text.strip()
+                    QUERY_CACHE[cache_key] = result
+                    if len(QUERY_CACHE) % 20 == 0:
+                        save_query_cache()
+                    return result
                 else:
-                    logger.error(f"API error: {e}")
-                    if _switch_to_fallback_key():
-                        logger.info("Attempting fallback Gemini API key after API error")
-                        continue
+                    logger.warning("Empty response from Gemini API")
+                    if attempt < max_retries - 1:
+                        time.sleep(base_delay * (2 ** attempt))  # Exponential backoff
+                    continue
+            except Exception as e:
+                error_str = str(e).lower()
+                error_message = str(e)
+                is_rate_limit = any(k in error_str for k in ["429", "resourceexhausted", "quota", "rate limit", "rate_limit"])
+                is_quota_exhausted = _is_quota_exhausted(error_message)
+                
+                if attempt == max_retries - 1:
+                    logger.error(f"All retries exhausted. Last error: {e}")
                     break
+                
+                # Extract retry delay from API response
+                retry_delay = _extract_retry_delay(error_message)
+                
+                if is_rate_limit or is_quota_exhausted:
+                    # Mark current key as exhausted if quota exhausted
+                    if is_quota_exhausted and _ACTIVE_GEMINI_INDEX is not None:
+                        _mark_key_exhausted(_ACTIVE_GEMINI_INDEX)
+                        logger.error(f"Key #{_ACTIVE_GEMINI_INDEX + 1} quota exhausted. Marked for cooldown.")
+                    
+                    # Use API-provided retry delay if available, otherwise use exponential backoff
+                    if retry_delay:
+                        backoff_time = min(retry_delay, 120)  # Cap at 2 minutes
+                        logger.warning(f"Quota/Rate limit detected on key #{_ACTIVE_GEMINI_INDEX + 1 if _ACTIVE_GEMINI_INDEX is not None else 'unknown'}. API suggests retry in {retry_delay}s. Waiting {backoff_time}s...")
+                    else:
+                        backoff_time = min(base_delay * (2 ** attempt), 60)  # Max 60s for exponential backoff
+                        logger.warning(f"Rate limit detected on key #{_ACTIVE_GEMINI_INDEX + 1 if _ACTIVE_GEMINI_INDEX is not None else 'unknown'} (attempt {attempt+1}/{max_retries}), waiting {backoff_time:.1f}s")
+                    
+                    # Try switching to a different key (even for quota exhaustion, as keys might be from different accounts)
+                    if _try_all_keys_rotation() and _ACTIVE_GEMINI_INDEX != last_key_index:
+                        logger.info(f"Rotated to key #{_ACTIVE_GEMINI_INDEX + 1} after quota/rate limit. Retrying immediately...")
+                        last_key_index = _ACTIVE_GEMINI_INDEX
+                        # Don't wait if we successfully rotated to a new key
+                        continue
+                    else:
+                        # All keys exhausted or no other keys available
+                        if is_quota_exhausted:
+                            logger.error(f"All keys appear exhausted. Waiting {backoff_time}s before retry...")
+                        else:
+                            logger.warning(f"All keys rate limited. Waiting {backoff_time}s before retry...")
+                        time.sleep(backoff_time)
+                        continue
+                else:
+                    # Non-rate-limit error
+                    logger.error(f"API error: {e}")
+                    if _switch_to_fallback_key() and _ACTIVE_GEMINI_INDEX != last_key_index:
+                        logger.info(f"Switched to fallback Gemini API key #{_ACTIVE_GEMINI_INDEX + 1} after error")
+                        last_key_index = _ACTIVE_GEMINI_INDEX
+                        time.sleep(2)  # Short delay before retry
+                        continue
+                    else:
+                        time.sleep(base_delay * (2 ** attempt))  # Exponential backoff
+                        continue
             finally:
                 try:
                     if _llm_semaphore is not None:
@@ -516,12 +723,10 @@ def rate_limited_generate_content_optimized(prompt: str, temperature: float = 0.
                         evt.set()
                 except Exception:
                     pass
-    # Gemini unavailable -> fallback to Ollama
-    ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
-    if ollama_text:
-        QUERY_CACHE[cache_key] = ollama_text
-        return ollama_text
-    return "Response temporarily unavailable. Please try again."
+    
+    # All retries failed - return empty response
+    logger.error("All Gemini API attempts failed. Quota may be exhausted.")
+    return ""
 
 @timing_decorator
 def get_embedding(text: str) -> np.ndarray:
@@ -4262,12 +4467,23 @@ What specific compliance topic would you like to discuss?"""
 
 What would you like to continue discussing or explore further?"""
 
-def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tokens: int = 3200, max_retries: int = 3) -> str:
+def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tokens: int = 3200, max_retries: int = 2) -> str:
     """Generate content with rate limiting and retries."""
     if not _ensure_model_initialized():
-        logger.error("Gemini model unavailable; falling back to Ollama/local generation")
-        return _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
+        logger.error("Gemini model unavailable; returning empty response")
+        return ""
 
+    # Check cache first for small prompts (classification, guardrails, etc.)
+    if max_tokens <= 300:
+        prompt_hash = hash_text(f"{prompt}:{temperature}:{max_tokens}")
+        cache_key = f"gemini_small:{prompt_hash}"
+        if cache_key in QUERY_CACHE:
+            cached = QUERY_CACHE[cache_key]
+            if cached and len(cached.strip()) > 0:
+                logger.info(f"✅ Cache hit for small prompt (tokens: {max_tokens})")
+                return cached
+
+    last_key_index = _ACTIVE_GEMINI_INDEX
     for attempt in range(max_retries):
         try:
             _log_gemini_api_call(
@@ -4277,28 +4493,102 @@ def rate_limited_generate_content(prompt: str, temperature: float = 0.1, max_tok
                 max_tokens=max_tokens,
                 optimized=False,
             )
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens
-                }
+            response = client.models.generate_content(
+                model=MODEL_ID,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                )
             )
-            return response.text
+            
+            if response and response.text:
+                result_text = response.text.strip()
+                # Cache small responses
+                if max_tokens <= 300 and result_text:
+                    prompt_hash = hash_text(f"{prompt}:{temperature}:{max_tokens}")
+                    cache_key = f"gemini_small:{prompt_hash}"
+                    QUERY_CACHE[cache_key] = result_text
+                return result_text
+            else:
+                logger.warning("Empty response from Gemini API")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
+                continue
+                
         except Exception as e:
+            error_str = str(e).lower()
+            error_message = str(e)
+            is_rate_limit = any(k in error_str for k in ["429", "resourceexhausted", "quota", "rate limit", "rate_limit"])
+            is_quota_exhausted = _is_quota_exhausted(error_message)
+            is_key_invalid = _is_key_leaked_or_invalid(error_message)
+            
+            # Mark key as invalid if leaked/revoked
+            if is_key_invalid and _ACTIVE_GEMINI_INDEX is not None:
+                _mark_key_invalid(_ACTIVE_GEMINI_INDEX, error_message[:200])
+                # Don't retry invalid keys
+                if attempt == max_retries - 1:
+                    logger.error(f"Key #{_ACTIVE_GEMINI_INDEX + 1} is invalid. All retries exhausted.")
+                    break
+                # Try rotating to another key immediately
+                if _try_all_keys_rotation() and _ACTIVE_GEMINI_INDEX != last_key_index:
+                    logger.info(f"Rotated away from invalid key #{last_key_index + 1} to key #{_ACTIVE_GEMINI_INDEX + 1}")
+                    last_key_index = _ACTIVE_GEMINI_INDEX
+                    continue
+                else:
+                    logger.error("No valid keys available. Invalid key cannot be used.")
+                    break
+            
             if attempt == max_retries - 1:
+                logger.error(f"All retries exhausted. Last error: {e}")
                 break
-            if any(k in str(e) for k in ["429", "ResourceExhausted", "quota"]) and _switch_to_fallback_key():
-                logger.info("Switched to fallback Gemini API key after rate limit")
-                continue
-            if _switch_to_fallback_key():
-                logger.info("Attempting fallback Gemini API key after error: %s", e)
-                continue
-            time.sleep(1)  # Wait before retrying
-    # Fallback to Ollama
-    ollama_text = _generate_via_ollama(prompt, temperature=temperature, max_tokens=max_tokens)
-    if ollama_text:
-        return ollama_text
+            
+            # Extract retry delay from API response
+            retry_delay = _extract_retry_delay(error_message)
+            
+            # Exponential backoff for rate limits
+            if is_rate_limit or is_quota_exhausted:
+                # Mark current key as exhausted if quota exhausted
+                if is_quota_exhausted and _ACTIVE_GEMINI_INDEX is not None:
+                    _mark_key_exhausted(_ACTIVE_GEMINI_INDEX)
+                    logger.error(f"Key #{_ACTIVE_GEMINI_INDEX + 1} quota exhausted. Marked for cooldown.")
+                
+                # Use API-provided retry delay if available, otherwise use exponential backoff
+                if retry_delay:
+                    backoff_time = min(retry_delay, 120)  # Cap at 2 minutes
+                    logger.warning(f"Quota/Rate limit detected on key #{_ACTIVE_GEMINI_INDEX + 1 if _ACTIVE_GEMINI_INDEX is not None else 'unknown'}. API suggests retry in {retry_delay}s. Waiting {backoff_time}s...")
+                else:
+                    backoff_time = min(5 * (2 ** attempt), 60)  # Max 60s for exponential backoff
+                    logger.warning(f"Rate limit detected on key #{_ACTIVE_GEMINI_INDEX + 1 if _ACTIVE_GEMINI_INDEX is not None else 'unknown'} (attempt {attempt+1}/{max_retries}), waiting {backoff_time}s before retry")
+                
+                # Try switching to a different key (even for quota exhaustion, as keys might be from different accounts)
+                if _try_all_keys_rotation() and _ACTIVE_GEMINI_INDEX != last_key_index:
+                    logger.info(f"Rotated to key #{_ACTIVE_GEMINI_INDEX + 1} after quota/rate limit. Retrying immediately...")
+                    last_key_index = _ACTIVE_GEMINI_INDEX
+                    # Don't wait if we successfully rotated to a new key
+                    continue
+                else:
+                    # All keys exhausted or no other keys available
+                    if is_quota_exhausted:
+                        logger.error(f"All keys appear exhausted. Waiting {backoff_time}s before retry...")
+                    else:
+                        logger.warning(f"All keys rate limited. Waiting {backoff_time}s before retry...")
+                    time.sleep(backoff_time)
+                    continue
+            else:
+                # Non-rate-limit error - try switching key
+                if _switch_to_fallback_key() and _ACTIVE_GEMINI_INDEX != last_key_index:
+                    logger.info(f"Switched to fallback Gemini API key #{_ACTIVE_GEMINI_INDEX + 1} after error: {str(e)[:100]}")
+                    last_key_index = _ACTIVE_GEMINI_INDEX
+                    time.sleep(1)  # Short delay before retry
+                    continue
+                else:
+                    # Wait before retrying
+                    time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s
+    
+    # All retries failed - return empty response
+    logger.error("All Gemini API attempts failed. Quota may be exhausted.")
     return ""
 
 def detect_document_analysis_request(query: str) -> bool:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner, FaGlobe, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaList, FaTrash, FaSpinner, FaGlobe, FaCheckCircle, FaExclamationCircle, FaInfoCircle } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { buildApiUrl } from '@/lib/api';
 
@@ -265,38 +265,47 @@ const ScheduleScan = () => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="space-y-8"
+      className="space-y-10 p-8"
     >
       {/* Header Section */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Schedule Compliance Scan</h2>
-          <p className="text-muted-foreground">Schedule automated whole-site scans for your website and Azure compliance analysis</p>
+          <h2 className="text-4xl md:text-5xl font-bold text-black mb-3">Schedule Compliance Scan</h2>
+          <p className="text-lg text-gray-600">Schedule automated whole-site scans for your website and Azure compliance analysis</p>
         </div>
       </div>
 
       {/* Schedule Form Card */}
-      <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
+      <motion.div 
+        whileHover={{ scale: 1.01 }}
+        className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+      >
+        {/* Decorative blur elements */}
+        <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+        
         {/* Card Header */}
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-5 border-b border-border">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <FaCalendarAlt className="text-xl text-primary" />
+        <div className="bg-gradient-to-r from-blue-600/10 via-blue-500/5 to-transparent px-8 py-6 border-b border-blue-200 relative z-10">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-gradient-to-br from-blue-600 to-blue-500 rounded-xl shadow-lg">
+              <FaCalendarAlt className="text-2xl text-white" />
             </div>
             <div>
-              <h3 className="text-xl font-semibold text-foreground">Schedule a One-Time Compliance Scan</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">Runs comprehensive website testing and Azure compliance analysis on the selected date/time</p>
+              <h3 className="text-2xl font-bold text-gray-900">Schedule a One-Time Compliance Scan</h3>
+              <p className="text-sm text-gray-600 mt-1">Runs comprehensive website testing and Azure compliance analysis on the selected date/time</p>
             </div>
           </div>
         </div>
 
         {/* Card Body */}
-        <div className="p-6 space-y-6">
+        <div className="p-8 space-y-6 relative z-10">
           {/* Info about Azure compliance */}
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              <strong>Note:</strong> Scheduled scans automatically include Azure compliance analysis if Azure settings have been fetched. 
-              The email notification will include both website testing results and Azure compliance check results.
+          <div className="p-5 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border-2 border-blue-200 rounded-xl shadow-sm">
+            <p className="text-sm text-blue-800 font-medium flex items-start space-x-2">
+              <FaInfoCircle className="text-blue-600 mt-0.5 flex-shrink-0" />
+              <span>
+                <strong>Note:</strong> Scheduled scans automatically include Azure compliance analysis if Azure settings have been fetched. 
+                The email notification will include both website testing results and Azure compliance check results.
+              </span>
             </p>
           </div>
           {/* Alert Messages */}
@@ -304,25 +313,25 @@ const ScheduleScan = () => {
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-start space-x-3 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+              className="flex items-start space-x-3 p-5 rounded-xl bg-red-50/90 backdrop-blur-sm border-2 border-red-300 shadow-sm"
             >
-              <FaExclamationCircle className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700 dark:text-red-300 flex-1">{error}</p>
+              <FaExclamationCircle className="text-red-600 mt-0.5 flex-shrink-0 text-xl" />
+              <p className="text-sm text-red-800 font-medium flex-1">{error}</p>
             </motion.div>
           )}
           {success && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-start space-x-3 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+              className="flex items-start space-x-3 p-5 rounded-xl bg-green-50/90 backdrop-blur-sm border-2 border-green-300 shadow-sm"
             >
-              <FaCheckCircle className="text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-green-700 dark:text-green-300 flex-1">{success}</p>
+              <FaCheckCircle className="text-green-600 mt-0.5 flex-shrink-0 text-xl" />
+              <p className="text-sm text-green-800 font-medium flex-1">{success}</p>
             </motion.div>
           )}
 
           {/* URL Selection Section */}
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex items-center space-x-3">
               <input
                 type="checkbox"
@@ -336,9 +345,9 @@ const ScheduleScan = () => {
                     setScheduleUrl('');
                   }
                 }}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
               />
-              <label htmlFor="usePreviousUrl" className="text-sm font-medium text-foreground cursor-pointer">
+              <label htmlFor="usePreviousUrl" className="text-sm font-semibold text-gray-900 cursor-pointer">
                 Use previously scanned website
               </label>
             </div>
@@ -348,13 +357,15 @@ const ScheduleScan = () => {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+                  className="p-5 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border-2 border-blue-300 rounded-xl shadow-sm"
                 >
-                  <div className="flex items-start space-x-2">
-                    <FaGlobe className="text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2 bg-blue-600 rounded-lg">
+                      <FaGlobe className="text-white text-sm" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 uppercase tracking-wide">Previous Website</p>
-                      <p className="text-sm text-blue-800 dark:text-blue-200 break-all font-mono">{previousUrl}</p>
+                      <p className="text-xs font-bold text-blue-700 mb-2 uppercase tracking-wide">Previous Website</p>
+                      <p className="text-sm text-blue-900 break-all font-mono font-medium">{previousUrl}</p>
                     </div>
                   </div>
                 </motion.div>
@@ -362,11 +373,11 @@ const ScheduleScan = () => {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
+                  className="p-5 bg-yellow-50/90 backdrop-blur-sm border-2 border-yellow-300 rounded-xl shadow-sm"
                 >
-                  <div className="flex items-start space-x-2">
-                    <FaExclamationCircle className="text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300 flex-1">
+                  <div className="flex items-start space-x-3">
+                    <FaExclamationCircle className="text-yellow-600 mt-0.5 flex-shrink-0 text-xl" />
+                    <p className="text-sm text-yellow-800 font-medium flex-1">
                       No previous website found. Please uncheck the option above and enter a URL manually.
                     </p>
                   </div>
@@ -378,17 +389,17 @@ const ScheduleScan = () => {
                 animate={{ opacity: 1 }}
                 className="space-y-2"
               >
-                <label className="block text-sm font-semibold text-foreground">
+                <label className="block text-sm font-bold text-gray-900">
                   Website URL
                 </label>
                 <div className="relative">
-                  <FaGlobe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                  <FaGlobe className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
                   <input
                     type="text"
                     value={scheduleUrl}
                     onChange={(e) => setScheduleUrl(e.target.value)}
                     placeholder="https://example.com"
-                    className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                   />
                 </div>
               </motion.div>
@@ -396,18 +407,18 @@ const ScheduleScan = () => {
           </div>
 
           {/* Date/Time and Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-4 border-t border-border">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-6 border-t-2 border-blue-200">
             <div className="lg:col-span-2 space-y-2">
-              <label className="block text-sm font-semibold text-foreground">
+              <label className="block text-sm font-bold text-gray-900">
                 Date & Time
               </label>
               <div className="relative">
-                <FaClock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                <FaClock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
                 <input
                   type="datetime-local"
                   value={runAt}
                   onChange={(e) => setRunAt(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                   min={minDateTimeLocal()}
                 />
               </div>
@@ -416,7 +427,7 @@ const ScheduleScan = () => {
               <button
                 disabled={loading}
                 onClick={handleSchedule}
-                className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-all shadow-sm hover:shadow-md"
+                className="w-full px-6 py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold transition-all shadow-lg hover:shadow-xl"
               >
                 {loading ? (
                   <>
@@ -433,7 +444,7 @@ const ScheduleScan = () => {
               <button
                 disabled={scanNowLoading}
                 onClick={handleScanNow}
-                className="w-full px-6 py-3 border-2 border-border rounded-lg hover:bg-secondary/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-all"
+                className="w-full px-6 py-3.5 border-2 border-gray-300 rounded-xl hover:bg-gray-50 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold transition-all shadow-sm hover:shadow-md text-gray-900"
               >
                 {scanNowLoading ? (
                   <>
@@ -450,62 +461,71 @@ const ScheduleScan = () => {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Scheduled Scans List Card */}
-      <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
+      <motion.div 
+        whileHover={{ scale: 1.01 }}
+        className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 relative overflow-hidden group"
+      >
+        {/* Decorative blur elements */}
+        <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl -mr-24 -mt-24 animate-pulse-slow"></div>
+        
         {/* Card Header */}
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-5 border-b border-border">
+        <div className="bg-gradient-to-r from-purple-600/10 via-purple-500/5 to-transparent px-8 py-6 border-b border-purple-200 relative z-10">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <FaList className="text-xl text-primary" />
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-gradient-to-br from-purple-600 to-purple-500 rounded-xl shadow-lg">
+                <FaList className="text-2xl text-white" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Scheduled Scans</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">Manage your upcoming scans</p>
+                <h3 className="text-2xl font-bold text-gray-900">Scheduled Scans</h3>
+                <p className="text-sm text-gray-600 mt-1">Manage your upcoming scans</p>
               </div>
             </div>
             {schedules.length > 0 && (
-              <div className="px-3 py-1 bg-primary/10 rounded-full">
-                <span className="text-sm font-semibold text-primary">{schedules.length}</span>
+              <div className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full shadow-md">
+                <span className="text-sm font-bold text-white">{schedules.length}</span>
               </div>
             )}
           </div>
         </div>
 
         {/* Card Body */}
-        <div className="p-6">
+        <div className="p-8 relative z-10">
           {schedules.length === 0 ? (
-            <div className="text-center py-12">
-              <FaList className="text-4xl text-muted-foreground/30 mx-auto mb-4" />
-              <p className="text-muted-foreground font-medium">No scheduled scans</p>
-              <p className="text-sm text-muted-foreground mt-1">Schedule your first scan above to get started</p>
+            <div className="text-center py-16">
+              <div className="mx-auto w-20 h-20 bg-purple-100/50 rounded-full flex items-center justify-center mb-4">
+                <FaList className="text-4xl text-purple-600" />
+              </div>
+              <p className="text-gray-900 font-bold text-lg mb-2">No scheduled scans</p>
+              <p className="text-sm text-gray-600">Schedule your first scan above to get started</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {schedules.map((s, index) => (
                 <motion.div
                   key={s._id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:border-primary/30 hover:shadow-sm transition-all bg-background/50"
+                  whileHover={{ scale: 1.02, y: -3 }}
+                  className="flex items-center justify-between p-5 border-2 border-gray-200 rounded-xl hover:border-purple-300 hover:shadow-lg transition-all bg-white/80 backdrop-blur-sm"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <div className="p-1.5 bg-primary/10 rounded">
-                        <FaClock className="text-primary text-xs" />
+                    <div className="flex items-center space-x-4 mb-3">
+                      <div className="p-2 bg-gradient-to-br from-purple-600 to-purple-500 rounded-lg shadow-md">
+                        <FaClock className="text-white text-sm" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-foreground truncate">
+                        <div className="text-base font-bold text-gray-900 truncate">
                           {formatUtc(s.scheduled_for)}
                         </div>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        <div className="flex items-center space-x-2 mt-2">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
                             s.status === 'scheduled' 
-                              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                              ? 'bg-blue-100 text-blue-800 border-2 border-blue-300'
+                              : 'bg-gray-100 text-gray-800 border-2 border-gray-300'
                           }`}>
                             {s.status}
                           </span>
@@ -513,18 +533,18 @@ const ScheduleScan = () => {
                       </div>
                     </div>
                     {s.url && (
-                      <div className="ml-8 mt-2 flex items-start space-x-2">
-                        <FaGlobe className="text-muted-foreground text-xs mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-muted-foreground break-all font-mono">{s.url}</p>
+                      <div className="ml-12 mt-3 flex items-start space-x-2">
+                        <FaGlobe className="text-purple-600 text-sm mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-gray-700 break-all font-mono font-medium">{s.url}</p>
                       </div>
                     )}
                   </div>
                   {s.status === 'scheduled' && (
                     <button
                       onClick={() => handleCancel(s._id)}
-                      className="ml-4 px-4 py-2 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors font-medium text-sm"
+                      className="ml-4 px-5 py-2.5 text-white bg-gradient-to-r from-red-600 to-red-500 border-2 border-red-300 rounded-xl hover:from-red-700 hover:to-red-600 flex items-center gap-2 transition-all font-semibold text-sm shadow-md hover:shadow-lg"
                     >
-                      <FaTrash className="text-xs" />
+                      <FaTrash className="text-sm" />
                       <span>Cancel</span>
                     </button>
                   )}
@@ -533,13 +553,13 @@ const ScheduleScan = () => {
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
       {/* Scan Now Modal */}
       {showScanNowModal && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
           onClick={() => {
             if (!modalSubmitting) {
               setShowScanNowModal(false);
@@ -552,24 +572,27 @@ const ScheduleScan = () => {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-card rounded-xl shadow-2xl border border-border overflow-hidden"
+            className="w-full max-w-md bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-blue-200 overflow-hidden relative"
           >
+            {/* Decorative blur */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl -mr-16 -mt-16"></div>
+            
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-6 py-4 border-b border-border">
+            <div className="bg-gradient-to-r from-blue-600/10 via-blue-500/5 to-transparent px-6 py-5 border-b-2 border-blue-200 relative z-10">
               <div className="flex items-center space-x-3">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <FaGlobe className="text-xl text-primary" />
+                <div className="p-2 bg-gradient-to-br from-blue-600 to-blue-500 rounded-lg shadow-md">
+                  <FaGlobe className="text-xl text-white" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">Enter Website URL</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">No previous website found</p>
+                  <h3 className="text-xl font-bold text-gray-900">Enter Website URL</h3>
+                  <p className="text-xs text-gray-600 mt-0.5">No previous website found</p>
                 </div>
               </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-muted-foreground">
+            <div className="p-6 space-y-5 relative z-10">
+              <p className="text-sm text-gray-700 font-medium">
                 Provide your site URL to run a comprehensive whole-site scan now.
               </p>
               
@@ -577,24 +600,24 @@ const ScheduleScan = () => {
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-start space-x-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+                  className="flex items-start space-x-2 p-4 rounded-xl bg-red-50/90 backdrop-blur-sm border-2 border-red-300"
                 >
-                  <FaExclamationCircle className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-red-700 dark:text-red-300 flex-1">{modalError}</p>
+                  <FaExclamationCircle className="text-red-600 mt-0.5 flex-shrink-0 text-xl" />
+                  <p className="text-sm text-red-800 font-medium flex-1">{modalError}</p>
                 </motion.div>
               )}
               
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-foreground">
+                <label className="block text-sm font-bold text-gray-900">
                   Website URL
                 </label>
                 <div className="relative">
-                  <FaGlobe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm" />
+                  <FaGlobe className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
                   <input
                     value={modalUrl}
                     onChange={(e) => setModalUrl(e.target.value)}
                     placeholder="https://example.com"
-                    className="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                    className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all shadow-sm"
                     onKeyPress={(e) => {
                       if (e.key === 'Enter' && !modalSubmitting && modalUrl.trim()) {
                         submitScanNowWithUrl();
@@ -606,7 +629,7 @@ const ScheduleScan = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 bg-muted/30 border-t border-border flex items-center justify-end gap-3">
+            <div className="px-6 py-5 bg-gray-50/80 backdrop-blur-sm border-t-2 border-blue-200 flex items-center justify-end gap-3 relative z-10">
               <button
                 onClick={() => {
                   setShowScanNowModal(false);
@@ -614,14 +637,14 @@ const ScheduleScan = () => {
                   setModalError(null);
                 }}
                 disabled={modalSubmitting}
-                className="px-4 py-2 border border-border rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                className="px-5 py-2.5 border-2 border-gray-300 rounded-xl hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold text-gray-900 shadow-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={submitScanNowWithUrl}
                 disabled={modalSubmitting || !modalUrl.trim()}
-                className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all shadow-sm hover:shadow-md font-medium"
+                className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl hover:from-blue-700 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all shadow-lg hover:shadow-xl font-semibold"
               >
                 {modalSubmitting ? (
                   <>
@@ -646,10 +669,10 @@ const ScheduleScan = () => {
           initial={{ opacity: 0, y: 20, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.95 }}
-          className="fixed bottom-6 right-6 z-50 px-6 py-4 bg-green-600 text-white rounded-lg shadow-xl flex items-center space-x-3 max-w-md"
+          className="fixed bottom-6 right-6 z-50 px-6 py-4 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl shadow-2xl flex items-center space-x-3 max-w-md border-2 border-green-300"
         >
-          <FaCheckCircle className="text-xl flex-shrink-0" />
-          <p className="font-medium">Whole-site scan completed successfully.</p>
+          <FaCheckCircle className="text-2xl flex-shrink-0" />
+          <p className="font-bold">Whole-site scan completed successfully.</p>
         </motion.div>
       )}
     </motion.div>

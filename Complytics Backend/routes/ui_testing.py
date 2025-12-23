@@ -418,10 +418,10 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                     framework_scores = compliance_summary.get("framework_scores", {})
                     
                     azure_section = f"""
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <h3 style="color: white; margin: 0 0 15px 0; font-size: 20px;">☁️ Azure Compliance Analysis</h3>
-                        <div style="background: white; padding: 15px; border-radius: 6px;">
-                            <p style="margin: 8px 0;"><strong>Overall Compliance Score:</strong> <span style="font-size: 18px; color: #667eea; font-weight: bold;">{overall_score}</span></p>
+                    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #06b6d4 100%); padding: 25px; border-radius: 8px; margin: 20px 0;">
+                        <h3 style="color: white; margin: 0 0 15px 0; font-size: 20px; font-weight: 700;">☁️ Azure Compliance Analysis</h3>
+                        <div style="background: white; padding: 20px; border-radius: 8px;">
+                            <p style="margin: 8px 0;"><strong>Overall Compliance Score:</strong> <span style="font-size: 18px; color: #2563eb; font-weight: bold;">{overall_score}</span></p>
                             <p style="margin: 8px 0;"><strong>Compliance Status:</strong> {overall_status}</p>
                             <p style="margin: 8px 0;"><strong>Total Compliance Gaps:</strong> {total_gaps}</p>
                             <p style="margin: 8px 0;"><strong>Frameworks Analyzed:</strong> {', '.join(frameworks) if frameworks else 'N/A'}</p>
@@ -450,33 +450,37 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                 <head>
                     <meta charset="UTF-8">
                     <style>
-                        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }}
-                        .header h1 {{ margin: 0; font-size: 24px; }}
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1f2937; margin: 0; padding: 0; background-color: #f3f4f6; }}
+                        .email-container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+                        .header {{ background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #06b6d4 100%); color: white; padding: 40px 30px; border-radius: 8px 8px 0 0; text-align: center; }}
+                        .header h1 {{ margin: 0; font-size: 28px; font-weight: 700; font-family: 'Montserrat', sans-serif; }}
+                        .header p {{ margin: 10px 0 0 0; opacity: 0.95; font-size: 16px; }}
                         .content {{ background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }}
-                        .section {{ background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-                        .section h2 {{ margin: 0 0 15px 0; color: #1f2937; font-size: 18px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }}
+                        .section {{ background: white; padding: 25px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 4px solid #2563eb; }}
+                        .section h2 {{ margin: 0 0 15px 0; color: #1e3a8a; font-size: 20px; font-weight: 700; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }}
                         .metric {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }}
                         .metric:last-child {{ border-bottom: none; }}
-                        .metric-label {{ font-weight: 500; color: #6b7280; }}
-                        .metric-value {{ font-size: 18px; font-weight: bold; }}
-                        .score-badge {{ display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 16px; }}
-                        .violations-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; }}
-                        .violation-item {{ background: #f3f4f6; padding: 12px; border-radius: 6px; text-align: center; }}
-                        .violation-count {{ font-size: 24px; font-weight: bold; color: #1f2937; }}
-                        .violation-label {{ font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 5px; }}
-                        .cta {{ background: #667eea; color: white; padding: 15px 30px; border-radius: 6px; text-align: center; margin-top: 20px; }}
-                        .cta a {{ color: white; text-decoration: none; font-weight: bold; }}
-                        .footer {{ text-align: center; color: #9ca3af; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; }}
+                        .metric-label {{ font-weight: 600; color: #6b7280; font-size: 14px; }}
+                        .metric-value {{ font-size: 18px; font-weight: bold; color: #1f2937; }}
+                        .score-badge {{ display: inline-block; padding: 10px 20px; border-radius: 20px; font-weight: bold; font-size: 16px; color: white; }}
+                        .violations-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 15px; }}
+                        .violation-item {{ background: #f9fafb; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #e5e7eb; }}
+                        .violation-count {{ font-size: 28px; font-weight: bold; color: #1f2937; }}
+                        .violation-label {{ font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 8px; font-weight: 600; letter-spacing: 0.5px; }}
+                        .cta {{ background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: white; padding: 16px 32px; border-radius: 8px; text-align: center; margin-top: 25px; }}
+                        .cta a {{ color: white; text-decoration: none; font-weight: 700; font-size: 16px; }}
+                        .footer {{ text-align: center; color: #6b7280; font-size: 13px; margin-top: 30px; padding-top: 25px; border-top: 1px solid #e5e7eb; background: #f9fafb; padding: 25px 30px; }}
+                        .footer .brand {{ color: #1e3a8a; font-weight: 700; font-size: 16px; }}
                     </style>
                 </head>
                 <body>
-                    <div class="header">
-                        <h1>✅ Compliance Scan Completed</h1>
-                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Scheduled scan results are ready</p>
-                    </div>
-                    
-                    <div class="content">
+                    <div class="email-container">
+                        <div class="header">
+                            <h1>✅ Compliance Scan Completed</h1>
+                            <p style="margin: 10px 0 0 0; opacity: 0.95;">Scheduled scan results are ready</p>
+                        </div>
+                        
+                        <div class="content">
                         <div class="section">
                             <h2>📊 Scan Overview</h2>
                             <div class="metric">
@@ -536,7 +540,9 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                         </div>
                         
                         <div class="footer">
-                            <p>For detailed analysis, recommendations, and full compliance reports, please visit your Complytics dashboard.</p>
+                            <p class="brand">Complytics</p>
+                            <p>AI-Powered Compliance Management Platform</p>
+                            <p style="margin-top: 15px;">For detailed analysis, recommendations, and full compliance reports, please visit your Complytics dashboard.</p>
                             <p style="margin-top: 10px;">This is an automated notification from Complytics Compliance Platform.</p>
                         </div>
                     </div>
@@ -573,10 +579,10 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                     framework_scores = compliance_summary.get("framework_scores", {})
                     
                     azure_section = f"""
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <h3 style="color: white; margin: 0 0 15px 0; font-size: 20px;">☁️ Azure Compliance Analysis</h3>
-                        <div style="background: white; padding: 15px; border-radius: 6px;">
-                            <p style="margin: 8px 0;"><strong>Overall Compliance Score:</strong> <span style="font-size: 18px; color: #667eea; font-weight: bold;">{overall_score}</span></p>
+                    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #06b6d4 100%); padding: 25px; border-radius: 8px; margin: 20px 0;">
+                        <h3 style="color: white; margin: 0 0 15px 0; font-size: 20px; font-weight: 700;">☁️ Azure Compliance Analysis</h3>
+                        <div style="background: white; padding: 20px; border-radius: 8px;">
+                            <p style="margin: 8px 0;"><strong>Overall Compliance Score:</strong> <span style="font-size: 18px; color: #2563eb; font-weight: bold;">{overall_score}</span></p>
                             <p style="margin: 8px 0;"><strong>Compliance Status:</strong> {overall_status}</p>
                             <p style="margin: 8px 0;"><strong>Total Compliance Gaps:</strong> {total_gaps}</p>
                             <p style="margin: 8px 0;"><strong>Frameworks Analyzed:</strong> {', '.join(frameworks) if frameworks else 'N/A'}</p>
@@ -609,33 +615,37 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                 <head>
                     <meta charset="UTF-8">
                     <style>
-                        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }}
-                        .header h1 {{ margin: 0; font-size: 24px; }}
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1f2937; margin: 0; padding: 0; background-color: #f3f4f6; }}
+                        .email-container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+                        .header {{ background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #06b6d4 100%); color: white; padding: 40px 30px; border-radius: 8px 8px 0 0; text-align: center; }}
+                        .header h1 {{ margin: 0; font-size: 28px; font-weight: 700; font-family: 'Montserrat', sans-serif; }}
+                        .header p {{ margin: 10px 0 0 0; opacity: 0.95; font-size: 16px; }}
                         .content {{ background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }}
-                        .section {{ background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-                        .section h2 {{ margin: 0 0 15px 0; color: #1f2937; font-size: 18px; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }}
+                        .section {{ background: white; padding: 25px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: 4px solid #2563eb; }}
+                        .section h2 {{ margin: 0 0 15px 0; color: #1e3a8a; font-size: 20px; font-weight: 700; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; }}
                         .metric {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }}
                         .metric:last-child {{ border-bottom: none; }}
-                        .metric-label {{ font-weight: 500; color: #6b7280; }}
-                        .metric-value {{ font-size: 18px; font-weight: bold; }}
-                        .score-badge {{ display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 16px; }}
-                        .violations-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; }}
-                        .violation-item {{ background: #f3f4f6; padding: 12px; border-radius: 6px; text-align: center; }}
-                        .violation-count {{ font-size: 24px; font-weight: bold; color: #1f2937; }}
-                        .violation-label {{ font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 5px; }}
-                        .cta {{ background: #667eea; color: white; padding: 15px 30px; border-radius: 6px; text-align: center; margin-top: 20px; }}
-                        .cta a {{ color: white; text-decoration: none; font-weight: bold; }}
-                        .footer {{ text-align: center; color: #9ca3af; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; }}
+                        .metric-label {{ font-weight: 600; color: #6b7280; font-size: 14px; }}
+                        .metric-value {{ font-size: 18px; font-weight: bold; color: #1f2937; }}
+                        .score-badge {{ display: inline-block; padding: 10px 20px; border-radius: 20px; font-weight: bold; font-size: 16px; color: white; }}
+                        .violations-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 15px; }}
+                        .violation-item {{ background: #f9fafb; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #e5e7eb; }}
+                        .violation-count {{ font-size: 28px; font-weight: bold; color: #1f2937; }}
+                        .violation-label {{ font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 8px; font-weight: 600; letter-spacing: 0.5px; }}
+                        .cta {{ background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%); color: white; padding: 16px 32px; border-radius: 8px; text-align: center; margin-top: 25px; }}
+                        .cta a {{ color: white; text-decoration: none; font-weight: 700; font-size: 16px; }}
+                        .footer {{ text-align: center; color: #6b7280; font-size: 13px; margin-top: 30px; padding-top: 25px; border-top: 1px solid #e5e7eb; background: #f9fafb; padding: 25px 30px; }}
+                        .footer .brand {{ color: #1e3a8a; font-weight: 700; font-size: 16px; }}
                     </style>
                 </head>
                 <body>
-                    <div class="header">
-                        <h1>✅ Compliance Scan Completed</h1>
-                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Scheduled scan results are ready</p>
-                    </div>
-                    
-                    <div class="content">
+                    <div class="email-container">
+                        <div class="header">
+                            <h1>✅ Compliance Scan Completed</h1>
+                            <p style="margin: 10px 0 0 0; opacity: 0.95;">Scheduled scan results are ready</p>
+                        </div>
+                        
+                        <div class="content">
                         <div class="section">
                             <h2>📊 Scan Overview</h2>
                             <div class="metric">
@@ -690,7 +700,9 @@ async def _execute_scheduled_scan(schedule_id: str) -> None:
                         </div>
                         
                         <div class="footer">
-                            <p>For detailed analysis, recommendations, and full compliance reports, please visit your Complytics dashboard.</p>
+                            <p class="brand">Complytics</p>
+                            <p>AI-Powered Compliance Management Platform</p>
+                            <p style="margin-top: 15px;">For detailed analysis, recommendations, and full compliance reports, please visit your Complytics dashboard.</p>
                             <p style="margin-top: 10px;">This is an automated notification from Complytics Compliance Platform.</p>
                         </div>
                     </div>

@@ -6,16 +6,17 @@ import time
 import hashlib
 import requests
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 try:
     from groq import Groq  # type: ignore
 except Exception:
     Groq = None  # type: ignore
 
-_MODEL = None
+_CLIENT = None
 _GEMINI_KEYS: List[str] = []
 _ACTIVE_GEMINI_INDEX: Optional[int] = None
-_GEMINI_MODEL_NAME = "gemini-2.0-flash"
+_GEMINI_MODEL_NAME = "gemini-3-flash-preview"
 _GROQ: Optional[Dict[str, Any]] = None
 _LAST_CALL_TS: float = 0.0
 _MIN_CALL_INTERVAL_SEC: float = float(os.getenv("UI_AI_MIN_INTERVAL_SEC", "1.5"))
@@ -61,7 +62,7 @@ def _save_cache() -> None:
 
 
 def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[str] = None) -> None:
-    global _MODEL, _GEMINI_KEYS, _ACTIVE_GEMINI_INDEX
+    global _CLIENT, _GEMINI_KEYS, _ACTIVE_GEMINI_INDEX
     # Caching disabled
     candidate_keys: List[str] = []
     for key in (
@@ -78,7 +79,7 @@ def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[
                 candidate_keys.append(value)
 
     _GEMINI_KEYS = candidate_keys
-    _MODEL = None
+    _CLIENT = None
     _ACTIVE_GEMINI_INDEX = None
 
     if not _GEMINI_KEYS:
@@ -92,29 +93,25 @@ def configure_gemini(primary_api_key: Optional[str], fallback_api_key: Optional[
 
 
 def _configure_model_for_index(index: int) -> bool:
-    global _MODEL, _ACTIVE_GEMINI_INDEX
+    global _CLIENT, _ACTIVE_GEMINI_INDEX
     if index < 0 or index >= len(_GEMINI_KEYS):
         return False
     key = _GEMINI_KEYS[index]
     if not key:
         return False
     try:
-        genai.configure(api_key=key)
-        _MODEL = genai.GenerativeModel(
-            model_name=_GEMINI_MODEL_NAME,
-            generation_config=_base_generation_config(),
-        )
+        _CLIENT = genai.Client(api_key=key)
         _ACTIVE_GEMINI_INDEX = index
         logger.info("Gemini configured successfully with key #%d", index + 1)
         return True
     except Exception as exc:
         logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
-        _MODEL = None
+        _CLIENT = None
         return False
 
 
 def _ensure_model_initialized() -> bool:
-    if _MODEL is not None:
+    if _CLIENT is not None:
         return True
     for idx in range(len(_GEMINI_KEYS)):
         if _configure_model_for_index(idx):
@@ -142,24 +139,30 @@ def _generate_with_gemini(
     max_output_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
-    global _MODEL
+    global _CLIENT
     if not _ensure_model_initialized():
         return None, None
 
-    generation_config: Optional[Dict[str, Any]] = None
-    if max_output_tokens is not None or temperature is not None:
-        generation_config = _base_generation_config()
-        if max_output_tokens is not None:
-            generation_config["max_output_tokens"] = max_output_tokens
-        if temperature is not None:
-            generation_config["temperature"] = temperature
+    # Use defaults from _base_generation_config if not specified
+    if max_output_tokens is None:
+        max_output_tokens = _UI_MAX_TOKENS
+    if temperature is None:
+        temperature = 0.3
 
     attempts = max(1, len(_GEMINI_KEYS) or 1)
     last_error: Optional[str] = None
     for attempt in range(attempts):
         active_index = (_ACTIVE_GEMINI_INDEX or 0) + 1 if _ACTIVE_GEMINI_INDEX is not None else None
         try:
-            response = _MODEL.generate_content(prompt, generation_config=generation_config)
+            response = _CLIENT.models.generate_content(
+                model=_GEMINI_MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+            )
             text = (getattr(response, "text", "") or "").strip()
             if text:
                 return text, None
@@ -175,7 +178,7 @@ def _generate_with_gemini(
             )
             last_error = str(exc)
         finally:
-            _MODEL = None
+            _CLIENT = None
 
         if not _switch_to_fallback_key():
             break
@@ -225,7 +228,7 @@ def _cleanup_recommendations(text: str) -> str:
 
 
 def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, str]:
-    global _MODEL
+    global _CLIENT
     # Agentic switch
     try:
         agentic_enabled = str(os.getenv("AGENTIC_MODE", "0")).strip() == "1"
@@ -664,10 +667,10 @@ def generate_recommendations(scan_results: Dict[str, Any]) -> Tuple[str, str, st
                 "Please try again, or reduce input size."
             )
             return fallback, "none", "none"
-        text = (final_text or getattr(response, "text", "") or "No recommendations generated.")
+        text = (final_text or "No recommendations generated.")
         text = _cleanup_recommendations(text)
-        logger.info("Recommendations provider: Gemini model=gemini-2.0-flash (length=%d)", len(text))
-        return text, "gemini", "gemini-2.0-flash"
+        logger.info("Recommendations provider: Gemini model=%s (length=%d)", _GEMINI_MODEL_NAME, len(text))
+        return text, "gemini", _GEMINI_MODEL_NAME
     except Exception:
         logger.exception("Gemini generation failed")
         # Try Groq as secondary fallback

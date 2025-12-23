@@ -8,41 +8,43 @@ const Footer = () => {
   const [isTermsOpen, setIsTermsOpen] = useState(false);
   
   return (
-    <footer className="bg-secondary/60 py-16 relative overflow-hidden">
+    <footer className="bg-black py-16 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
           <div className="lg:col-span-2">
-            <div className="flex items-center space-x-2 mb-4">
-              <img src="/images/logo.png" alt="Complytics Logo" className="w-14 h-14 object-contain" />
-              <span className="font-bold text-2xl text-foreground">Complytics</span>
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-600 via-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+                <span className="text-white font-bold text-xl">C</span>
+              </div>
+              <span className="font-bold text-2xl text-white">Complytics</span>
             </div>
             
-            <p className="text-muted-foreground mb-6 max-w-md">
+            <p className="text-gray-300 mb-6 max-w-md leading-relaxed">
               Streamline your security compliance with our advanced automation tools. 
               Complytics helps you stay secure without the heavy manual workload.
             </p>
             
             <div className="flex space-x-4">
-              <a href="#" className="p-2 text-muted-foreground hover:text-primary transition-colors" aria-label="Twitter">
+              <a href="#" className="p-2 text-gray-300 hover:text-blue-500 transition-colors" aria-label="Twitter">
                 <FaTwitter size={20} />
               </a>
-              <a href="#" className="p-2 text-muted-foreground hover:text-primary transition-colors" aria-label="LinkedIn">
+              <a href="#" className="p-2 text-gray-300 hover:text-blue-500 transition-colors" aria-label="LinkedIn">
                 <FaLinkedin size={20} />
               </a>
-              <a href="#" className="p-2 text-muted-foreground hover:text-primary transition-colors" aria-label="GitHub">
+              <a href="#" className="p-2 text-gray-300 hover:text-blue-500 transition-colors" aria-label="GitHub">
                 <FaGithub size={20} />
               </a>
-              <a href="#" className="p-2 text-muted-foreground hover:text-primary transition-colors" aria-label="Email">
+              <a href="#" className="p-2 text-gray-300 hover:text-blue-500 transition-colors" aria-label="Email">
                 <FaEnvelope size={20} />
               </a>
             </div>
           </div>
           
           <div>
-            <h3 className="font-semibold mb-4">Product</h3>
+            <h3 className="font-bold text-white mb-4">Product</h3>
             <ul className="space-y-3">
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+                <a href="#features" className="text-gray-300 hover:text-blue-500 transition-colors">
                   Features
                 </a>
               </li>
@@ -50,15 +52,15 @@ const Footer = () => {
           </div>
           
           <div>
-            <h3 className="font-semibold mb-4">Company</h3>
+            <h3 className="font-bold text-white mb-4">Company</h3>
             <ul className="space-y-3">
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+                <a href="#" className="text-gray-300 hover:text-blue-500 transition-colors">
                   About
                 </a>
               </li>
               <li>
-                <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+                <a href="#contact" className="text-gray-300 hover:text-blue-500 transition-colors">
                   Contact
                 </a>
               </li>
@@ -66,12 +68,12 @@ const Footer = () => {
           </div>
 
           <div>
-            <h3 className="font-semibold mb-4">Legal</h3>
+            <h3 className="font-bold text-white mb-4">Legal</h3>
             <ul className="space-y-3">
               <li>
                 <button 
                   onClick={() => setIsPrivacyOpen(true)}
-                  className="text-muted-foreground hover:text-primary transition-colors"
+                  className="text-gray-300 hover:text-blue-500 transition-colors"
                 >
                   Privacy
                 </button>
@@ -79,7 +81,7 @@ const Footer = () => {
               <li>
                 <button 
                   onClick={() => setIsTermsOpen(true)}
-                  className="text-muted-foreground hover:text-primary transition-colors"
+                  className="text-gray-300 hover:text-blue-500 transition-colors"
                 >
                   Terms
                 </button>
@@ -88,8 +90,8 @@ const Footer = () => {
           </div>
         </div>
         
-        <div className="mt-12 pt-8 border-t border-border">
-          <p className="text-center text-muted-foreground">
+        <div className="mt-12 pt-8 border-t border-gray-800">
+          <p className="text-center text-gray-400">
             © {currentYear} Complytics. All rights reserved.
           </p>
         </div>

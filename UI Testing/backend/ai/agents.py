@@ -29,7 +29,7 @@ def _invoke_llm(messages: list) -> Any:
     for idx, key in enumerate(keys):
         try:
             llm = ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
+                model="gemini-3-flash-preview",
                 api_key=key,
                 temperature=0.2,
                 max_output_tokens=1200,

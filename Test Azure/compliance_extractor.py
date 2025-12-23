@@ -1,7 +1,7 @@
 """
 Compliance Rule Extraction Module
 
-This module uses Gemini 2.0 Flash to extract Azure AD compliance rules
+This module uses Gemini 3 Flash Preview to extract Azure AD compliance rules
 from compliance documents (PDF or text) and convert them to JSON format.
 """
 
@@ -11,7 +11,8 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import PyPDF2
 from dotenv import load_dotenv
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class ComplianceExtractor:
     """
-    Extracts Azure AD compliance rules from compliance documents using Gemini 2.0 Flash.
+    Extracts Azure AD compliance rules from compliance documents using Gemini 3 Flash Preview.
     """
     
     def __init__(self, api_key: Optional[str] = None):
@@ -50,7 +51,7 @@ class ComplianceExtractor:
             raise ValueError("Google API key is required. Set GOOGLE_API_KEY1 (and optionally GOOGLE_API_KEY2 / GOOGLE_API_KEY3 / GOOGLE_API_KEY4) environment variables.")
 
         self._active_key_index: Optional[int] = None
-        self.model: Optional[genai.GenerativeModel] = None
+        self.client: Optional[genai.Client] = None
         self._ensure_model_initialized()
 
         # Define the rule extraction prompt
@@ -90,18 +91,17 @@ Return only the JSON array of rules, no additional text.
         if not key:
             return False
         try:
-            genai.configure(api_key=key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
+            self.client = genai.Client(api_key=key)
             self._active_key_index = index
             logger.info("Gemini configured successfully with key #%d", index + 1)
             return True
         except Exception as exc:
             logger.warning("Failed to configure Gemini with key #%d: %s", index + 1, exc)
-            self.model = None
+            self.client = None
             return False
 
     def _ensure_model_initialized(self) -> bool:
-        if self.model is not None:
+        if self.client is not None:
             return True
         for idx in range(len(self._gemini_keys)):
             if self._configure_model_for_index(idx):
@@ -130,7 +130,15 @@ Return only the JSON array of rules, no additional text.
         for _ in range(attempts):
             active_index = (self._active_key_index or 0) + 1 if self._active_key_index is not None else None
             try:
-                response = self.model.generate_content(prompt)  # type: ignore[call-arg]
+                response = self.client.models.generate_content(
+                    model="gemini-3-flash-preview",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_level="low"),
+                        temperature=0.1,
+                        max_output_tokens=3200,
+                    )
+                )
                 text = (getattr(response, "text", "") or "").strip()
                 if text:
                     return text, None
@@ -147,7 +155,7 @@ Return only the JSON array of rules, no additional text.
                 )
                 last_error = str(exc)
             finally:
-                self.model = None
+                self.client = None
 
             if not self._switch_to_fallback_key():
                 break
